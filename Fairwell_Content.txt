@@ -5,7 +5,7 @@ return function(tab, reloadContent)
     if not tab then return end
 
     local espOk, espBox = pcall(function()
-        return tab:AddLeftGroupbox("STEM ESP", "eye")
+        return tab:AddLeftGroupbox("Stairwell", "eye")
     end)
 
     if espOk and espBox then
@@ -100,7 +100,7 @@ return function(tab, reloadContent)
     end
 
     local stemOk, stemBox = pcall(function()
-        return tab:AddLeftGroupbox("Auto kill Stem", "target")
+        return tab:AddLeftGroupbox("Stairwell", "target")
     end)
 
     if stemOk and stemBox then
@@ -272,7 +272,7 @@ return function(tab, reloadContent)
 
     -- Anti Groundskeeper: CFrame hover while enabled; automatically stays above detected ground.
     local hoverOk, hoverBox = pcall(function()
-        return tab:AddRightGroupbox("Anti Groundskeeper", "wind")
+        return tab:AddRightGroupbox("Outdoors", "wind")
     end)
 
     if hoverOk and hoverBox then
@@ -401,7 +401,7 @@ return function(tab, reloadContent)
 
     -- Auto Closet: detect Rush/Ambush models and use hiding ProximityPrompts.
     local closetOk, closetBox = pcall(function()
-        return tab:AddRightGroupbox("Auto Closet", "door-open")
+        return tab:AddRightGroupbox("Any Floor", "door-open")
     end)
 
     if closetOk and closetBox then
