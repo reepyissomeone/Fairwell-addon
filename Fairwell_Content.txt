@@ -880,6 +880,77 @@ return function(tab, reloadContent)
             end)
 
             pcall(function()
+                experimentBox:AddLabel({
+                    Text = "Local freeze test: anchors Creak's parts on this client so it cannot move on your screen. This does not reliably freeze Creak for other players or stop server AI. Turn it off to restore the original Anchored states.",
+                    DoesWrap = true
+                })
+            end)
+
+            local freezeCreakEnabled = false
+            local frozenCreakModel = nil
+            local savedAnchoredStates = {}
+
+            local function restoreCreakParts()
+                for part, wasAnchored in pairs(savedAnchoredStates) do
+                    if part and part.Parent then
+                        pcall(function() part.Anchored = wasAnchored end)
+                    end
+                end
+                table.clear(savedAnchoredStates)
+                frozenCreakModel = nil
+            end
+
+            local function findCreakModel()
+                for _, obj in ipairs(workspace:GetDescendants()) do
+                    if obj:IsA("Model") and string.find(string.lower(obj.Name), "creak", 1, true) then
+                        if obj:FindFirstChildWhichIsA("BasePart", true) then
+                            return obj
+                        end
+                    end
+                end
+                return nil
+            end
+
+            pcall(function()
+                experimentBox:AddToggle("FairwellLocalFreezeCreak", {
+                    Text = "Freeze Creak (local test)",
+                    Default = false,
+                    Callback = function(enabled)
+                        freezeCreakEnabled = enabled == true
+                        if not freezeCreakEnabled then
+                            restoreCreakParts()
+                        end
+                    end
+                })
+            end)
+
+            task.spawn(function()
+                while task.wait(0.25) do
+                    if freezeCreakEnabled then
+                        local model = findCreakModel()
+                        if model ~= frozenCreakModel then
+                            restoreCreakParts()
+                            frozenCreakModel = model
+                        end
+                        if model then
+                            for _, part in ipairs(model:GetDescendants()) do
+                                if part:IsA("BasePart") then
+                                    if savedAnchoredStates[part] == nil then
+                                        savedAnchoredStates[part] = part.Anchored
+                                    end
+                                    pcall(function()
+                                        part.AssemblyLinearVelocity = Vector3.zero
+                                        part.AssemblyAngularVelocity = Vector3.zero
+                                        part.Anchored = true
+                                    end)
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+
+            pcall(function()
                 experimentBox:AddToggle("FairwellCameraPivotPrototype", {
                     Text = "Camera Pivot Prototype",
                     Default = false,
