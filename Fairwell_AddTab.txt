@@ -25,37 +25,82 @@ if not ok or not tab then
     return
 end
 
--- Tint only the Fairwell tab button, leaving other MSDoors tabs untouched.
+-- Tint only the Fairwell tab button, even when the library nests its text in labels.
+-- Some MSDoors builds put the tab buttons in PlayerGui instead of CoreGui/gethui,
+-- and some use a child TextLabel rather than TextButton.Text.
 local function tintFairwellTab()
     local roots = {}
-    pcall(function() table.insert(roots, game:GetService("CoreGui")) end)
-    if type(gethui) == "function" then
-        pcall(function() table.insert(roots, gethui()) end)
+    local function addRoot(root)
+        if root then
+            for _, existing in ipairs(roots) do
+                if existing == root then return end
+            end
+            table.insert(roots, root)
+        end
     end
-    for _, root in ipairs(roots) do
+
+    pcall(function() addRoot(game:GetService("CoreGui")) end)
+    pcall(function() addRoot(game:GetService("Players").LocalPlayer:FindFirstChildOfClass("PlayerGui")) end)
+    if type(gethui) == "function" then
+        pcall(function() addRoot(gethui()) end)
+    end
+
+    local function hasFairwellText(button)
+        local matched = false
         pcall(function()
-            for _, obj in ipairs(root:GetDescendants()) do
-                if (obj:IsA("TextButton") or obj:IsA("ImageButton")) then
-                    local text = ""
-                    pcall(function() text = obj.Text end)
-                    if string.lower(tostring(text)) == "fairwell" then
-                        obj.BackgroundColor3 = ACCENT_DARK
-                        pcall(function() obj.TextColor3 = Color3.fromRGB(255, 255, 255) end)
-                        pcall(function() obj.ImageColor3 = ACCENT end)
-                        pcall(function() obj.BorderColor3 = ACCENT end)
-                        pcall(function()
-                            for _, child in ipairs(obj:GetDescendants()) do
-                                if child:IsA("TextLabel") then
-                                    child.TextColor3 = Color3.fromRGB(255, 255, 255)
-                                elseif child:IsA("ImageLabel") then
-                                    child.ImageColor3 = ACCENT
-                                end
-                            end
-                        end)
+            if button:IsA("TextButton") and string.find(string.lower(button.Text or ""), "fairwell", 1, true) then
+                matched = true
+            end
+        end)
+        if matched then return true end
+        pcall(function()
+            for _, child in ipairs(button:GetDescendants()) do
+                if child:IsA("TextLabel") or child:IsA("TextButton") then
+                    if string.find(string.lower(child.Text or ""), "fairwell", 1, true) then
+                        matched = true
+                        break
                     end
                 end
             end
         end)
+        return matched
+    end
+
+    local found = false
+    for _, root in ipairs(roots) do
+        pcall(function()
+            for _, obj in ipairs(root:GetDescendants()) do
+                if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and hasFairwellText(obj) then
+                    found = true
+                    pcall(function() obj.BackgroundColor3 = ACCENT_DARK end)
+                    pcall(function() obj.BorderColor3 = ACCENT end)
+                    pcall(function() obj.TextColor3 = Color3.fromRGB(255, 255, 255) end)
+                    pcall(function() obj.ImageColor3 = ACCENT end)
+                    pcall(function()
+                        for _, child in ipairs(obj:GetDescendants()) do
+                            if child:IsA("TextLabel") or child:IsA("TextButton") then
+                                child.TextColor3 = Color3.fromRGB(255, 255, 255)
+                                if child:IsA("TextButton") then
+                                    child.BackgroundColor3 = ACCENT_DARK
+                                    child.BorderColor3 = ACCENT
+                                end
+                            elseif child:IsA("ImageLabel") or child:IsA("ImageButton") then
+                                child.ImageColor3 = ACCENT
+                            elseif child:IsA("UIStroke") then
+                                child.Color = ACCENT
+                            end
+                        end
+                    end)
+                    pcall(function()
+                        local stroke = obj:FindFirstChildOfClass("UIStroke")
+                        if stroke then stroke.Color = ACCENT end
+                    end)
+                end
+            end
+        end)
+    end
+    if not found then
+        warn("[Fairwell] Tab was added, but its button was not found for recoloring. The MSDoors UI may use a custom tab renderer.")
     end
 end
 
