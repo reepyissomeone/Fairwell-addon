@@ -360,17 +360,20 @@ return function(tab, reloadContent)
             return bestModel, bestPart, bestDistance
         end
 
+        local highlightedModel = nil
+
         local function clearCreakHighlight()
             if antiCreakState.highlight then
                 pcall(function() antiCreakState.highlight:Destroy() end)
                 antiCreakState.highlight = nil
             end
+            highlightedModel = nil
         end
 
         local function updateCreakHighlight(model, danger)
-            if trackedModel ~= model then
+            if highlightedModel ~= model then
                 clearCreakHighlight()
-                trackedModel = model
+                highlightedModel = model
                 if model then
                     local highlight = Instance.new("Highlight")
                     highlight.Name = "FairwellAntiCreakHighlight"
