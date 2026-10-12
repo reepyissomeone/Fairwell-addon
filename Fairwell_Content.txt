@@ -1089,159 +1089,171 @@ return function(tab, reloadContent)
         end
     end
 
-    -- Private character-position experiment, restricted to the designated tester.
-    -- This moves the local character temporarily and restores its original position on disable.
-    -- It is a diagnostic only; server replication and Creak AI behavior may differ.
-    local Players = game:GetService("Players")
-    local RunService = game:GetService("RunService")
-    local localPlayer = Players.LocalPlayer
-    if localPlayer and localPlayer.Name == "FIXROBLOX_015" then
-        local experimentBox
+    -- Auto Giggle Glowstick: equips and throws a real Glowstick toward a nearby Giggle.
+    -- This uses the normal Tool activation path; it does not fire arbitrary remotes.
+    local gigglePlayers = game:GetService("Players")
+    local giggleRunService = game:GetService("RunService")
+    local gigglePlayer = gigglePlayers.LocalPlayer
+    local giggleEnv = (getgenv and getgenv()) or _G
+    if giggleEnv._FairwellAutoGiggleGlowstickState then
+        giggleEnv._FairwellAutoGiggleGlowstickState.running = false
+    end
+    local giggleState = {running = true, enabled = false}
+    giggleEnv._FairwellAutoGiggleGlowstickState = giggleState
+
+    local giggleBox
+    pcall(function()
+        giggleBox = tab:AddRightGroupbox("Giggle", "target")
+    end)
+
+    if giggleBox then
+        local giggleStatus
+        local lastGiggleThrow = 0
+        local busy = false
+        local statusText = ""
+
+        local function setGiggleStatus(message)
+            if message == statusText then return end
+            statusText = message
+            if giggleStatus then pcall(function() giggleStatus:SetText("Status: " .. message) end) end
+        end
+
         pcall(function()
-            experimentBox = tab:AddRightGroupbox("Experiments", "flask-conical")
+            giggleStatus = giggleBox:AddLabel({Text = "Status: off", DoesWrap = true})
+        end)
+        pcall(function()
+            giggleBox:AddLabel({
+                Text = "Automatically throws an available Glowstick toward a nearby detected Giggle. Requires a real Glowstick in your inventory; throws are rate-limited.",
+                DoesWrap = true
+            })
         end)
 
-        if experimentBox then
-            local positionTestEnabled = false
-            local positionStatus
-            local savedPivot = nil
-            local savedCharacter = nil
-            local testCharacter = nil
-            local testStartedAt = 0
-            local lastLogAt = 0
-            local logLines = {}
-
-            local function positionStatusText(message)
-                if positionStatus then
-                    pcall(function() positionStatus:SetText(message) end)
-                end
-            end
-
-            local function getRoot(character)
-                return character and (character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart)
-            end
-
-            local function getCreakPosition()
-                for _, obj in ipairs(workspace:GetDescendants()) do
-                    if obj:IsA("Model") and string.find(string.lower(obj.Name), "creak", 1, true) then
-                        local part = obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart", true) or obj:FindFirstChildWhichIsA("BasePart", true)
-                        if part then return part.Position end
-                    end
-                end
-                return nil
-            end
-
-            local function fmtVector(v)
-                if not v then return "not found" end
-                return string.format("%.1f, %.1f, %.1f", v.X, v.Y, v.Z)
-            end
-
-            local function logPosition(label)
-                local character = localPlayer.Character
-                local root = getRoot(character)
-                local creakPos = getCreakPosition()
-                local playerPos = root and root.Position
-                local distance = playerPos and creakPos and (playerPos - creakPos).Magnitude
-                local line = string.format("%s | player=(%s) | Creak=(%s) | distance=%s",
-                    label, fmtVector(playerPos), fmtVector(creakPos),
-                    distance and string.format("%.1f", distance) or "unknown")
-                table.insert(logLines, line)
-                while #logLines > 5 do table.remove(logLines, 1) end
-                positionStatusText(table.concat(logLines, "\n"))
-            end
-
-            pcall(function()
-                positionStatus = experimentBox:AddLabel({
-                    Text = "Position test OFF. Records character and Creak positions.",
-                    DoesWrap = true
-                })
-            end)
-
-            pcall(function()
-                experimentBox:AddLabel({
-                    Text = "Temporarily moves YOUR CHARACTER (not the camera) 500 studs upward for up to 3 seconds, then returns it. Use only in a private test; it may trigger falling/death or game anti-cheat. Toggle off to cancel and restore the saved position.",
-                    DoesWrap = true
-                })
-            end)
-
-            pcall(function()
-                experimentBox:AddButton({
-                    Text = "Record Current Positions",
-                    Func = function()
-                        logPosition("MANUAL")
-                    end
-                })
-            end)
-
-            pcall(function()
-                experimentBox:AddToggle("FairwellCharacterPositionTest", {
-                    Text = "Character Position Test",
-                    Default = false,
-                    Callback = function(enabled)
-                        positionTestEnabled = enabled == true
-                        if positionTestEnabled then
-                            local character = localPlayer.Character
-                            local root = getRoot(character)
-                            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-                            if not root or (humanoid and humanoid.Health <= 0) then
-                                positionTestEnabled = false
-                                positionStatusText("No living character/root found.")
-                                return
-                            end
-                            savedCharacter = character
-                            savedPivot = character:GetPivot()
-                            testCharacter = character
-                            testStartedAt = os.clock()
-                            lastLogAt = 0
-                            logPosition("BEFORE")
-                            local ok = pcall(function()
-                                character:PivotTo(savedPivot + Vector3.new(0, 500, 0))
-                            end)
-                            if not ok then
-                                positionTestEnabled = false
-                                positionStatusText("Character move failed.")
-                                return
-                            end
-                            logPosition("MOVED +500Y")
-                        else
-                            if savedCharacter and savedCharacter == localPlayer.Character and savedPivot then
-                                pcall(function() savedCharacter:PivotTo(savedPivot) end)
-                            end
-                            savedPivot = nil
-                            savedCharacter = nil
-                            testCharacter = nil
-                            positionStatusText("Position test OFF; attempted to restore saved character position.")
-                        end
-                    end
-                })
-            end)
-
-            task.spawn(function()
-                while task.wait(0.2) do
-                    if positionTestEnabled then
-                        if localPlayer.Character ~= testCharacter then
-                            positionTestEnabled = false
-                            savedPivot = nil
-                            savedCharacter = nil
-                            testCharacter = nil
-                            positionStatusText("Character changed/respawned; test stopped.")
-                        elseif os.clock() - testStartedAt >= 3 then
-                            if savedCharacter and savedCharacter == localPlayer.Character and savedPivot then
-                                pcall(function() savedCharacter:PivotTo(savedPivot) end)
-                            end
-                            positionTestEnabled = false
-                            savedPivot = nil
-                            savedCharacter = nil
-                            testCharacter = nil
-                            positionStatusText("3-second test complete; returned to saved position.")
-                        elseif os.clock() - lastLogAt >= 0.5 then
-                            lastLogAt = os.clock()
-                            logPosition("DURING")
-                        end
-                    end
-                end
-            end)
+        local function isGiggleModel(model)
+            if not model or not model:IsA("Model") then return false end
+            local name = string.lower(model.Name)
+            return string.find(name, "giggle", 1, true) ~= nil
+                and string.find(name, "dead", 1, true) == nil
+                and string.find(name, "corpse", 1, true) == nil
         end
+
+        local function modelAimPart(model)
+            if not model then return nil end
+            return model.PrimaryPart
+                or model:FindFirstChild("Head", true)
+                or model:FindFirstChild("HumanoidRootPart", true)
+                or model:FindFirstChildWhichIsA("BasePart", true)
+        end
+
+        local function findNearestGiggle(root)
+            local bestModel, bestPart, bestDistance
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if isGiggleModel(obj) then
+                    local part = modelAimPart(obj)
+                    if part and part:IsDescendantOf(workspace) then
+                        local distance = (part.Position - root.Position).Magnitude
+                        if distance <= 65 and (not bestDistance or distance < bestDistance) then
+                            bestModel, bestPart, bestDistance = obj, part, distance
+                        end
+                    end
+                end
+            end
+            return bestModel, bestPart, bestDistance
+        end
+
+        local function findGlowstick(character, humanoid)
+            local backpack = gigglePlayer:FindFirstChildOfClass("Backpack")
+            if character then
+                for _, item in ipairs(character:GetChildren()) do
+                    if item:IsA("Tool") and string.find(string.lower(item.Name), "glowstick", 1, true) then
+                        return item
+                    end
+                end
+            end
+            if backpack then
+                for _, item in ipairs(backpack:GetChildren()) do
+                    if item:IsA("Tool") and string.find(string.lower(item.Name), "glowstick", 1, true) then
+                        return item
+                    end
+                end
+            end
+            return nil
+        end
+
+        local function throwAtGiggle(tool, character, humanoid, targetPart)
+            if busy or not tool or not targetPart or not targetPart.Parent then return false end
+            busy = true
+            local camera = workspace.CurrentCamera
+            local oldCameraCFrame = camera and camera.CFrame
+            local oldCameraType = camera and camera.CameraType
+            local equippedByUs = tool.Parent ~= character
+            local ok, err = pcall(function()
+                if equippedByUs then humanoid:EquipTool(tool) end
+                task.wait(0.12)
+                if not tool.Parent or tool.Parent ~= character then
+                    error("Glowstick did not equip")
+                end
+                if camera then
+                    local origin = camera.CFrame.Position
+                    camera.CFrame = CFrame.lookAt(origin, targetPart.Position)
+                    giggleRunService.RenderStepped:Wait()
+                end
+                tool:Activate()
+            end)
+            -- Restore the camera promptly; the normal tool handles its throw animation.
+            if camera and oldCameraCFrame and camera.Parent then
+                pcall(function()
+                    if oldCameraType then camera.CameraType = oldCameraType end
+                    camera.CFrame = oldCameraCFrame
+                end)
+            end
+            busy = false
+            if not ok then
+                setGiggleStatus("throw attempt failed: " .. tostring(err))
+                return false
+            end
+            lastGiggleThrow = os.clock()
+            setGiggleStatus("threw Glowstick toward Giggle")
+            return true
+        end
+
+        pcall(function()
+            giggleBox:AddToggle("FairwellAutoGiggleGlowstick", {
+                Text = "Auto-throw Glowsticks at Giggles",
+                Default = false,
+                Callback = function(enabled)
+                    giggleState.enabled = enabled == true
+                    setGiggleStatus(giggleState.enabled and "searching for Giggle" or "off")
+                end
+            })
+        end)
+
+        task.spawn(function()
+            while giggleState.running do
+                task.wait(0.25)
+                if giggleState.enabled and not busy then
+                    local character = gigglePlayer.Character
+                    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                    local root = character and character:FindFirstChild("HumanoidRootPart")
+                    if not character or not humanoid or humanoid.Health <= 0 or not root then
+                        setGiggleStatus("waiting for living character")
+                    elseif os.clock() - lastGiggleThrow < 1.8 then
+                        -- Prevent repeated activation while the throw animation/item state settles.
+                    else
+                        local model, part, distance = findNearestGiggle(root)
+                        if not model or not part then
+                            setGiggleStatus("enabled; no Giggle detected within 65 studs")
+                        else
+                            local tool = findGlowstick(character, humanoid)
+                            if not tool then
+                                setGiggleStatus(string.format("Giggle %.0f studs away; no Glowstick in inventory", distance))
+                            else
+                                throwAtGiggle(tool, character, humanoid, part)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
     end
 
 
