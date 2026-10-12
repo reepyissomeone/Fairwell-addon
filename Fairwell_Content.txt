@@ -4,8 +4,13 @@
 return function(tab, reloadContent)
     if not tab then return end
 
+    local stairwellBox
+    pcall(function()
+        stairwellBox = tab:AddLeftGroupbox("Stairwell", "eye")
+    end)
+
     local espOk, espBox = pcall(function()
-        return tab:AddLeftGroupbox("Stairwell", "eye")
+        return stairwellBox
     end)
 
     if espOk and espBox then
@@ -100,7 +105,7 @@ return function(tab, reloadContent)
     end
 
     local stemOk, stemBox = pcall(function()
-        return tab:AddLeftGroupbox("Stairwell", "target")
+        return stairwellBox
     end)
 
     if stemOk and stemBox then
