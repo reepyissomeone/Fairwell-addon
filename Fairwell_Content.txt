@@ -100,150 +100,82 @@ return function(tab, reloadContent)
     end
 
     local stemOk, stemBox = pcall(function()
-        return tab:AddLeftGroupbox("STEM Auto-Pickup", "target")
+        return tab:AddLeftGroupbox("Auto kill Stem", "target")
     end)
 
     if stemOk and stemBox then
         local Players = game:GetService("Players")
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
         local player = Players.LocalPlayer
         local env = (getgenv and getgenv()) or _G
-        env._FairwellStemAutoThrow = false
+        env._FairwellAutoKillStem = false
         local statusLabel
 
         local function setStatus(message)
-            print("[Fairwell STEM] " .. message)
-            if statusLabel then
-                pcall(function() statusLabel:SetText("Status: " .. message) end)
+            print("[Fairwell Auto kill Stem] " .. message)
+            if statusLabel then pcall(function() statusLabel:SetText("Status: " .. message) end) end
+        end
+        pcall(function() statusLabel = stemBox:AddLabel({Text = "Status: idle", DoesWrap = true}) end)
+
+        local function findHeldStem()
+            local character = player.Character
+            if not character then return nil end
+            local tool = character:FindFirstChild("Stem")
+            if not tool or not tool:IsA("Tool") then return nil end
+            local handle = tool:FindFirstChild("Handle")
+            if not handle or not handle:IsA("BasePart") then return tool, nil, nil end
+            for _, item in ipairs(handle:GetDescendants()) do
+                if item.Name:match("^Stem_") then return tool, handle, item.Name end
             end
+            return tool, handle, nil
         end
 
-        pcall(function()
-            statusLabel = stemBox:AddLabel({Text = "Status: idle", DoesWrap = true})
-        end)
-
-        local function nameHasStem(instance)
-            local node = instance
-            for _ = 1, 8 do
-                if not node then break end
-                local lowerName = string.lower(node.Name)
-                -- Player-specific Stem names can include a username/display name.
-                -- Match the stable "stems" prefix instead of a particular player's name.
-                if string.find(lowerName, "stem", 1, true) then
-                    return true
-                end
-                node = node.Parent
-            end
-            return false
-        end
-
-        local function getRoot()
-            local character = player and player.Character
-            return character and character:FindFirstChild("HumanoidRootPart")
-        end
-
-        -- Find Stem-like objects first. The prompt itself often has a generic name,
-        -- so don't require the word "Stem" to appear in the prompt's ancestry.
-        local function findStemTargets()
-            local targets, seen = {}, {}
-            for _, item in ipairs(workspace:GetDescendants()) do
-                if nameHasStem(item) then
-                    local model = item:IsA("Model") and item or item:FindFirstAncestorOfClass("Model")
-                    local part = item:IsA("BasePart") and item or
-                        (model and model:FindFirstChildWhichIsA("BasePart", true)) or
-                        item:FindFirstChildWhichIsA("BasePart", true)
-                    local target = model or part
-                    if target and part and not seen[target] then
-                        seen[target] = true
-                        table.insert(targets, {object = target, part = part})
+        local function findVariant(tool, handle)
+            -- Inspect all exposed names and string values; no manual selector.
+            local roots = {tool}
+            if handle then table.insert(roots, handle) end
+            for _, root in ipairs(roots) do
+                for _, item in ipairs(root:GetDescendants()) do
+                    local candidates = {item.Name}
+                    if item:IsA("StringValue") then table.insert(candidates, item.Value) end
+                    for _, candidate in ipairs(candidates) do
+                        local lower = string.lower(tostring(candidate))
+                        for _, variant in ipairs({"Mouth", "Ear", "Eye", "Blank"}) do
+                            if string.find(lower, string.lower(variant), 1, true) then return variant end
+                        end
                     end
                 end
             end
-            return targets
+            return "Blank"
         end
 
         local function findNearbyStemPrompt()
-            local root = getRoot()
+            local character = player.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
             if not root then return nil, "character root not found" end
-
-            -- The screenshot shows live Stem entities and their remotes under
-            -- workspace.LiveEntities. Do not bind to the player-specific suffix.
-            local liveEntities = workspace:FindFirstChild("LiveEntities")
-            if liveEntities then
-                for _, entity in ipairs(liveEntities:GetChildren()) do
-                    if string.find(string.lower(entity.Name), "stems", 1, true) then
-                        local entityPart = entity:IsA("BasePart") and entity or
-                            entity:FindFirstChildWhichIsA("BasePart", true)
-                        if entityPart then
-                            local d = (root.Position - entityPart.Position).Magnitude
-                            if d <= 14 then
-                                -- Keep using the normal interaction prompt; don't fire
-                                -- AddStem/StemThrown remotes without knowing their contract.
+            local bestPrompt, bestDistance
+            for _, prompt in ipairs(workspace:GetDescendants()) do
+                if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                    local parent = prompt.Parent
+                    local part = parent and (parent:IsA("BasePart") and parent or parent:FindFirstChildWhichIsA("BasePart", true))
+                    if part then
+                        local distance = (root.Position - part.Position).Magnitude
+                        if distance <= math.max(prompt.MaxActivationDistance + 5, 12) then
+                            local node, isStem = prompt, false
+                            for _ = 1, 8 do
+                                if not node then break end
+                                if string.find(string.lower(node.Name), "stem", 1, true) then isStem = true break end
+                                node = node.Parent
+                            end
+                            if isStem and (not bestDistance or distance < bestDistance) then
+                                bestPrompt, bestDistance = prompt, distance
                             end
                         end
                     end
                 end
             end
-
-            local targets = findStemTargets()
-            if #targets == 0 then
-                return nil, "no Stem-named object found under workspace"
-            end
-
-            local bestPrompt, bestDistance
-            local allPrompts = {}
-            for _, item in ipairs(workspace:GetDescendants()) do
-                if item:IsA("ProximityPrompt") and item.Enabled then
-                    local parent = item.Parent
-                    local part = parent and (parent:IsA("BasePart") and parent or
-                        parent:FindFirstChildWhichIsA("BasePart", true))
-                    if part then
-                        local distance = (root.Position - part.Position).Magnitude
-                        if distance <= math.max(item.MaxActivationDistance + 5, 12) then
-                            table.insert(allPrompts, {prompt = item, part = part, distance = distance})
-                        end
-                    end
-                end
-            end
-
-            -- Prefer prompts inside a Stem model, but also allow a nearby generic
-            -- prompt when the Stem model uses a separate prompt/interaction object.
-            for _, entry in ipairs(allPrompts) do
-                if nameHasStem(entry.prompt) then
-                    if not bestDistance or entry.distance < bestDistance then
-                        bestPrompt, bestDistance = entry.prompt, entry.distance
-                    end
-                end
-            end
-
-            if not bestPrompt then
-                local bestTargetDistance = math.huge
-                for _, target in ipairs(targets) do
-                    local targetDistance = (root.Position - target.part.Position).Magnitude
-                    if targetDistance < bestTargetDistance then
-                        bestTargetDistance = targetDistance
-                    end
-                end
-                for _, entry in ipairs(allPrompts) do
-                    local closestTargetDistance = math.huge
-                    for _, target in ipairs(targets) do
-                        local d = (target.part.Position - entry.part.Position).Magnitude
-                        if d < closestTargetDistance then closestTargetDistance = d end
-                    end
-                    if closestTargetDistance <= 18 and
-                        (not bestDistance or entry.distance < bestDistance) then
-                        bestPrompt, bestDistance = entry.prompt, entry.distance
-                    end
-                end
-            end
-
-            if bestPrompt then
-                return bestPrompt, "prompt found: " .. bestPrompt.Name
-            end
-            return nil, "Stem found, but no nearby enabled prompt"
+            return bestPrompt, bestPrompt and "nearby Stem pickup prompt found" or "searching for Stem pickup"
         end
-
-        -- PC-only G simulation intentionally removed. On mobile, throwing must use
-        -- the game's shared action/callback, which still needs to be identified.
 
         local function activatePrompt(prompt)
             if not prompt or not prompt.Parent then return false, "prompt disappeared" end
@@ -253,186 +185,77 @@ return function(tab, reloadContent)
                 prompt:InputHoldEnd()
             end)
             if not ok then return false, tostring(err) end
-            return true, "prompt activation attempted"
-        end
-
-        local function runAutoThrow()
-            task.spawn(function()
-                setStatus("enabled; searching for Stem")
-                local lastStatus = ""
-                local lastStatusAt = 0
-                while env._FairwellStemAutoThrow do
-                    local character = player and player.Character
-                    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-                    if not humanoid or humanoid.Health <= 0 then
-                        env._FairwellStemAutoThrow = false
-                        setStatus("stopped: character unavailable/dead")
-                        break
-                    end
-
-                    local prompt, info = findNearbyStemPrompt()
-                    if info ~= lastStatus or os.clock() - lastStatusAt > 5 then
-                        setStatus(info)
-                        lastStatus, lastStatusAt = info, os.clock()
-                    end
-
-                    if prompt then
-                        local ok, result = activatePrompt(prompt)
-                        setStatus(result)
-                        -- Don't add an extra half-second after the prompt's own hold time.
-                        -- Throwing is handled separately; pickup should react as soon as
-                        -- the interaction completes.
-                        if not ok then
-                            setStatus("prompt activation failed: " .. tostring(result))
-                        end
-                        task.wait(0.12)
-                    else
-                        task.wait(0.25)
-                    end
-                end
-                if not env._FairwellStemAutoThrow then
-                    setStatus("off")
-                end
-            end)
-        end
-
-        pcall(function()
-            stemBox:AddToggle("FairwellStemAutoThrowToggle", {
-                Text = "STEM Auto-Pickup",
-                Default = false,
-                Callback = function(enabled)
-                    env._FairwellStemAutoThrow = enabled == true
-                    if env._FairwellStemAutoThrow then
-                        runAutoThrow()
-                    else
-                        setStatus("off")
-                    end
-                end
-            })
-        end)
-
-    -- Remote-based Auto-Throw: detects the equipped Stem Tool and uses its live Handle data.
-    local throwOk, throwBox = pcall(function()
-        return tab:AddLeftGroupbox("STEM FireProjectile", "target")
-    end)
-
-    if throwOk and throwBox then
-        local Players = game:GetService("Players")
-        local ReplicatedStorage = game:GetService("ReplicatedStorage")
-        local player = Players.LocalPlayer
-        local env = (getgenv and getgenv()) or _G
-        env._FairwellStemFireProjectile = false
-        local chosenVariant = "Blank"
-        local throwStatus
-
-        local function status(message)
-            if throwStatus then
-                pcall(function() throwStatus:SetText("Status: " .. message) end)
-            end
-            print("[Fairwell STEM Throw] " .. message)
-        end
-
-        pcall(function()
-            throwStatus = throwBox:AddLabel({Text = "Status: idle", DoesWrap = true})
-        end)
-
-        pcall(function()
-            throwBox:AddDropdown("FairwellStemVariant", {
-                Text = "Stem Variant",
-                Values = {"Blank", "Mouth", "Ear", "Eye"},
-                Default = 1,
-                Callback = function(value)
-                    if type(value) == "string" then
-                        chosenVariant = value
-                    end
-                end
-            })
-        end)
-
-        local function findHeldStem()
-            local character = player.Character
-            if not character then return nil end
-            local tool = character:FindFirstChild("Stem")
-            if not tool or not tool:IsA("Tool") then return nil end
-            local handle = tool:FindFirstChild("Handle")
-            if not handle or not handle:IsA("BasePart") then return nil end
-
-            for _, item in ipairs(handle:GetDescendants()) do
-                if item.Name:match("^Stem_") then
-                    return tool, handle, item.Name
-                end
-            end
-            return tool, handle, nil
+            return true, "pickup attempted"
         end
 
         local function fireHeldStem(tool, handle, identifier)
-            if not identifier then
-                return false, "held Stem identifier not found under Handle"
-            end
+            if not handle then return false, "held Stem Handle not found" end
+            if not identifier then return false, "Stem_ identifier not found under Handle" end
             local remotes = ReplicatedStorage:FindFirstChild("RemotesFolder")
             local remote = remotes and remotes:FindFirstChild("FireProjectile")
-            if not remote or not remote:IsA("RemoteEvent") then
-                return false, "FireProjectile RemoteEvent not found"
-            end
+            if not remote or not remote:IsA("RemoteEvent") then return false, "FireProjectile RemoteEvent not found" end
             local camera = workspace.CurrentCamera
             if not camera then return false, "camera unavailable" end
-
             local direction = camera.CFrame.LookVector
             local velocity = direction * 100
-            local character = player.Character
-            local props = workspace:FindFirstChild("Props")
             local exclusions = {}
+            local props = workspace:FindFirstChild("Props")
+            local character = player.Character
             if props then table.insert(exclusions, props) end
             if character then table.insert(exclusions, character) end
-
+            local variant = findVariant(tool, handle)
             local ok, err = pcall(function()
-                remote:FireServer(
-                    identifier,
-                    handle.Position,
-                    direction,
-                    velocity,
-                    "Stem",
-                    chosenVariant,
-                    exclusions
-                )
+                remote:FireServer(identifier, handle.Position, direction, velocity, "Stem", variant, exclusions)
             end)
             if not ok then return false, tostring(err) end
-            return true, "FireProjectile sent (" .. chosenVariant .. ")"
+            return true, "threw " .. variant .. " Stem"
         end
 
         pcall(function()
-            throwBox:AddToggle("FairwellStemFireProjectileToggle", {
-                Text = "Auto-Throw Held Stem",
+            stemBox:AddToggle("FairwellAutoKillStemToggle", {
+                Text = "Auto kill Stem",
                 Default = false,
                 Callback = function(enabled)
-                    env._FairwellStemFireProjectile = enabled == true
-                    if enabled then
-                        status("enabled; waiting for held Stem")
-                        task.spawn(function()
-                            local lastTool = nil
-                            while env._FairwellStemFireProjectile do
+                    env._FairwellAutoKillStem = enabled == true
+                    if not enabled then setStatus("off") return end
+                    task.spawn(function()
+                        setStatus("enabled; picking up and throwing Stems")
+                        local lastTool, lastInfo
+                        while env._FairwellAutoKillStem do
+                            local character = player.Character
+                            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                            if not humanoid or humanoid.Health <= 0 then
+                                setStatus("paused: character unavailable/dead")
+                                task.wait(0.5)
+                            else
                                 local tool, handle, identifier = findHeldStem()
-                                if tool and tool ~= lastTool then
-                                    lastTool = tool
-                                    local ok, message = fireHeldStem(tool, handle, identifier)
-                                    status(message)
-                                    if not ok then
-                                        -- Don't repeatedly retry a malformed throw every frame.
-                                        task.wait(0.5)
+                                if tool then
+                                    if tool ~= lastTool then
+                                        lastTool = tool
+                                        local ok, message = fireHeldStem(tool, handle, identifier)
+                                        setStatus(message)
+                                        task.wait(ok and 0.8 or 0.4)
+                                    else
+                                        task.wait(0.12)
                                     end
-                                elseif not tool then
+                                else
                                     lastTool = nil
+                                    local prompt, info = findNearbyStemPrompt()
+                                    if info ~= lastInfo then setStatus(info); lastInfo = info end
+                                    if prompt then
+                                        local ok, message = activatePrompt(prompt)
+                                        setStatus(ok and message or ("pickup failed: " .. message))
+                                        task.wait(0.12)
+                                    else
+                                        task.wait(0.25)
+                                    end
                                 end
-                                task.wait(0.15)
                             end
-                            status("off")
-                        end)
-                    else
-                        status("off")
-                    end
+                        end
+                        setStatus("off")
+                    end)
                 end
             })
         end)
-    end
     end
 end
