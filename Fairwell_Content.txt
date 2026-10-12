@@ -1196,8 +1196,12 @@ return function(tab, reloadContent)
             if busy or not tool or not targetPart or not targetPart.Parent then return false end
             busy = true
             local camera = workspace.CurrentCamera
+            local root = character and character:FindFirstChild("HumanoidRootPart")
             local oldCameraCFrame = camera and camera.CFrame
             local oldCameraType = camera and camera.CameraType
+            local oldAutoRotate = humanoid and humanoid.AutoRotate
+            local oldRootCFrame = root and root.CFrame
+            local lockConnection
             local ok, err = pcall(function()
                 if tool.Parent ~= character then humanoid:EquipTool(tool) end
                 task.wait(0.12)
@@ -1206,17 +1210,44 @@ return function(tab, reloadContent)
                 local remote = folder and folder:FindFirstChild("Remote")
                 if not (remote and remote:IsA("RemoteEvent")) then remote = tool:FindFirstChild("Remote", true) end
                 if not (remote and remote:IsA("RemoteEvent")) then error("Glowsticks Remote not found") end
-                if camera then camera.CameraType = Enum.CameraType.Scriptable end
+                if not root then error("HumanoidRootPart not found") end
+
+                -- Keep the character's body facing the Giggle, and keep the camera aimed
+                -- at it every render frame (not just once per throw interval).
+                humanoid.AutoRotate = false
+                local function faceTarget()
+                    if not targetPart.Parent or not root.Parent then return end
+                    local pos = root.Position
+                    local target = targetPart.Position
+                    local flatTarget = Vector3.new(target.X, pos.Y, target.Z)
+                    if (flatTarget - pos).Magnitude > 0.05 then
+                        root.CFrame = CFrame.lookAt(pos, flatTarget)
+                    end
+                    if camera then
+                        camera.CameraType = Enum.CameraType.Scriptable
+                        camera.CFrame = CFrame.lookAt(camera.CFrame.Position, target)
+                    end
+                end
+                faceTarget()
+                lockConnection = giggleRunService.RenderStepped:Connect(faceTarget)
+
                 local started, throws = os.clock(), 0
                 while giggleState.enabled and targetPart.Parent and countGlowsticks(character) > 0
                     and throws < 40 and os.clock() - started < 5 do
-                    if camera then camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetPart.Position) end
+                    faceTarget()
                     remote:FireServer()
                     throws += 1
                     task.wait(0.09)
                 end
                 setGiggleStatus("sent " .. throws .. " throw requests; Glowsticks remaining: " .. countGlowsticks(character))
             end)
+            if lockConnection then pcall(function() lockConnection:Disconnect() end) end
+            if humanoid and humanoid.Parent and oldAutoRotate ~= nil then
+                pcall(function() humanoid.AutoRotate = oldAutoRotate end)
+            end
+            if root and root.Parent and oldRootCFrame and not giggleState.enabled then
+                -- Do not snap the player back; only restore normal rotation control.
+            end
             if camera and oldCameraCFrame and camera.Parent then
                 pcall(function()
                     if oldCameraType then camera.CameraType = oldCameraType end
