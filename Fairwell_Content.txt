@@ -842,8 +842,9 @@ return function(tab, reloadContent)
         end
     end
 
-    -- Private Pivot prototype: camera-only experiment, restricted to the designated tester.
-    -- This deliberately does not teleport the character or alter collision / server-owned entity AI.
+    -- Private character-position experiment, restricted to the designated tester.
+    -- This moves the local character temporarily and restores its original position on disable.
+    -- It is a diagnostic only; server replication and Creak AI behavior may differ.
     local Players = game:GetService("Players")
     local RunService = game:GetService("RunService")
     local localPlayer = Players.LocalPlayer
@@ -854,154 +855,147 @@ return function(tab, reloadContent)
         end)
 
         if experimentBox then
-            local pivotEnabled = false
-            local pivotStatus
-            local savedCameraType, savedCameraSubject, savedCameraCFrame
-            local cameraLoopRunning = false
+            local positionTestEnabled = false
+            local positionStatus
+            local savedPivot = nil
+            local savedCharacter = nil
+            local testCharacter = nil
+            local testStartedAt = 0
+            local lastLogAt = 0
+            local logLines = {}
 
-            pcall(function()
-                pivotStatus = experimentBox:AddLabel({
-                    Text = "Pivot prototype: OFF",
-                    DoesWrap = true
-                })
-            end)
-
-            local function pivotSetStatus(message)
-                if pivotStatus then
-                    pcall(function() pivotStatus:SetText(message) end)
+            local function positionStatusText(message)
+                if positionStatus then
+                    pcall(function() positionStatus:SetText(message) end)
                 end
             end
 
-            pcall(function()
-                experimentBox:AddLabel({
-                    Text = "Camera-only prototype. Moves the view away from the character while leaving the character position and collision unchanged. This tests camera separation only; it is not the original Pivot exploit.",
-                    DoesWrap = true
-                })
-            end)
-
-            pcall(function()
-                experimentBox:AddLabel({
-                    Text = "Local freeze test: anchors Creak's parts on this client so it cannot move on your screen. This does not reliably freeze Creak for other players or stop server AI. Turn it off to restore the original Anchored states.",
-                    DoesWrap = true
-                })
-            end)
-
-            local freezeCreakEnabled = false
-            local frozenCreakModel = nil
-            local savedAnchoredStates = {}
-
-            local function restoreCreakParts()
-                for part, wasAnchored in pairs(savedAnchoredStates) do
-                    if part and part.Parent then
-                        pcall(function() part.Anchored = wasAnchored end)
-                    end
-                end
-                table.clear(savedAnchoredStates)
-                frozenCreakModel = nil
+            local function getRoot(character)
+                return character and (character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart)
             end
 
-            local function findCreakModel()
+            local function getCreakPosition()
                 for _, obj in ipairs(workspace:GetDescendants()) do
                     if obj:IsA("Model") and string.find(string.lower(obj.Name), "creak", 1, true) then
-                        if obj:FindFirstChildWhichIsA("BasePart", true) then
-                            return obj
-                        end
+                        local part = obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart", true) or obj:FindFirstChildWhichIsA("BasePart", true)
+                        if part then return part.Position end
                     end
                 end
                 return nil
             end
 
+            local function fmtVector(v)
+                if not v then return "not found" end
+                return string.format("%.1f, %.1f, %.1f", v.X, v.Y, v.Z)
+            end
+
+            local function logPosition(label)
+                local character = localPlayer.Character
+                local root = getRoot(character)
+                local creakPos = getCreakPosition()
+                local playerPos = root and root.Position
+                local distance = playerPos and creakPos and (playerPos - creakPos).Magnitude
+                local line = string.format("%s | player=(%s) | Creak=(%s) | distance=%s",
+                    label, fmtVector(playerPos), fmtVector(creakPos),
+                    distance and string.format("%.1f", distance) or "unknown")
+                table.insert(logLines, line)
+                while #logLines > 5 do table.remove(logLines, 1) end
+                positionStatusText(table.concat(logLines, "\n"))
+            end
+
             pcall(function()
-                experimentBox:AddToggle("FairwellLocalFreezeCreak", {
-                    Text = "Freeze Creak (local test)",
+                positionStatus = experimentBox:AddLabel({
+                    Text = "Position test OFF. Records character and Creak positions.",
+                    DoesWrap = true
+                })
+            end)
+
+            pcall(function()
+                experimentBox:AddLabel({
+                    Text = "Temporarily moves YOUR CHARACTER (not the camera) 500 studs upward for up to 3 seconds, then returns it. Use only in a private test; it may trigger falling/death or game anti-cheat. Toggle off to cancel and restore the saved position.",
+                    DoesWrap = true
+                })
+            end)
+
+            pcall(function()
+                experimentBox:AddButton({
+                    Text = "Record Current Positions",
+                    Func = function()
+                        logPosition("MANUAL")
+                    end
+                })
+            end)
+
+            pcall(function()
+                experimentBox:AddToggle("FairwellCharacterPositionTest", {
+                    Text = "Character Position Test",
                     Default = false,
                     Callback = function(enabled)
-                        freezeCreakEnabled = enabled == true
-                        if not freezeCreakEnabled then
-                            restoreCreakParts()
+                        positionTestEnabled = enabled == true
+                        if positionTestEnabled then
+                            local character = localPlayer.Character
+                            local root = getRoot(character)
+                            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                            if not root or (humanoid and humanoid.Health <= 0) then
+                                positionTestEnabled = false
+                                positionStatusText("No living character/root found.")
+                                return
+                            end
+                            savedCharacter = character
+                            savedPivot = character:GetPivot()
+                            testCharacter = character
+                            testStartedAt = os.clock()
+                            lastLogAt = 0
+                            logPosition("BEFORE")
+                            local ok = pcall(function()
+                                character:PivotTo(savedPivot + Vector3.new(0, 500, 0))
+                            end)
+                            if not ok then
+                                positionTestEnabled = false
+                                positionStatusText("Character move failed.")
+                                return
+                            end
+                            logPosition("MOVED +500Y")
+                        else
+                            if savedCharacter and savedCharacter == localPlayer.Character and savedPivot then
+                                pcall(function() savedCharacter:PivotTo(savedPivot) end)
+                            end
+                            savedPivot = nil
+                            savedCharacter = nil
+                            testCharacter = nil
+                            positionStatusText("Position test OFF; attempted to restore saved character position.")
                         end
                     end
                 })
             end)
 
             task.spawn(function()
-                while task.wait(0.25) do
-                    if freezeCreakEnabled then
-                        local model = findCreakModel()
-                        if model ~= frozenCreakModel then
-                            restoreCreakParts()
-                            frozenCreakModel = model
-                        end
-                        if model then
-                            for _, part in ipairs(model:GetDescendants()) do
-                                if part:IsA("BasePart") then
-                                    if savedAnchoredStates[part] == nil then
-                                        savedAnchoredStates[part] = part.Anchored
-                                    end
-                                    pcall(function()
-                                        part.AssemblyLinearVelocity = Vector3.zero
-                                        part.AssemblyAngularVelocity = Vector3.zero
-                                        part.Anchored = true
-                                    end)
-                                end
+                while task.wait(0.2) do
+                    if positionTestEnabled then
+                        if localPlayer.Character ~= testCharacter then
+                            positionTestEnabled = false
+                            savedPivot = nil
+                            savedCharacter = nil
+                            testCharacter = nil
+                            positionStatusText("Character changed/respawned; test stopped.")
+                        elseif os.clock() - testStartedAt >= 3 then
+                            if savedCharacter and savedCharacter == localPlayer.Character and savedPivot then
+                                pcall(function() savedCharacter:PivotTo(savedPivot) end)
                             end
+                            positionTestEnabled = false
+                            savedPivot = nil
+                            savedCharacter = nil
+                            testCharacter = nil
+                            positionStatusText("3-second test complete; returned to saved position.")
+                        elseif os.clock() - lastLogAt >= 0.5 then
+                            lastLogAt = os.clock()
+                            logPosition("DURING")
                         end
                     end
                 end
             end)
-
-            pcall(function()
-                experimentBox:AddToggle("FairwellCameraPivotPrototype", {
-                    Text = "Camera Pivot Prototype",
-                    Default = false,
-                    Callback = function(enabled)
-                        pivotEnabled = enabled == true
-                        local camera = workspace.CurrentCamera
-
-                        if pivotEnabled then
-                            if camera then
-                                savedCameraType = camera.CameraType
-                                savedCameraSubject = camera.CameraSubject
-                                savedCameraCFrame = camera.CFrame
-                            end
-                            pivotSetStatus("Pivot prototype: ON - camera only")
-                            if not cameraLoopRunning then
-                                cameraLoopRunning = true
-                                task.spawn(function()
-                                    while pivotEnabled do
-                                        local currentCamera = workspace.CurrentCamera
-                                        local character = localPlayer.Character
-                                        local root = character and character:FindFirstChild("HumanoidRootPart")
-                                        if currentCamera and root then
-                                            currentCamera.CameraType = Enum.CameraType.Scriptable
-                                            local focus = root.Position + Vector3.new(0, 2, 0)
-                                            local offset = Vector3.new(0, 24, 0)
-                                            currentCamera.CFrame = CFrame.lookAt(focus + offset, focus)
-                                        end
-                                        RunService.RenderStepped:Wait()
-                                    end
-
-                                    local currentCamera = workspace.CurrentCamera
-                                    if currentCamera then
-                                        currentCamera.CameraType = savedCameraType or Enum.CameraType.Custom
-                                        if savedCameraSubject and savedCameraSubject.Parent then
-                                            currentCamera.CameraSubject = savedCameraSubject
-                                        end
-                                        if savedCameraCFrame then
-                                            currentCamera.CFrame = savedCameraCFrame
-                                        end
-                                    end
-                                    cameraLoopRunning = false
-                                    pivotSetStatus("Pivot prototype: OFF - camera restored")
-                                end)
-                            end
-                        else
-                            pivotSetStatus("Pivot prototype: turning off...")
-                        end
-                    end
-                })
-            end)
         end
     end
+
 
 end
