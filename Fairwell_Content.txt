@@ -443,6 +443,9 @@ return function(tab, reloadContent)
             -- Ambush, Blitz, and A-120 may rebound, so their monitor waits for them to disappear.
             if string.find(lower, "ambush", 1, true) then return "Ambush" end
             if string.find(lower, "blitz", 1, true) then return "Blitz" end
+            -- Archives threats: Scribbles is handled conservatively like a lingering/rebound threat.
+            if string.find(lower, "scribble", 1, true) then return "Scribble" end
+            if string.find(lower, "bash", 1, true) then return "Bash" end
             if string.find(lower, "a%-?120", 1) or string.find(lower, "a120", 1, true) then return "A-120" end
             if string.find(lower, "a%-?60", 1) or string.find(lower, "a60", 1, true) then return "A-60" end
             if string.find(lower, "rush", 1, true) then return "Rush" end
@@ -555,7 +558,7 @@ return function(tab, reloadContent)
 
             local threat, threatDistance, kind = findThreat(root)
             if not threat then
-                closetStatus("searching for Rush / Ambush")
+                closetStatus("searching for rush-style threats")
                 busy = false
                 return
             end
@@ -595,11 +598,11 @@ return function(tab, reloadContent)
                         local lastSeen = os.clock()
                         local exited = false
                         local finished = false
-                        local maxDuration = (kind == "Ambush" or kind == "Blitz" or kind == "A-120") and 180 or 60
+                        local maxDuration = (kind == "Ambush" or kind == "Blitz" or kind == "A-120" or kind == "Scribble") and 180 or 60
                         local previousDistance
                         local increasingSamples = 0
                         local closestDistance = math.huge
-                        local isReboundThreat = kind == "Ambush" or kind == "Blitz" or kind == "A-120"
+                        local isReboundThreat = kind == "Ambush" or kind == "Blitz" or kind == "A-120" or kind == "Scribble"
 
                         while env._FairwellAutoCloset and (os.clock() - started) < maxDuration do
                             task.wait(0.2)
@@ -643,7 +646,7 @@ return function(tab, reloadContent)
                                 end
                             else
                                 local missingFor = os.clock() - lastSeen
-                                local grace = (kind == "Ambush" or kind == "Blitz" or kind == "A-120") and 5 or 1.2
+                                local grace = (kind == "Ambush" or kind == "Blitz" or kind == "A-120" or kind == "Scribble") and 5 or 1.2
                                 if missingFor >= grace then
                                     if not exited then
                                         triggerGetOutOfHiding()
@@ -674,7 +677,7 @@ return function(tab, reloadContent)
                 Default = false,
                 Callback = function(enabled)
                     env._FairwellAutoCloset = enabled == true
-                    closetStatus(enabled and "searching for Rush / Ambush" or "off")
+                    closetStatus(enabled and "searching for rush-style threats" or "off")
                 end
             })
         end)
@@ -688,7 +691,7 @@ return function(tab, reloadContent)
                         if threat and distance then
                             tryHide()
                         else
-                            closetStatus("searching for Rush / Ambush")
+                            closetStatus("searching for rush-style threats")
                         end
                     else
                         closetStatus("waiting for character")
