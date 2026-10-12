@@ -270,7 +270,7 @@ return function(tab, reloadContent)
         end)
     end
 
-    -- Anti Groundskeeper: detect grass more reliably and hover automatically while enabled.
+    -- Anti Groundskeeper: CFrame hover while enabled; automatically stays above detected ground.
     local hoverOk, hoverBox = pcall(function()
         return tab:AddLeftGroupbox("Anti Groundskeeper", "wind")
     end)
@@ -282,8 +282,7 @@ return function(tab, reloadContent)
         local env = (getgenv and getgenv()) or _G
         env._FairwellAntiGroundskeeper = false
         local hoverConnection
-        local hoverAttachment
-        local hoverForce
+        local characterAddedConnection
         local statusLabel
         local lastStatus
 
@@ -301,8 +300,6 @@ return function(tab, reloadContent)
 
         local function stopHover()
             if hoverConnection then hoverConnection:Disconnect(); hoverConnection = nil end
-            if hoverForce then hoverForce:Destroy(); hoverForce = nil end
-            if hoverAttachment then hoverAttachment:Destroy(); hoverAttachment = nil end
             status("off")
         end
 
@@ -316,93 +313,68 @@ return function(tab, reloadContent)
                 return
             end
 
-            hoverAttachment = Instance.new("Attachment")
-            hoverAttachment.Name = "FairwellHoverAttachment"
-            hoverAttachment.Parent = root
-
-            hoverForce = Instance.new("VectorForce")
-            hoverForce.Name = "FairwellHoverForce"
-            hoverForce.Attachment0 = hoverAttachment
-            hoverForce.RelativeTo = Enum.ActuatorRelativeTo.World
-            hoverForce.ApplyAtCenterOfMass = true
-            hoverForce.Parent = root
-
-            local hoverHeight = 2.2
             local rayParams = RaycastParams.new()
             rayParams.FilterType = Enum.RaycastFilterType.Exclude
             rayParams.FilterDescendantsInstances = {character}
+            local hoverHeight = 3.0
+            local baseY = root.Position.Y
+            local horizontalVelocity = Vector3.zero
+            local lastGroundY
 
-            local function containsGrassName(instance)
-                local node = instance
-                for _ = 1, 5 do
-                    if not node then break end
-                    if string.find(string.lower(node.Name), "grass", 1, true) then
-                        return true
-                    end
-                    node = node.Parent
-                end
-                return false
-            end
-
-            local function findNearbyGrass(rootPosition)
-                -- Some maps use a generic collision floor over a separate grass mesh.
-                for _, instance in ipairs(workspace:GetDescendants()) do
-                    if instance:IsA("BasePart") and containsGrassName(instance) then
-                        if (instance.Position - rootPosition).Magnitude <= 14 then
-                            return instance
-                        end
-                    end
-                end
-                return nil
-            end
-
-            local lastMode = ""
-            hoverConnection = RunService.Heartbeat:Connect(function()
+            hoverConnection = RunService.Heartbeat:Connect(function(dt)
                 if not env._FairwellAntiGroundskeeper then stopHover(); return end
-                if not root.Parent or not humanoid.Parent or humanoid.Health <= 0 then
-                    hoverForce.Force = Vector3.zero
+                if not character.Parent or not root.Parent or not humanoid.Parent or humanoid.Health <= 0 then
                     status("waiting for character")
                     return
                 end
 
-                local result = workspace:Raycast(root.Position, Vector3.new(0, -18, 0), rayParams)
-                local grassPart = result and result.Instance and containsGrassName(result.Instance) and result.Instance or nil
-                local material = result and result.Material and result.Material.Name or ""
-                local isGrass = grassPart ~= nil or material == "Grass" or material == "LeafyGrass"
+                -- CFrame movement bypasses the need to jump to gain clearance.
+                -- Raycast downward to maintain a consistent gap above the surface.
+                local result = workspace:Raycast(root.Position, Vector3.new(0, -22, 0), rayParams)
+                if not result then
+                    status("no ground detected")
+                    return
+                end
 
+                local material = result.Material and result.Material.Name or ""
+                local node = result.Instance
+                local grassName = false
+                for _ = 1, 5 do
+                    if not node then break end
+                    if string.find(string.lower(node.Name), "grass", 1, true) then
+                        grassName = true
+                        break
+                    end
+                    node = node.Parent
+                end
+
+                -- Also check nearby grass parts for maps with separate grass visuals.
+                local isGrass = material == "Grass" or material == "LeafyGrass" or grassName
                 if not isGrass then
-                    local nearbyGrass = findNearbyGrass(root.Position)
-                    -- Use nearby grass only when it is close to the floor under the player.
-                    if nearbyGrass and (root.Position.Y - nearbyGrass.Position.Y) < 12 then
-                        isGrass = true
+                    for _, instance in ipairs(workspace:GetDescendants()) do
+                        if instance:IsA("BasePart") and string.find(string.lower(instance.Name), "grass", 1, true)
+                            and (instance.Position - root.Position).Magnitude <= 9
+                            and math.abs(instance.Position.Y - result.Position.Y) <= 5 then
+                            isGrass = true
+                            break
+                        end
                     end
                 end
 
-                if isGrass and result then
+                if isGrass then
                     local targetY = result.Position.Y + humanoid.HipHeight + (root.Size.Y * 0.5) + hoverHeight
-                    local errorY = targetY - root.Position.Y
-                    local mass = root.AssemblyMass
-                    local correction = math.clamp(errorY * 70 - root.AssemblyLinearVelocity.Y * 16, -workspace.Gravity, workspace.Gravity * 2.5)
-                    hoverForce.Force = Vector3.new(0, mass * (workspace.Gravity + correction), 0)
-                    status("hovering above grass")
-                    lastMode = "grass"
-                elseif isGrass then
-                    -- Grass mesh may be detected even when a separate collider was hit.
-                    local ground = workspace:Raycast(root.Position, Vector3.new(0, -18, 0), rayParams)
-                    if ground then
-                        local targetY = ground.Position.Y + humanoid.HipHeight + (root.Size.Y * 0.5) + hoverHeight
-                        local errorY = targetY - root.Position.Y
-                        hoverForce.Force = Vector3.new(0, root.AssemblyMass * (workspace.Gravity + math.clamp(errorY * 70 - root.AssemblyLinearVelocity.Y * 16, -workspace.Gravity, workspace.Gravity * 2.5)), 0)
-                        status("hovering near grass")
-                    else
-                        hoverForce.Force = Vector3.zero
-                        status("searching for grass")
-                    end
-                    lastMode = "grass"
+                    local current = root.Position
+                    local alpha = math.clamp(dt * 12, 0, 1)
+                    local newY = current.Y + (targetY - current.Y) * alpha
+                    -- Preserve the character's current facing and horizontal position.
+                    character:PivotTo(CFrame.new(current.X, newY, current.Z) * (root.CFrame - root.Position))
+                    -- Cancel vertical momentum so the character doesn't fall back onto the grass.
+                    local velocity = root.AssemblyLinearVelocity
+                    root.AssemblyLinearVelocity = Vector3.new(velocity.X, 0, velocity.Z)
+                    status("CFrame hovering above grass")
+                    lastGroundY = result.Position.Y
                 else
-                    hoverForce.Force = Vector3.zero
-                    status(result and "ground detected; grass not identified" or "no ground detected")
-                    lastMode = "normal"
+                    status("ground detected; grass not identified")
                 end
             end)
         end
@@ -418,7 +390,7 @@ return function(tab, reloadContent)
             })
         end)
 
-        player.CharacterAdded:Connect(function()
+        characterAddedConnection = player.CharacterAdded:Connect(function()
             if env._FairwellAntiGroundskeeper then
                 task.wait(1)
                 startHover()
