@@ -439,8 +439,14 @@ return function(tab, reloadContent)
 
         local function threatKind(name)
             local lower = string.lower(name or "")
+            -- Rush-style threats that can be survived by entering a hiding spot.
+            -- Ambush, Blitz, and A-120 may rebound, so their monitor waits for them to disappear.
             if string.find(lower, "ambush", 1, true) then return "Ambush" end
+            if string.find(lower, "blitz", 1, true) then return "Blitz" end
+            if string.find(lower, "a%-?120", 1) or string.find(lower, "a120", 1, true) then return "A-120" end
+            if string.find(lower, "a%-?60", 1) or string.find(lower, "a60", 1, true) then return "A-60" end
             if string.find(lower, "rush", 1, true) then return "Rush" end
+            if string.find(lower, "surge", 1, true) then return "Surge" end
             return nil
         end
 
@@ -589,10 +595,14 @@ return function(tab, reloadContent)
                         local lastSeen = os.clock()
                         local exited = false
                         local finished = false
-                        local maxDuration = kind == "Ambush" and 180 or 60
+                        local maxDuration = (kind == "Ambush" or kind == "Blitz" or kind == "A-120") and 180 or 60
+                        local previousDistance
+                        local increasingSamples = 0
+                        local closestDistance = math.huge
+                        local isReboundThreat = kind == "Ambush" or kind == "Blitz" or kind == "A-120"
 
                         while env._FairwellAutoCloset and (os.clock() - started) < maxDuration do
-                            task.wait(0.25)
+                            task.wait(0.2)
 
                             local currentCharacter = player.Character
                             local currentRoot = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
@@ -604,26 +614,36 @@ return function(tab, reloadContent)
                             local liveThreat, liveDistance, liveKind = findThreat(currentRoot)
                             if liveThreat and liveKind == kind then
                                 lastSeen = os.clock()
-
-                                if kind == "Ambush" then
-                                    if not exited and liveDistance and liveDistance >= 100 then
-                                        if triggerGetOutOfHiding() then
-                                            exited = true
-                                            closetStatus("Ambush far away; outside and watching for rebounds")
-                                        else
-                                            closetStatus("Ambush far away; could not trigger exit")
-                                        end
-                                    elseif exited then
-                                        closetStatus("Ambush active; monitoring rebounds")
+                                if liveDistance then
+                                    closestDistance = math.min(closestDistance, liveDistance)
+                                    if previousDistance and liveDistance > previousDistance + 2 then
+                                        increasingSamples = increasingSamples + 1
                                     else
-                                        closetStatus("Ambush nearby; staying hidden")
+                                        increasingSamples = 0
                                     end
+                                    previousDistance = liveDistance
+                                end
+
+                                if isReboundThreat then
+                                    -- Never exit just because the entity is far away: it may rebound.
+                                    closetStatus(kind .. " active; staying hidden until it disappears")
+                                elseif not exited and liveDistance and closestDistance <= 28
+                                    and liveDistance >= 38 and increasingSamples >= 3 then
+                                    -- Confirm it passed: it got close, then moved away across multiple samples.
+                                    if triggerGetOutOfHiding() then
+                                        exited = true
+                                        closetStatus(kind .. " passed; leaving hiding spot")
+                                    else
+                                        closetStatus(kind .. " passed; exit signal unavailable")
+                                    end
+                                elseif exited then
+                                    closetStatus(kind .. " passed; encounter monitored")
                                 else
-                                    closetStatus("Rush active; staying hidden")
+                                    closetStatus(kind .. " approaching/passing; staying hidden")
                                 end
                             else
                                 local missingFor = os.clock() - lastSeen
-                                local grace = kind == "Ambush" and 5 or 1.2
+                                local grace = (kind == "Ambush" or kind == "Blitz" or kind == "A-120") and 5 or 1.2
                                 if missingFor >= grace then
                                     if not exited then
                                         triggerGetOutOfHiding()
