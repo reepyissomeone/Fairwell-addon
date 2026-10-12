@@ -76,5 +76,121 @@ return function(tab, reloadContent)
                 print("[Fairwell] Repository: " .. url)
             end
         end)
+
+    local stemOk, stemBox = pcall(function()
+        return tab:AddLeftGroupbox("STEM Auto-Throw", "target")
+    end)
+    if stemOk and stemBox then
+        addLabel(stemBox, "Automatically picks up nearby Stem prompts and presses the mobile Throw button. Stem usually needs several throws to be destroyed.")
+        addLabel(stemBox, "Stay near the Stem and keep the game visible. Toggle off if it gets stuck.")
+        
+        local Players = game:GetService("Players")
+        local ProximityPromptService = game:GetService("ProximityPromptService")
+        local LocalPlayer = Players.LocalPlayer
+        local env = (getgenv and getgenv()) or _G
+        env._FairwellStemAutoThrow = env._FairwellStemAutoThrow or false
+
+        local function isStemPrompt(prompt)
+            if not prompt or not prompt:IsA("ProximityPrompt") then return false end
+            local text = string.lower(tostring(prompt.Name) .. " " .. tostring(prompt.ActionText) .. " " .. tostring(prompt.ObjectText))
+            local node = prompt.Parent
+            for _ = 1, 5 do
+                if not node then break end
+                text = text .. " " .. string.lower(tostring(node.Name))
+                node = node.Parent
+            end
+            return string.find(text, "stem", 1, true) ~= nil
+        end
+
+        local function findThrowButton()
+            local pg = LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui")
+            if not pg then return nil end
+            for _, item in ipairs(pg:GetDescendants()) do
+                if item:IsA("GuiButton") and item.Visible then
+                    local label = string.lower(tostring(item.Name))
+                    if item:IsA("TextButton") then label = label .. " " .. string.lower(item.Text) end
+                    if string.find(label, "throw", 1, true) then
+                        return item
+                    end
+                end
+            end
+            return nil
+        end
+
+        local function findNearbyStemPrompt()
+            local character = LocalPlayer and LocalPlayer.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            if not root then return nil end
+            local best, bestDistance = nil, math.huge
+            for _, item in ipairs(workspace:GetDescendants()) do
+                if item:IsA("ProximityPrompt") and item.Enabled and isStemPrompt(item) then
+                    local parent = item.Parent
+                    local part = parent and (parent:IsA("BasePart") and parent or parent:FindFirstChildWhichIsA("BasePart", true))
+                    if part then
+                        local distance = (root.Position - part.Position).Magnitude
+                        if distance <= math.max(item.MaxActivationDistance + 3, 10) and distance < bestDistance then
+                            best, bestDistance = item, distance
+                        end
+                    end
+                end
+            end
+            return best
+        end
+
+        local function autoThrowLoop()
+            task.spawn(function()
+                print("[Fairwell STEM] Auto-Throw enabled. Looking for Stem prompts.")
+                local throwsWithoutProgress = 0
+                while env._FairwellStemAutoThrow do
+                    local character = LocalPlayer and LocalPlayer.Character
+                    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                    if not humanoid or humanoid.Health <= 0 then
+                        print("[Fairwell STEM] Stopped because the player is dead.")
+                        env._FairwellStemAutoThrow = false
+                        break
+                    end
+
+                    local prompt = findNearbyStemPrompt()
+                    if prompt then
+                        print("[Fairwell STEM] Picking up: " .. tostring(prompt.ObjectText ~= "" and prompt.ObjectText or prompt.Parent.Name))
+                        pcall(function()
+                            prompt:InputHoldBegin()
+                            task.wait(math.max(prompt.HoldDuration, 0.15))
+                            prompt:InputHoldEnd()
+                        end)
+                        task.wait(0.7)
+
+                        local throwButton = findThrowButton()
+                        if throwButton then
+                            pcall(function() throwButton:Activate() end)
+                            print("[Fairwell STEM] Pressed the on-screen Throw button.")
+                            task.wait(1.1)
+                            throwsWithoutProgress = 0
+                        else
+                            throwsWithoutProgress += 1
+                            if throwsWithoutProgress >= 4 then
+                                print("[Fairwell STEM] Couldn't find a visible Throw button. Toggle off/on after checking the mobile UI.")
+                                env._FairwellStemAutoThrow = false
+                                break
+                            end
+                            task.wait(0.6)
+                        end
+                    else
+                        task.wait(0.6)
+                    end
+                end
+                print("[Fairwell STEM] Auto-Throw stopped.")
+            end)
+        end
+
+        addButton(stemBox, "Toggle STEM Auto-Throw", function()
+            env._FairwellStemAutoThrow = not env._FairwellStemAutoThrow
+            if env._FairwellStemAutoThrow then
+                autoThrowLoop()
+            else
+                print("[Fairwell STEM] Auto-Throw disabled.")
+            end
+        end)
+    end
     end
 end
