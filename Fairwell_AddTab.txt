@@ -1,0 +1,34 @@
+-- Fairwell: Add a tab to the existing MSDoors window
+-- Does NOT create a new window.
+
+local env = (getgenv and getgenv()) or _G
+
+local Library = env.Library or env.Obsidian or env.UI_Library
+local Window = env.Window or env.MainWindow or env.MSDoorsWindow
+
+if not Window and Library then
+    Window = Library.Window
+end
+
+if not Window or type(Window.AddTab) ~= "function" then
+    warn("[Fairwell] Couldn't find the existing MSDoors window.")
+    warn("[Fairwell] No new window was created.")
+    return
+end
+
+local ok, tab = pcall(function()
+    return Window:AddTab("Fairwell", "heart")
+end)
+
+if not ok then
+    warn("[Fairwell] Could not add tab:", tab)
+    return
+end
+
+local box = tab:AddLeftGroupbox("Fairwell Heaven", "heart")
+box:AddLabel({
+    Text = "Fairwell tab successfully added!",
+    DoesWrap = true
+})
+
+print("[Fairwell] Tab added to the existing MSDoors window.")
