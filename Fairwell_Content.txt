@@ -842,27 +842,95 @@ return function(tab, reloadContent)
         end
     end
 
-    -- Private experiment notes: only display this section to the designated tester.
+    -- Private Pivot prototype: camera-only experiment, restricted to the designated tester.
+    -- This deliberately does not teleport the character or alter collision / server-owned entity AI.
     local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
     local localPlayer = Players.LocalPlayer
     if localPlayer and localPlayer.Name == "FIXROBLOX_015" then
         local experimentBox
         pcall(function()
             experimentBox = tab:AddRightGroupbox("Experiments", "flask-conical")
         end)
+
         if experimentBox then
+            local pivotEnabled = false
+            local pivotStatus
+            local savedCameraType, savedCameraSubject, savedCameraCFrame
+            local cameraLoopRunning = false
+
             pcall(function()
-                experimentBox:AddLabel({
-                    Text = "Pivot / Creak AI experiment",
+                pivotStatus = experimentBox:AddLabel({
+                    Text = "Pivot prototype: OFF",
                     DoesWrap = true
                 })
+            end)
+
+            local function pivotSetStatus(message)
+                if pivotStatus then
+                    pcall(function() pivotStatus:SetText(message) end)
+                end
+            end
+
+            pcall(function()
                 experimentBox:AddLabel({
-                    Text = "Diagnostic only: with Creak spawned, enable Pivot, move into a wall, then disable Pivot. Record whether Creak stops approaching or freezes. This panel does not automate the bypass.",
+                    Text = "Camera-only prototype. Moves the view away from the character while leaving the character position and collision unchanged. This tests camera separation only; it is not the original Pivot exploit.",
                     DoesWrap = true
+                })
+            end)
+
+            pcall(function()
+                experimentBox:AddToggle("FairwellCameraPivotPrototype", {
+                    Text = "Camera Pivot Prototype",
+                    Default = false,
+                    Callback = function(enabled)
+                        pivotEnabled = enabled == true
+                        local camera = workspace.CurrentCamera
+
+                        if pivotEnabled then
+                            if camera then
+                                savedCameraType = camera.CameraType
+                                savedCameraSubject = camera.CameraSubject
+                                savedCameraCFrame = camera.CFrame
+                            end
+                            pivotSetStatus("Pivot prototype: ON - camera only")
+                            if not cameraLoopRunning then
+                                cameraLoopRunning = true
+                                task.spawn(function()
+                                    while pivotEnabled do
+                                        local currentCamera = workspace.CurrentCamera
+                                        local character = localPlayer.Character
+                                        local root = character and character:FindFirstChild("HumanoidRootPart")
+                                        if currentCamera and root then
+                                            currentCamera.CameraType = Enum.CameraType.Scriptable
+                                            local focus = root.Position + Vector3.new(0, 2, 0)
+                                            local offset = Vector3.new(0, 24, 0)
+                                            currentCamera.CFrame = CFrame.lookAt(focus + offset, focus)
+                                        end
+                                        RunService.RenderStepped:Wait()
+                                    end
+
+                                    local currentCamera = workspace.CurrentCamera
+                                    if currentCamera then
+                                        currentCamera.CameraType = savedCameraType or Enum.CameraType.Custom
+                                        if savedCameraSubject and savedCameraSubject.Parent then
+                                            currentCamera.CameraSubject = savedCameraSubject
+                                        end
+                                        if savedCameraCFrame then
+                                            currentCamera.CFrame = savedCameraCFrame
+                                        end
+                                    end
+                                    cameraLoopRunning = false
+                                    pivotSetStatus("Pivot prototype: OFF - camera restored")
+                                end)
+                            end
+                        else
+                            pivotSetStatus("Pivot prototype: turning off...")
+                        end
+                    end
                 })
             end)
         end
     end
-
 
 end
