@@ -270,7 +270,7 @@ return function(tab, reloadContent)
         end)
     end
 
-    -- Anti Groundskeeper: keep the character slightly above ground while enabled.
+    -- Anti Groundskeeper: detect grass more reliably and hover automatically while enabled.
     local hoverOk, hoverBox = pcall(function()
         return tab:AddLeftGroupbox("Anti Groundskeeper", "wind")
     end)
@@ -285,14 +285,17 @@ return function(tab, reloadContent)
         local hoverAttachment
         local hoverForce
         local statusLabel
+        local lastStatus
 
         pcall(function()
             statusLabel = hoverBox:AddLabel({Text = "Status: off", DoesWrap = true})
         end)
 
-        local function status(text)
+        local function status(message)
+            if message == lastStatus then return end
+            lastStatus = message
             if statusLabel then
-                pcall(function() statusLabel:SetText("Status: " .. text) end)
+                pcall(function() statusLabel:SetText("Status: " .. message) end)
             end
         end
 
@@ -313,7 +316,6 @@ return function(tab, reloadContent)
                 return
             end
 
-            -- A small upward force counters gravity without launching the player.
             hoverAttachment = Instance.new("Attachment")
             hoverAttachment.Name = "FairwellHoverAttachment"
             hoverAttachment.Parent = root
@@ -326,41 +328,81 @@ return function(tab, reloadContent)
             hoverForce.Parent = root
 
             local hoverHeight = 2.2
-            local baseY = root.Position.Y
-            local lastGroundY = baseY
             local rayParams = RaycastParams.new()
             rayParams.FilterType = Enum.RaycastFilterType.Exclude
             rayParams.FilterDescendantsInstances = {character}
 
+            local function containsGrassName(instance)
+                local node = instance
+                for _ = 1, 5 do
+                    if not node then break end
+                    if string.find(string.lower(node.Name), "grass", 1, true) then
+                        return true
+                    end
+                    node = node.Parent
+                end
+                return false
+            end
+
+            local function findNearbyGrass(rootPosition)
+                -- Some maps use a generic collision floor over a separate grass mesh.
+                for _, instance in ipairs(workspace:GetDescendants()) do
+                    if instance:IsA("BasePart") and containsGrassName(instance) then
+                        if (instance.Position - rootPosition).Magnitude <= 14 then
+                            return instance
+                        end
+                    end
+                end
+                return nil
+            end
+
+            local lastMode = ""
             hoverConnection = RunService.Heartbeat:Connect(function()
                 if not env._FairwellAntiGroundskeeper then stopHover(); return end
                 if not root.Parent or not humanoid.Parent or humanoid.Health <= 0 then
+                    hoverForce.Force = Vector3.zero
                     status("waiting for character")
                     return
                 end
 
-                -- Only hover over grass-like surfaces; remain grounded elsewhere.
-                local result = workspace:Raycast(root.Position, Vector3.new(0, -12, 0), rayParams)
-                local materialName = result and result.Material and result.Material.Name or ""
-                local hitName = result and result.Instance and string.lower(result.Instance.Name) or ""
-                local grass = result and (
-                    materialName == "Grass" or materialName == "LeafyGrass"
-                    or string.find(hitName, "grass", 1, true) ~= nil
-                )
+                local result = workspace:Raycast(root.Position, Vector3.new(0, -18, 0), rayParams)
+                local grassPart = result and result.Instance and containsGrassName(result.Instance) and result.Instance or nil
+                local material = result and result.Material and result.Material.Name or ""
+                local isGrass = grassPart ~= nil or material == "Grass" or material == "LeafyGrass"
 
-                if grass then
+                if not isGrass then
+                    local nearbyGrass = findNearbyGrass(root.Position)
+                    -- Use nearby grass only when it is close to the floor under the player.
+                    if nearbyGrass and (root.Position.Y - nearbyGrass.Position.Y) < 12 then
+                        isGrass = true
+                    end
+                end
+
+                if isGrass and result then
                     local targetY = result.Position.Y + humanoid.HipHeight + (root.Size.Y * 0.5) + hoverHeight
                     local errorY = targetY - root.Position.Y
                     local mass = root.AssemblyMass
-                    hoverForce.Force = Vector3.new(
-                        0,
-                        mass * (workspace.Gravity + math.clamp(errorY * 90 - root.AssemblyLinearVelocity.Y * 18, -workspace.Gravity, workspace.Gravity * 3)),
-                        0
-                    )
+                    local correction = math.clamp(errorY * 70 - root.AssemblyLinearVelocity.Y * 16, -workspace.Gravity, workspace.Gravity * 2.5)
+                    hoverForce.Force = Vector3.new(0, mass * (workspace.Gravity + correction), 0)
                     status("hovering above grass")
+                    lastMode = "grass"
+                elseif isGrass then
+                    -- Grass mesh may be detected even when a separate collider was hit.
+                    local ground = workspace:Raycast(root.Position, Vector3.new(0, -18, 0), rayParams)
+                    if ground then
+                        local targetY = ground.Position.Y + humanoid.HipHeight + (root.Size.Y * 0.5) + hoverHeight
+                        local errorY = targetY - root.Position.Y
+                        hoverForce.Force = Vector3.new(0, root.AssemblyMass * (workspace.Gravity + math.clamp(errorY * 70 - root.AssemblyLinearVelocity.Y * 16, -workspace.Gravity, workspace.Gravity * 2.5)), 0)
+                        status("hovering near grass")
+                    else
+                        hoverForce.Force = Vector3.zero
+                        status("searching for grass")
+                    end
+                    lastMode = "grass"
                 else
                     hoverForce.Force = Vector3.zero
-                    status("standing normally")
+                    status(result and "ground detected; grass not identified" or "no ground detected")
+                    lastMode = "normal"
                 end
             end)
         end
