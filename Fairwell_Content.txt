@@ -1193,13 +1193,18 @@ return function(tab, reloadContent)
                     error("Glowstick did not equip")
                 end
                 if camera then
+                    -- Aim for several frames so the tool's client-side throw code can read it.
                     local origin = camera.CFrame.Position
-                    camera.CFrame = CFrame.lookAt(origin, targetPart.Position)
-                    giggleRunService.RenderStepped:Wait()
+                    for _ = 1, 3 do
+                        camera.CFrame = CFrame.lookAt(origin, targetPart.Position)
+                        giggleRunService.RenderStepped:Wait()
+                    end
                 end
+                -- Activate only after the tool is fully equipped and aimed.
                 tool:Activate()
+                task.wait(0.45)
             end)
-            -- Restore the camera promptly; the normal tool handles its throw animation.
+            -- Restore after the normal tool activation/throw window, not immediately.
             if camera and oldCameraCFrame and camera.Parent then
                 pcall(function()
                     if oldCameraType then camera.CameraType = oldCameraType end
