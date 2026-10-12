@@ -1,90 +1,14 @@
--- Fairwell Heaven: remotely changeable tab content
--- This file is loaded by Fairwell_AddTab.txt. It does not create a window.
+-- Fairwell Heaven DOORS features for MSDoors
+-- Remote content file. Only gameplay features are shown in this tab.
 
 return function(tab, reloadContent)
-    if not tab then
-        warn("[Fairwell] Remote content received no tab.")
-        return
-    end
-
-    local function addLabel(box, text)
-        local ok, err = pcall(function()
-            box:AddLabel({ Text = text, DoesWrap = true })
-        end)
-        if not ok then
-            warn("[Fairwell] Could not add label:", err)
-        end
-    end
-
-    local function addButton(box, text, callback)
-        local ok = pcall(function()
-            box:AddButton({
-                Text = text,
-                Func = callback
-            })
-        end)
-        if not ok then
-            pcall(function()
-                box:AddButton(text, callback)
-            end)
-        end
-    end
-
-    local infoOk, info = pcall(function()
-        return tab:AddLeftGroupbox("Fairwell Heaven - Info", "info")
-    end)
-    if infoOk and info then
-        addLabel(info, "Fairwell Heaven Addon")
-        addLabel(info, "Version: 1.1.0")
-        addLabel(info, "Purpose: extra Fairwell features for MSDoors.")
-        addLabel(info, "This addon adds to the existing MSDoors window; it does not create a second window.")
-        addLabel(info, "Credits: Reepy Walson — concept, Fairwell character, and project direction.")
-        addLabel(info, "Addon code and integration: Fairwell Heaven project.")
-        addLabel(info, "Repository: github.com/reepyissomeone/Fairwell-addon")
-        addLabel(info, "Remote content is fetched from the public repository when this addon starts or is reloaded.")
-    end
-
-    local remoteOk, remote = pcall(function()
-        return tab:AddLeftGroupbox("Fairwell - Remote Content", "refresh-cw")
-    end)
-    if remoteOk and remote then
-        addLabel(remote, "Content source: Fairwell_Content.txt on GitHub.")
-        addLabel(remote, "Reloading rebuilds this tab's content. Changes appear after a successful reload.")
-        if type(reloadContent) == "function" then
-            addButton(remote, "Reload Fairwell Content", function()
-                reloadContent()
-            end)
-        else
-            addLabel(remote, "Reload callback unavailable. Re-run the Fairwell addon to fetch updates.")
-        end
-    end
-
-    local toolsOk, toolsBox = pcall(function()
-        return tab:AddLeftGroupbox("Fairwell - Addon Tools", "wrench")
-    end)
-    if toolsOk and toolsBox then
-        addLabel(toolsBox, "These are Fairwell addon controls, not replacements for MSDoors features.")
-        addButton(toolsBox, "Print Addon Status", function()
-            print("[Fairwell] Addon is running. Remote content version: 1.1.0")
-        end)
-        addButton(toolsBox, "Copy Repository URL", function()
-            local url = "https://github.com/reepyissomeone/Fairwell-addon"
-            if type(setclipboard) == "function" then
-                setclipboard(url)
-                print("[Fairwell] Repository URL copied.")
-            else
-                print("[Fairwell] Repository: " .. url)
-            end
-        end)
-
-    end
+    if not tab then return end
 
     local espOk, espBox = pcall(function()
         return tab:AddLeftGroupbox("STEM ESP", "eye")
     end)
+
     if espOk and espBox then
-        addLabel(espBox, "Highlights visible Stem objects and labels them so they are easier to spot on mobile.")
-        local RunService = game:GetService("RunService")
         local espEnabled = false
         local espFolder = Instance.new("Folder")
         espFolder.Name = "FairwellStemESP"
@@ -96,7 +20,7 @@ return function(tab, reloadContent)
             end
         end
 
-        local function nameLooksLikeStem(instance)
+        local function stemRelated(instance)
             local node = instance
             for _ = 1, 5 do
                 if not node then break end
@@ -108,84 +32,68 @@ return function(tab, reloadContent)
             return false
         end
 
-        local function attachHighlight(target)
-            if not target or target == workspace or not nameLooksLikeStem(target) then return end
-            local model = target:IsA("Model") and target or target:FindFirstAncestorOfClass("Model")
-            local adornee = model or (target:IsA("BasePart") and target or nil)
-            if not adornee then return end
-            local key = "ESP_" .. adornee:GetDebugId()
-            if espFolder:FindFirstChild(key) then return end
-
-            local holder = Instance.new("Folder")
-            holder.Name = key
-            holder.Parent = espFolder
-
-            local highlight = Instance.new("Highlight")
-            highlight.Name = "StemHighlight"
-            highlight.Adornee = adornee
-            highlight.FillTransparency = 0.55
-            highlight.OutlineTransparency = 0
-            highlight.FillColor = Color3.fromRGB(255, 80, 80)
-            highlight.OutlineColor = Color3.fromRGB(255, 230, 80)
-            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            highlight.Parent = holder
-
-            local part = adornee:IsA("BasePart") and adornee or adornee:FindFirstChildWhichIsA("BasePart", true)
-            if part then
-                local billboard = Instance.new("BillboardGui")
-                billboard.Name = "StemLabel"
-                billboard.Adornee = part
-                billboard.AlwaysOnTop = true
-                billboard.Size = UDim2.fromOffset(150, 36)
-                billboard.StudsOffset = Vector3.new(0, 2.5, 0)
-                billboard.Parent = holder
-
-                local label = Instance.new("TextLabel")
-                label.BackgroundTransparency = 1
-                label.Size = UDim2.fromScale(1, 1)
-                label.Text = "STEM"
-                label.TextColor3 = Color3.fromRGB(255, 230, 80)
-                label.TextStrokeTransparency = 0
-                label.TextScaled = true
-                label.Font = Enum.Font.GothamBold
-                label.Parent = billboard
-            end
-        end
-
-        local function scanForStems()
+        local function scan()
             clearESP()
+            local seen = {}
             for _, instance in ipairs(workspace:GetDescendants()) do
-                if nameLooksLikeStem(instance) then
-                    attachHighlight(instance)
+                if stemRelated(instance) then
+                    local target = instance:IsA("Model") and instance or instance:FindFirstAncestorOfClass("Model")
+                    target = target or (instance:IsA("BasePart") and instance or nil)
+                    if target and not seen[target] then
+                        seen[target] = true
+                        local holder = Instance.new("Folder")
+                        holder.Name = "StemESPItem"
+                        holder.Parent = espFolder
+
+                        local highlight = Instance.new("Highlight")
+                        highlight.Adornee = target
+                        highlight.FillColor = Color3.fromRGB(255, 70, 70)
+                        highlight.OutlineColor = Color3.fromRGB(255, 230, 70)
+                        highlight.FillTransparency = 0.55
+                        highlight.OutlineTransparency = 0
+                        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        highlight.Parent = holder
+
+                        local part = target:IsA("BasePart") and target or target:FindFirstChildWhichIsA("BasePart", true)
+                        if part then
+                            local labelGui = Instance.new("BillboardGui")
+                            labelGui.Name = "StemLabel"
+                            labelGui.Adornee = part
+                            labelGui.AlwaysOnTop = true
+                            labelGui.Size = UDim2.fromOffset(110, 30)
+                            labelGui.StudsOffset = Vector3.new(0, 2.5, 0)
+                            labelGui.Parent = holder
+
+                            local label = Instance.new("TextLabel")
+                            label.BackgroundTransparency = 1
+                            label.Size = UDim2.fromScale(1, 1)
+                            label.Text = "STEM"
+                            label.TextColor3 = Color3.fromRGB(255, 230, 70)
+                            label.TextStrokeTransparency = 0
+                            label.TextScaled = true
+                            label.Font = Enum.Font.GothamBold
+                            label.Parent = labelGui
+                        end
+                    end
                 end
             end
         end
 
-        local function setESP(enabled)
-            espEnabled = enabled
-            clearESP()
-            if not enabled then return end
-            scanForStems()
-        end
-
-        local toggleESPok = pcall(function()
+        pcall(function()
             espBox:AddToggle("FairwellStemESPToggle", {
                 Text = "STEM ESP",
                 Default = false,
                 Callback = function(enabled)
-                    setESP(enabled == true)
+                    espEnabled = enabled == true
+                    clearESP()
+                    if espEnabled then scan() end
                 end
             })
         end)
-        if not toggleESPok then
-            addLabel(espBox, "This MSDoors UI build did not accept the ESP toggle.")
-        end
 
         task.spawn(function()
             while espFolder.Parent do
-                if espEnabled then
-                    scanForStems()
-                end
+                if espEnabled then scan() end
                 task.wait(2)
             end
         end)
@@ -194,16 +102,16 @@ return function(tab, reloadContent)
     local stemOk, stemBox = pcall(function()
         return tab:AddLeftGroupbox("STEM Auto-Throw", "target")
     end)
+
     if stemOk and stemBox then
-        addLabel(stemBox, "Enable the toggle to press G repeatedly while a Stem is equipped.")
         local Players = game:GetService("Players")
         local VirtualInputManager = game:GetService("VirtualInputManager")
-        local LocalPlayer = Players.LocalPlayer
+        local player = Players.LocalPlayer
         local env = (getgenv and getgenv()) or _G
         env._FairwellStemAutoThrow = false
 
         local function hasEquippedStem()
-            local character = LocalPlayer and LocalPlayer.Character
+            local character = player and player.Character
             if not character then return false end
             for _, item in ipairs(character:GetChildren()) do
                 if item:IsA("Tool") and string.find(string.lower(item.Name), "stem", 1, true) then
@@ -213,10 +121,10 @@ return function(tab, reloadContent)
             return false
         end
 
-        local function startStemLoop()
+        local function runAutoThrow()
             task.spawn(function()
                 while env._FairwellStemAutoThrow do
-                    local character = LocalPlayer and LocalPlayer.Character
+                    local character = player and player.Character
                     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
                     if not humanoid or humanoid.Health <= 0 then
                         env._FairwellStemAutoThrow = false
@@ -236,20 +144,15 @@ return function(tab, reloadContent)
             end)
         end
 
-        local toggleOk = pcall(function()
+        pcall(function()
             stemBox:AddToggle("FairwellStemAutoThrowToggle", {
                 Text = "STEM Auto-Throw",
                 Default = false,
                 Callback = function(enabled)
                     env._FairwellStemAutoThrow = enabled == true
-                    if env._FairwellStemAutoThrow then
-                        startStemLoop()
-                    end
+                    if env._FairwellStemAutoThrow then runAutoThrow() end
                 end
             })
         end)
-        if not toggleOk then
-            addLabel(stemBox, "This MSDoors UI build did not accept the toggle control.")
-        end
     end
 end
