@@ -77,6 +77,8 @@ return function(tab, reloadContent)
             end
         end)
 
+    end
+
     local stemOk, stemBox = pcall(function()
         return tab:AddLeftGroupbox("STEM Auto-Throw", "target")
     end)
