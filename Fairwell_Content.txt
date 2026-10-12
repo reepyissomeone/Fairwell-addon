@@ -1,0 +1,80 @@
+-- Fairwell Heaven: remotely changeable tab content
+-- This file is loaded by Fairwell_AddTab.txt. It does not create a window.
+
+return function(tab, reloadContent)
+    if not tab then
+        warn("[Fairwell] Remote content received no tab.")
+        return
+    end
+
+    local function addLabel(box, text)
+        local ok, err = pcall(function()
+            box:AddLabel({ Text = text, DoesWrap = true })
+        end)
+        if not ok then
+            warn("[Fairwell] Could not add label:", err)
+        end
+    end
+
+    local function addButton(box, text, callback)
+        local ok = pcall(function()
+            box:AddButton({
+                Text = text,
+                Func = callback
+            })
+        end)
+        if not ok then
+            pcall(function()
+                box:AddButton(text, callback)
+            end)
+        end
+    end
+
+    local infoOk, info = pcall(function()
+        return tab:AddLeftGroupbox("Fairwell Heaven - Info", "info")
+    end)
+    if infoOk and info then
+        addLabel(info, "Fairwell Heaven Addon")
+        addLabel(info, "Version: 1.1.0")
+        addLabel(info, "Purpose: extra Fairwell features for MSDoors.")
+        addLabel(info, "This addon adds to the existing MSDoors window; it does not create a second window.")
+        addLabel(info, "Credits: Reepy Walson — concept, Fairwell character, and project direction.")
+        addLabel(info, "Addon code and integration: Fairwell Heaven project.")
+        addLabel(info, "Repository: github.com/reepyissomeone/Fairwell-addon")
+        addLabel(info, "Remote content is fetched from the public repository when this addon starts or is reloaded.")
+    end
+
+    local remoteOk, remote = pcall(function()
+        return tab:AddLeftGroupbox("Fairwell - Remote Content", "refresh-cw")
+    end)
+    if remoteOk and remote then
+        addLabel(remote, "Content source: Fairwell_Content.txt on GitHub.")
+        addLabel(remote, "Reloading rebuilds this tab's content. Changes appear after a successful reload.")
+        if type(reloadContent) == "function" then
+            addButton(remote, "Reload Fairwell Content", function()
+                reloadContent()
+            end)
+        else
+            addLabel(remote, "Reload callback unavailable. Re-run the Fairwell addon to fetch updates.")
+        end
+    end
+
+    local toolsOk, toolsBox = pcall(function()
+        return tab:AddLeftGroupbox("Fairwell - Addon Tools", "wrench")
+    end)
+    if toolsOk and toolsBox then
+        addLabel(toolsBox, "These are Fairwell addon controls, not replacements for MSDoors features.")
+        addButton(toolsBox, "Print Addon Status", function()
+            print("[Fairwell] Addon is running. Remote content version: 1.1.0")
+        end)
+        addButton(toolsBox, "Copy Repository URL", function()
+            local url = "https://github.com/reepyissomeone/Fairwell-addon"
+            if type(setclipboard) == "function" then
+                setclipboard(url)
+                print("[Fairwell] Repository URL copied.")
+            else
+                print("[Fairwell] Repository: " .. url)
+            end
+        end)
+    end
+end
