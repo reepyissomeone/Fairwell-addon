@@ -294,7 +294,7 @@ return function(tab, reloadContent)
 
     local antiCreakBox
     pcall(function()
-        antiCreakBox = tab:AddLeftGroupbox("Anti-Creak", "shield-check")
+        antiCreakBox = stairwellBox
     end)
 
     if antiCreakBox then
@@ -1103,7 +1103,7 @@ return function(tab, reloadContent)
 
     local giggleBox
     pcall(function()
-        giggleBox = tab:AddRightGroupbox("Giggle", "target")
+        giggleBox = tab:AddRightGroupbox("The Mines", "target")
     end)
 
     if giggleBox then
@@ -1123,7 +1123,7 @@ return function(tab, reloadContent)
         end)
         pcall(function()
             giggleBox:AddLabel({
-                Text = "Automatically throws an available Glowstick toward a nearby detected Giggle. Requires a real Glowstick in your inventory; throws are rate-limited.",
+                Text = "Locks the camera onto a nearby Giggle and rapidly throws Glowsticks. Stops when inventory is empty, target disappears, or the safety limit is reached.",
                 DoesWrap = true
             })
         end)
@@ -1179,37 +1179,44 @@ return function(tab, reloadContent)
             return nil
         end
 
+        local function countGlowsticks(character)
+            local count = 0
+            local backpack = gigglePlayer:FindFirstChildOfClass("Backpack")
+            for _, container in ipairs({character, backpack}) do
+                if container then
+                    for _, item in ipairs(container:GetChildren()) do
+                        if item:IsA("Tool") and string.find(string.lower(item.Name), "glowstick", 1, true) then count += 1 end
+                    end
+                end
+            end
+            return count
+        end
+
         local function throwAtGiggle(tool, character, humanoid, targetPart)
             if busy or not tool or not targetPart or not targetPart.Parent then return false end
             busy = true
             local camera = workspace.CurrentCamera
             local oldCameraCFrame = camera and camera.CFrame
             local oldCameraType = camera and camera.CameraType
-            local equippedByUs = tool.Parent ~= character
             local ok, err = pcall(function()
-                if equippedByUs then humanoid:EquipTool(tool) end
+                if tool.Parent ~= character then humanoid:EquipTool(tool) end
                 task.wait(0.12)
-                if not tool.Parent or tool.Parent ~= character then
-                    error("Glowstick did not equip")
+                if tool.Parent ~= character then error("Glowstick did not equip") end
+                local folder = character:FindFirstChild("Glowsticks")
+                local remote = folder and folder:FindFirstChild("Remote")
+                if not (remote and remote:IsA("RemoteEvent")) then remote = tool:FindFirstChild("Remote", true) end
+                if not (remote and remote:IsA("RemoteEvent")) then error("Glowsticks Remote not found") end
+                if camera then camera.CameraType = Enum.CameraType.Scriptable end
+                local started, throws = os.clock(), 0
+                while giggleState.enabled and targetPart.Parent and countGlowsticks(character) > 0
+                    and throws < 40 and os.clock() - started < 5 do
+                    if camera then camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetPart.Position) end
+                    remote:FireServer()
+                    throws += 1
+                    task.wait(0.09)
                 end
-                -- The Glowsticks tool exposes its throw Remote on the equipped character.
-                -- Use the same server action as the working manual/Cobalt snippet.
-                local glowsticksFolder = character:FindFirstChild("Glowsticks")
-                local throwRemote = glowsticksFolder and glowsticksFolder:FindFirstChild("Remote")
-                if throwRemote and throwRemote:IsA("RemoteEvent") then
-                    throwRemote:FireServer()
-                else
-                    -- Fallback for versions where the Remote is parented under the Tool.
-                    local toolRemote = tool:FindFirstChild("Remote", true)
-                    if toolRemote and toolRemote:IsA("RemoteEvent") then
-                        toolRemote:FireServer()
-                    else
-                        tool:Activate()
-                    end
-                end
-                task.wait(0.45)
+                setGiggleStatus("sent " .. throws .. " throw requests; Glowsticks remaining: " .. countGlowsticks(character))
             end)
-            -- Restore after the normal tool activation/throw window, not immediately.
             if camera and oldCameraCFrame and camera.Parent then
                 pcall(function()
                     if oldCameraType then camera.CameraType = oldCameraType end
@@ -1217,12 +1224,8 @@ return function(tab, reloadContent)
                 end)
             end
             busy = false
-            if not ok then
-                setGiggleStatus("throw attempt failed: " .. tostring(err))
-                return false
-            end
+            if not ok then setGiggleStatus("throw attempt failed: " .. tostring(err)); return false end
             lastGiggleThrow = os.clock()
-            setGiggleStatus("threw Glowstick toward Giggle")
             return true
         end
 
