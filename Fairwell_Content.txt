@@ -514,13 +514,11 @@ return function(tab, reloadContent)
         end
 
         local function triggerGetOutOfHiding()
-            -- Fire the game's local GetOutOfHiding listeners when Hide's closet check
-            -- is needed. This uses the executor-provided firesignal API if available.
+            -- Fire the local GetOutOfHiding listeners if the executor exposes firesignal.
             if not getOutEvent then return false end
-            local signalFire = firesignal
-            if type(signalFire) ~= "function" then return false end
             local ok = pcall(function()
-                signalFire(getOutEvent.OnClientEvent)
+                if type(firesignal) ~= "function" then error("firesignal unavailable") end
+                firesignal(getOutEvent.OnClientEvent)
             end)
             return ok
         end
@@ -576,19 +574,41 @@ return function(tab, reloadContent)
                 end)
                 if ok then
                     closetStatus("used hiding ProximityPrompt")
-                    -- While in a hiding spot, periodically trigger the local get-out
-                    -- handler so Hide's forced-exit mechanic can be handled.
+                    -- Stay hidden while the threat is active. Rush is considered gone
+                    -- after a short disappearance; Ambush gets a longer grace period because
+                    -- it can rebound and return several times.
                     task.spawn(function()
+                        local absentSince = nil
+                        local maxWait = kind == "Ambush" and 30 or 18
                         local started = os.clock()
-                        while env._FairwellAutoCloset and os.clock() - started < 8 do
-                            task.wait(0.6)
+                        local exited = false
+                        while env._FairwellAutoCloset and os.clock() - started < maxWait do
+                            task.wait(0.25)
                             local currentCharacter = player.Character
                             local currentRoot = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
-                            if not currentRoot or not prompt.Parent then break end
-                            if triggerGetOutOfHiding() then
-                                closetStatus("triggered GetOutOfHiding")
-                                break
+                            local currentHumanoid = currentCharacter and currentCharacter:FindFirstChildOfClass("Humanoid")
+                            if not currentRoot or not currentHumanoid or currentHumanoid.Health <= 0 then break end
+
+                            local stillThere = findThreat(currentRoot)
+                            if stillThere then
+                                absentSince = nil
+                                closetStatus(kind .. " still active; staying hidden")
+                            else
+                                absentSince = absentSince or os.clock()
+                                local grace = kind == "Ambush" and 2.8 or 0.9
+                                if os.clock() - absentSince >= grace then
+                                    if triggerGetOutOfHiding() then
+                                        closetStatus(kind .. " despawned; exiting hiding spot")
+                                    else
+                                        closetStatus(kind .. " despawned; get-out signal unavailable")
+                                    end
+                                    exited = true
+                                    break
+                                end
                             end
+                        end
+                        if not exited and env._FairwellAutoCloset then
+                            closetStatus(kind .. " wait ended; staying safe")
                         end
                     end)
                 else
