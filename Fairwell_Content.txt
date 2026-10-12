@@ -194,7 +194,7 @@ return function(tab, reloadContent)
             if not prompt or not prompt.Parent then return false, "prompt disappeared" end
             local ok, err = pcall(function()
                 prompt:InputHoldBegin()
-                task.wait(math.max(prompt.HoldDuration, 0.1) + 0.1)
+                task.wait(math.max(prompt.HoldDuration, 0.02) + 0.02)
                 prompt:InputHoldEnd()
             end)
             if not ok then return false, tostring(err) end
@@ -240,14 +240,14 @@ return function(tab, reloadContent)
                             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
                             if not humanoid or humanoid.Health <= 0 then
                                 setStatus("paused: character unavailable/dead")
-                                task.wait(0.5)
+                                task.wait(0.25)
                             else
                                 local tool, handle, identifier = findHeldStem()
                                 if tool and handle and identifier and identifier ~= lastIdentifier then
                                     local ok, message = fireHeldStem(tool, handle, identifier)
                                     setStatus(ok and message or ("throw failed: " .. message))
                                     if ok then lastIdentifier = identifier end
-                                    task.wait(ok and 0.65 or 0.35)
+                                    task.wait(ok and 0.08 or 0.15)
                                 else
                                     -- If no usable held Stem is available, seek and pick one up.
                                     if not tool or not handle or not identifier then lastIdentifier = nil end
@@ -256,9 +256,9 @@ return function(tab, reloadContent)
                                     if prompt then
                                         local ok, message = activatePrompt(prompt)
                                         setStatus(ok and message or ("pickup failed: " .. message))
-                                        task.wait(0.2)
+                                        task.wait(0.04)
                                     else
-                                        task.wait(0.25)
+                                        task.wait(0.08)
                                     end
                                 end
                             end
