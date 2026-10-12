@@ -79,6 +79,118 @@ return function(tab, reloadContent)
 
     end
 
+    local espOk, espBox = pcall(function()
+        return tab:AddLeftGroupbox("STEM ESP", "eye")
+    end)
+    if espOk and espBox then
+        addLabel(espBox, "Highlights visible Stem objects and labels them so they are easier to spot on mobile.")
+        local RunService = game:GetService("RunService")
+        local espEnabled = false
+        local espFolder = Instance.new("Folder")
+        espFolder.Name = "FairwellStemESP"
+        espFolder.Parent = game:GetService("CoreGui")
+
+        local function clearESP()
+            for _, child in ipairs(espFolder:GetChildren()) do
+                child:Destroy()
+            end
+        end
+
+        local function nameLooksLikeStem(instance)
+            local node = instance
+            for _ = 1, 5 do
+                if not node then break end
+                if string.find(string.lower(node.Name), "stem", 1, true) then
+                    return true
+                end
+                node = node.Parent
+            end
+            return false
+        end
+
+        local function attachHighlight(target)
+            if not target or target == workspace or not nameLooksLikeStem(target) then return end
+            local model = target:IsA("Model") and target or target:FindFirstAncestorOfClass("Model")
+            local adornee = model or (target:IsA("BasePart") and target or nil)
+            if not adornee then return end
+            local key = "ESP_" .. adornee:GetDebugId()
+            if espFolder:FindFirstChild(key) then return end
+
+            local holder = Instance.new("Folder")
+            holder.Name = key
+            holder.Parent = espFolder
+
+            local highlight = Instance.new("Highlight")
+            highlight.Name = "StemHighlight"
+            highlight.Adornee = adornee
+            highlight.FillTransparency = 0.55
+            highlight.OutlineTransparency = 0
+            highlight.FillColor = Color3.fromRGB(255, 80, 80)
+            highlight.OutlineColor = Color3.fromRGB(255, 230, 80)
+            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            highlight.Parent = holder
+
+            local part = adornee:IsA("BasePart") and adornee or adornee:FindFirstChildWhichIsA("BasePart", true)
+            if part then
+                local billboard = Instance.new("BillboardGui")
+                billboard.Name = "StemLabel"
+                billboard.Adornee = part
+                billboard.AlwaysOnTop = true
+                billboard.Size = UDim2.fromOffset(150, 36)
+                billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+                billboard.Parent = holder
+
+                local label = Instance.new("TextLabel")
+                label.BackgroundTransparency = 1
+                label.Size = UDim2.fromScale(1, 1)
+                label.Text = "STEM"
+                label.TextColor3 = Color3.fromRGB(255, 230, 80)
+                label.TextStrokeTransparency = 0
+                label.TextScaled = true
+                label.Font = Enum.Font.GothamBold
+                label.Parent = billboard
+            end
+        end
+
+        local function scanForStems()
+            clearESP()
+            for _, instance in ipairs(workspace:GetDescendants()) do
+                if nameLooksLikeStem(instance) then
+                    attachHighlight(instance)
+                end
+            end
+        end
+
+        local function setESP(enabled)
+            espEnabled = enabled
+            clearESP()
+            if not enabled then return end
+            scanForStems()
+        end
+
+        local toggleESPok = pcall(function()
+            espBox:AddToggle("FairwellStemESPToggle", {
+                Text = "STEM ESP",
+                Default = false,
+                Callback = function(enabled)
+                    setESP(enabled == true)
+                end
+            })
+        end)
+        if not toggleESPok then
+            addLabel(espBox, "This MSDoors UI build did not accept the ESP toggle.")
+        end
+
+        task.spawn(function()
+            while espFolder.Parent do
+                if espEnabled then
+                    scanForStems()
+                end
+                task.wait(2)
+            end
+        end)
+    end
+
     local stemOk, stemBox = pcall(function()
         return tab:AddLeftGroupbox("STEM Auto-Throw", "target")
     end)
