@@ -704,11 +704,7 @@ return function(tab, reloadContent)
 
 
     -- Friendly Entities experiment: client-side diagnostics only.
-    -- This intentionally does not alter shared/server-owned entity AI.
-    local friendlyPlayers = game:GetService("Players")
-    local friendlyRunService = game:GetService("RunService")
-    local friendlyLocalPlayer = friendlyPlayers.LocalPlayer
-
+    -- Noise is an MSDoors entity/feature, independent of Pivot.
     if friendlyLocalPlayer and friendlyLocalPlayer.Name == "FIXROBLOX_015" then
         local friendlyBox
         pcall(function()
@@ -718,7 +714,11 @@ return function(tab, reloadContent)
         if friendlyBox then
             local friendlyEnabled = false
             local friendlyStatus
-            local friendlyToggle
+            local trackedCreak = nil
+            local creakLastPosition = nil
+            local creakStillSince = nil
+            local lastReport = 0
+            local notifiedFrozen = false
 
             pcall(function()
                 friendlyStatus = friendlyBox:AddLabel({
@@ -729,100 +729,113 @@ return function(tab, reloadContent)
 
             local function setFriendlyStatus(message)
                 if friendlyStatus then
-                    pcall(function()
-                        friendlyStatus:SetText(message)
-                    end)
+                    pcall(function() friendlyStatus:SetText(message) end)
                 end
             end
 
             pcall(function()
                 friendlyBox:AddLabel({
-                    Text = "Experimental client-side monitor for Creak and Noise. It records detection and Creak movement; it does not freeze, teleport, or change shared AI.",
+                    Text = "Client-side diagnostics for the MSDoors Creak and Noise entities. Creak is considered stationary only after its tracked position stays unchanged for 8 seconds. This monitor does not modify entity AI.",
                     DoesWrap = true
                 })
             end)
 
             pcall(function()
-                friendlyToggle = friendlyBox:AddToggle("FairwellFriendlyEntities", {
+                friendlyBox:AddToggle("FairwellFriendlyEntities", {
                     Text = "Monitor Friendly Entities",
                     Default = false,
                     Callback = function(enabled)
                         friendlyEnabled = enabled == true
-                        setFriendlyStatus(friendlyEnabled and "Monitoring for Creak / Noise..." or "Off - waiting for activation")
+                        trackedCreak = nil
+                        creakLastPosition = nil
+                        creakStillSince = nil
+                        notifiedFrozen = false
+                        setFriendlyStatus(friendlyEnabled and "Scanning workspace for MSDoors Creak and Noise..." or "Off - waiting for activation")
                     end
                 })
             end)
 
-            task.spawn(function()
-                local lastCreakPosition = nil
-                local lastCreakMovedAt = 0
-                local lastReport = 0
-                local wasCreakFrozen = false
+            local function getEntityPart(model)
+                if not model or not model:IsA("Model") then return nil end
+                return model.PrimaryPart
+                    or model:FindFirstChild("HumanoidRootPart", true)
+                    or model:FindFirstChildWhichIsA("BasePart", true)
+            end
 
+            task.spawn(function()
                 while task.wait(0.5) do
                     if friendlyEnabled then
-                        local creakFound, noiseFound = false, false
-                        local frozenNow = false
                         local now = os.clock()
+                        local creakModel, creakPart
+                        local noiseFound = false
+                        local character = friendlyLocalPlayer.Character
+                        local root = character and character:FindFirstChild("HumanoidRootPart")
 
+                        -- Look for named MSDoors entity models. Noise detection is independent of Pivot state.
                         for _, obj in ipairs(workspace:GetDescendants()) do
                             if obj:IsA("Model") then
-                                local lowerName = string.lower(obj.Name)
-                                local isCreak = string.find(lowerName, "creak", 1, true) ~= nil
-                                local isNoise = string.find(lowerName, "noise", 1, true) ~= nil
-
-                                if isCreak or isNoise then
-                                    local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)
-                                    if part then
-                                        local character = friendlyLocalPlayer.Character
-                                        local root = character and character:FindFirstChild("HumanoidRootPart")
-                                        local nearby = not root or (part.Position - root.Position).Magnitude <= 300
-
-                                        if nearby then
-                                            if isCreak then
-                                                creakFound = true
-                                                if lastCreakPosition and (part.Position - lastCreakPosition).Magnitude > 0.15 then
-                                                    lastCreakMovedAt = now
-                                                end
-                                                if lastCreakMovedAt > 0 and now - lastCreakMovedAt >= 8 then
-                                                    frozenNow = true
-                                                end
-                                                lastCreakPosition = part.Position
-                                            end
-                                            if isNoise then
-                                                noiseFound = true
-                                            end
-                                        end
+                                local name = string.lower(obj.Name)
+                                if string.find(name, "creak", 1, true) then
+                                    local part = getEntityPart(obj)
+                                    if part and (not root or (part.Position - root.Position).Magnitude <= 500) then
+                                        creakModel, creakPart = obj, part
+                                    end
+                                elseif string.find(name, "noise", 1, true) then
+                                    local part = getEntityPart(obj)
+                                    if part and (not root or (part.Position - root.Position).Magnitude <= 500) then
+                                        noiseFound = true
                                     end
                                 end
                             end
                         end
 
-                        if not creakFound then
-                            lastCreakPosition = nil
-                            lastCreakMovedAt = 0
-                            wasCreakFrozen = false
+                        local creakState = "not detected"
+                        if creakModel and creakPart then
+                            if trackedCreak ~= creakModel then
+                                trackedCreak = creakModel
+                                creakLastPosition = creakPart.Position
+                                creakStillSince = now
+                                notifiedFrozen = false
+                            else
+                                local currentPosition = creakPart.Position
+                                if not creakLastPosition or (currentPosition - creakLastPosition).Magnitude > 0.2 then
+                                    creakLastPosition = currentPosition
+                                    creakStillSince = now
+                                    notifiedFrozen = false
+                                elseif not creakStillSince then
+                                    creakStillSince = now
+                                end
+                            end
+
+                            local stillFor = creakStillSince and (now - creakStillSince) or 0
+                            if stillFor >= 8 then
+                                creakState = "STATIONARY (" .. tostring(math.floor(stillFor)) .. "s)"
+                                if not notifiedFrozen then
+                                    notifiedFrozen = true
+                                    pcall(function()
+                                        if tab and tab.Notify then
+                                            tab:Notify({
+                                                Title = "Friendly Entities diagnostic",
+                                                Description = "Creak's tracked part has not moved for 8 seconds.",
+                                                Time = 4
+                                            })
+                                        end
+                                    end)
+                                end
+                            else
+                                creakState = "detected; still for " .. tostring(math.floor(stillFor)) .. "s"
+                            end
+                        else
+                            trackedCreak = nil
+                            creakLastPosition = nil
+                            creakStillSince = nil
+                            notifiedFrozen = false
                         end
 
-                        if now - lastReport >= 1.5 then
-                            local message = "Creak: " .. (creakFound and (frozenNow and "possibly stationary (8s)" or "detected") or "not detected")
-                                .. " | Noise: " .. (noiseFound and "detected nearby" or "not detected nearby")
-                            setFriendlyStatus(message)
+                        if now - lastReport >= 1 then
+                            setFriendlyStatus("Creak: " .. creakState .. " | Noise: " .. (noiseFound and "detected nearby" or "not detected nearby"))
                             lastReport = now
                         end
-
-                        if frozenNow and not wasCreakFrozen then
-                            pcall(function()
-                                if tab and tab.Notify then
-                                    tab:Notify({
-                                        Title = "Friendly Entities diagnostic",
-                                        Description = "Creak appears stationary. This monitor does not change its AI.",
-                                        Time = 4
-                                    })
-                                end
-                            end)
-                        end
-                        wasCreakFrozen = frozenNow
                     end
                 end
             end)
