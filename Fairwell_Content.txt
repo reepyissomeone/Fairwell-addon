@@ -105,24 +105,76 @@ return function(tab, reloadContent)
 
     if stemOk and stemBox then
         local Players = game:GetService("Players")
-        local VirtualInputManager = game:GetService("VirtualInputManager")
         local player = Players.LocalPlayer
         local env = (getgenv and getgenv()) or _G
         env._FairwellStemAutoThrow = false
 
-        local function hasEquippedStem()
-            local character = player and player.Character
-            if not character then return false end
-            for _, item in ipairs(character:GetChildren()) do
-                if item:IsA("Tool") and string.find(string.lower(item.Name), "stem", 1, true) then
+        local function isStemRelated(instance)
+            local node = instance
+            for _ = 1, 6 do
+                if not node then break end
+                if string.find(string.lower(node.Name), "stem", 1, true) then
                     return true
                 end
+                node = node.Parent
             end
             return false
         end
 
+        local function getRoot()
+            local character = player and player.Character
+            return character and character:FindFirstChild("HumanoidRootPart")
+        end
+
+        local function findNearbyStemPrompt()
+            local root = getRoot()
+            if not root then return nil end
+            local bestPrompt, bestDistance = nil, math.huge
+            for _, item in ipairs(workspace:GetDescendants()) do
+                if item:IsA("ProximityPrompt") and item.Enabled and isStemRelated(item) then
+                    local parent = item.Parent
+                    local part = parent and (parent:IsA("BasePart") and parent or parent:FindFirstChildWhichIsA("BasePart", true))
+                    if part then
+                        local distance = (root.Position - part.Position).Magnitude
+                        if distance <= math.max(item.MaxActivationDistance + 4, 10) and distance < bestDistance then
+                            bestPrompt, bestDistance = item, distance
+                        end
+                    end
+                end
+            end
+            return bestPrompt
+        end
+
+        local function pressG()
+            local sent = false
+            local vim = game:GetService("VirtualInputManager")
+            sent = pcall(function()
+                vim:SendKeyEvent(true, Enum.KeyCode.G, false, game)
+                task.wait(0.06)
+                vim:SendKeyEvent(false, Enum.KeyCode.G, false, game)
+            end)
+            if not sent and type(keypress) == "function" and type(keyrelease) == "function" then
+                pcall(function()
+                    keypress(0x47)
+                    task.wait(0.06)
+                    keyrelease(0x47)
+                end)
+            end
+        end
+
+        local function activatePrompt(prompt)
+            if not prompt or not prompt.Parent then return false end
+            local ok = pcall(function()
+                prompt:InputHoldBegin()
+                task.wait(math.max(prompt.HoldDuration, 0.15) + 0.05)
+                prompt:InputHoldEnd()
+            end)
+            return ok
+        end
+
         local function runAutoThrow()
             task.spawn(function()
+                print("[Fairwell STEM] Auto-Throw enabled.")
                 while env._FairwellStemAutoThrow do
                     local character = player and player.Character
                     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -130,17 +182,21 @@ return function(tab, reloadContent)
                         env._FairwellStemAutoThrow = false
                         break
                     end
-                    if hasEquippedStem() then
-                        pcall(function()
-                            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.G, false, game)
-                            task.wait(0.08)
-                            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.G, false, game)
-                        end)
-                        task.wait(1)
+
+                    local prompt = findNearbyStemPrompt()
+                    if prompt then
+                        activatePrompt(prompt)
+                        task.wait(0.45)
+                        -- Keep sending G while enabled; the game decides whether a Stem is held.
+                        pressG()
+                        task.wait(0.35)
                     else
-                        task.wait(0.25)
+                        -- Also keep attempting G after pickup, even if the held item isn't a Tool named Stem.
+                        pressG()
+                        task.wait(0.6)
                     end
                 end
+                print("[Fairwell STEM] Auto-Throw stopped.")
             end)
         end
 
@@ -150,7 +206,9 @@ return function(tab, reloadContent)
                 Default = false,
                 Callback = function(enabled)
                     env._FairwellStemAutoThrow = enabled == true
-                    if env._FairwellStemAutoThrow then runAutoThrow() end
+                    if env._FairwellStemAutoThrow then
+                        runAutoThrow()
+                    end
                 end
             })
         end)
