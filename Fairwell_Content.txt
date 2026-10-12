@@ -407,8 +407,15 @@ return function(tab, reloadContent)
     if closetOk and closetBox then
         local Players = game:GetService("Players")
         local player = Players.LocalPlayer
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
         local env = (getgenv and getgenv()) or _G
         env._FairwellAutoCloset = false
+        local getOutEvent
+        pcall(function()
+            local remotes = ReplicatedStorage:FindFirstChild("RemotesFolder")
+            local event = remotes and remotes:FindFirstChild("GetOutOfHiding")
+            if event and event:IsA("RemoteEvent") then getOutEvent = event end
+        end)
         local statusLabel
         local function closetStatus(message)
             if statusLabel then
@@ -506,6 +513,18 @@ return function(tab, reloadContent)
             return bestPrompt, bestPosition, bestDistance
         end
 
+        local function triggerGetOutOfHiding()
+            -- Fire the game's local GetOutOfHiding listeners when Hide's closet check
+            -- is needed. This uses the executor-provided firesignal API if available.
+            if not getOutEvent then return false end
+            local signalFire = firesignal
+            if type(signalFire) ~= "function" then return false end
+            local ok = pcall(function()
+                signalFire(getOutEvent.OnClientEvent)
+            end)
+            return ok
+        end
+
         local busy = false
         local lastAction = 0
         local function tryHide()
@@ -557,6 +576,21 @@ return function(tab, reloadContent)
                 end)
                 if ok then
                     closetStatus("used hiding ProximityPrompt")
+                    -- While in a hiding spot, periodically trigger the local get-out
+                    -- handler so Hide's forced-exit mechanic can be handled.
+                    task.spawn(function()
+                        local started = os.clock()
+                        while env._FairwellAutoCloset and os.clock() - started < 8 do
+                            task.wait(0.6)
+                            local currentCharacter = player.Character
+                            local currentRoot = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
+                            if not currentRoot or not prompt.Parent then break end
+                            if triggerGetOutOfHiding() then
+                                closetStatus("triggered GetOutOfHiding")
+                                break
+                            end
+                        end
+                    end)
                 else
                     closetStatus("prompt interaction failed")
                 end
