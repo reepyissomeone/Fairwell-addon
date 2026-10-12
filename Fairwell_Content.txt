@@ -130,20 +130,33 @@ return function(tab, reloadContent)
             return tool, handle, nil
         end
 
-        local function findVariant(tool, handle)
-            -- Inspect all exposed names and string values; no manual selector.
+        local function findVariant(tool, handle, identifier)
+            -- Check the held item, its identifier, attributes, and exposed string values.
+            local function inspect(value)
+                local lower = string.lower(tostring(value or ""))
+                for _, variant in ipairs({"Mouth", "Ear", "Eye", "Blank"}) do
+                    if string.find(lower, string.lower(variant), 1, true) then return variant end
+                end
+            end
+            local found = inspect(identifier)
+            if found then return found end
             local roots = {tool}
             if handle then table.insert(roots, handle) end
             for _, root in ipairs(roots) do
+                for key, value in pairs(root:GetAttributes()) do
+                    found = inspect(key) or inspect(value)
+                    if found then return found end
+                end
                 for _, item in ipairs(root:GetDescendants()) do
-                    local candidates = {item.Name}
-                    if item:IsA("StringValue") then table.insert(candidates, item.Value) end
-                    for _, candidate in ipairs(candidates) do
-                        local lower = string.lower(tostring(candidate))
-                        for _, variant in ipairs({"Mouth", "Ear", "Eye", "Blank"}) do
-                            if string.find(lower, string.lower(variant), 1, true) then return variant end
+                    found = inspect(item.Name)
+                    if not found and item:IsA("StringValue") then found = inspect(item.Value) end
+                    if not found then
+                        for key, value in pairs(item:GetAttributes()) do
+                            found = inspect(key) or inspect(value)
+                            if found then break end
                         end
                     end
+                    if found then return found end
                 end
             end
             return "Blank"
@@ -174,7 +187,7 @@ return function(tab, reloadContent)
                     end
                 end
             end
-            return bestPrompt, bestPrompt and "nearby Stem pickup prompt found" or "searching for Stem pickup"
+            return bestPrompt, bestPrompt and "nearby Stem pickup found" or "searching for a nearby Stem"
         end
 
         local function activatePrompt(prompt)
@@ -203,7 +216,7 @@ return function(tab, reloadContent)
             local character = player.Character
             if props then table.insert(exclusions, props) end
             if character then table.insert(exclusions, character) end
-            local variant = findVariant(tool, handle)
+            local variant = findVariant(tool, handle, identifier)
             local ok, err = pcall(function()
                 remote:FireServer(identifier, handle.Position, direction, velocity, "Stem", variant, exclusions)
             end)
@@ -219,8 +232,9 @@ return function(tab, reloadContent)
                     env._FairwellAutoKillStem = enabled == true
                     if not enabled then setStatus("off") return end
                     task.spawn(function()
-                        setStatus("enabled; picking up and throwing Stems")
-                        local lastTool, lastInfo
+                        setStatus("enabled; auto-picking up and throwing Stems")
+                        local lastIdentifier
+                        local lastInfo
                         while env._FairwellAutoKillStem do
                             local character = player.Character
                             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -229,23 +243,20 @@ return function(tab, reloadContent)
                                 task.wait(0.5)
                             else
                                 local tool, handle, identifier = findHeldStem()
-                                if tool then
-                                    if tool ~= lastTool then
-                                        lastTool = tool
-                                        local ok, message = fireHeldStem(tool, handle, identifier)
-                                        setStatus(message)
-                                        task.wait(ok and 0.8 or 0.4)
-                                    else
-                                        task.wait(0.12)
-                                    end
+                                if tool and handle and identifier and identifier ~= lastIdentifier then
+                                    local ok, message = fireHeldStem(tool, handle, identifier)
+                                    setStatus(ok and message or ("throw failed: " .. message))
+                                    if ok then lastIdentifier = identifier end
+                                    task.wait(ok and 0.65 or 0.35)
                                 else
-                                    lastTool = nil
+                                    -- If no usable held Stem is available, seek and pick one up.
+                                    if not tool or not handle or not identifier then lastIdentifier = nil end
                                     local prompt, info = findNearbyStemPrompt()
                                     if info ~= lastInfo then setStatus(info); lastInfo = info end
                                     if prompt then
                                         local ok, message = activatePrompt(prompt)
                                         setStatus(ok and message or ("pickup failed: " .. message))
-                                        task.wait(0.12)
+                                        task.wait(0.2)
                                     else
                                         task.wait(0.25)
                                     end
