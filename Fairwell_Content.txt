@@ -100,7 +100,7 @@ return function(tab, reloadContent)
     end
 
     local stemOk, stemBox = pcall(function()
-        return tab:AddLeftGroupbox("STEM Auto-Throw", "target")
+        return tab:AddLeftGroupbox("STEM Auto-Pickup", "target")
     end)
 
     if stemOk and stemBox then
@@ -298,7 +298,7 @@ return function(tab, reloadContent)
 
         pcall(function()
             stemBox:AddToggle("FairwellStemAutoThrowToggle", {
-                Text = "STEM Auto-Throw",
+                Text = "STEM Auto-Pickup",
                 Default = false,
                 Callback = function(enabled)
                     env._FairwellStemAutoThrow = enabled == true
@@ -310,5 +310,129 @@ return function(tab, reloadContent)
                 end
             })
         end)
+
+    -- Remote-based Auto-Throw: detects the equipped Stem Tool and uses its live Handle data.
+    local throwOk, throwBox = pcall(function()
+        return tab:AddLeftGroupbox("STEM FireProjectile", "target")
+    end)
+
+    if throwOk and throwBox then
+        local Players = game:GetService("Players")
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local player = Players.LocalPlayer
+        local env = (getgenv and getgenv()) or _G
+        env._FairwellStemFireProjectile = false
+        local chosenVariant = "Blank"
+        local throwStatus
+
+        local function status(message)
+            if throwStatus then
+                pcall(function() throwStatus:SetText("Status: " .. message) end)
+            end
+            print("[Fairwell STEM Throw] " .. message)
+        end
+
+        pcall(function()
+            throwStatus = throwBox:AddLabel({Text = "Status: idle", DoesWrap = true})
+        end)
+
+        pcall(function()
+            throwBox:AddDropdown("FairwellStemVariant", {
+                Text = "Stem Variant",
+                Values = {"Blank", "Mouth", "Ear", "Eye"},
+                Default = 1,
+                Callback = function(value)
+                    if type(value) == "string" then
+                        chosenVariant = value
+                    end
+                end
+            })
+        end)
+
+        local function findHeldStem()
+            local character = player.Character
+            if not character then return nil end
+            local tool = character:FindFirstChild("Stem")
+            if not tool or not tool:IsA("Tool") then return nil end
+            local handle = tool:FindFirstChild("Handle")
+            if not handle or not handle:IsA("BasePart") then return nil end
+
+            for _, item in ipairs(handle:GetDescendants()) do
+                if item.Name:match("^Stem_") then
+                    return tool, handle, item.Name
+                end
+            end
+            return tool, handle, nil
+        end
+
+        local function fireHeldStem(tool, handle, identifier)
+            if not identifier then
+                return false, "held Stem identifier not found under Handle"
+            end
+            local remotes = ReplicatedStorage:FindFirstChild("RemotesFolder")
+            local remote = remotes and remotes:FindFirstChild("FireProjectile")
+            if not remote or not remote:IsA("RemoteEvent") then
+                return false, "FireProjectile RemoteEvent not found"
+            end
+            local camera = workspace.CurrentCamera
+            if not camera then return false, "camera unavailable" end
+
+            local direction = camera.CFrame.LookVector
+            local velocity = direction * 100
+            local character = player.Character
+            local props = workspace:FindFirstChild("Props")
+            local exclusions = {}
+            if props then table.insert(exclusions, props) end
+            if character then table.insert(exclusions, character) end
+
+            local ok, err = pcall(function()
+                remote:FireServer(
+                    identifier,
+                    handle.Position,
+                    direction,
+                    velocity,
+                    "Stem",
+                    chosenVariant,
+                    exclusions
+                )
+            end)
+            if not ok then return false, tostring(err) end
+            return true, "FireProjectile sent (" .. chosenVariant .. ")"
+        end
+
+        pcall(function()
+            throwBox:AddToggle("FairwellStemFireProjectileToggle", {
+                Text = "Auto-Throw Held Stem",
+                Default = false,
+                Callback = function(enabled)
+                    env._FairwellStemFireProjectile = enabled == true
+                    if enabled then
+                        status("enabled; waiting for held Stem")
+                        task.spawn(function()
+                            local lastTool = nil
+                            while env._FairwellStemFireProjectile do
+                                local tool, handle, identifier = findHeldStem()
+                                if tool and tool ~= lastTool then
+                                    lastTool = tool
+                                    local ok, message = fireHeldStem(tool, handle, identifier)
+                                    status(message)
+                                    if not ok then
+                                        -- Don't repeatedly retry a malformed throw every frame.
+                                        task.wait(0.5)
+                                    end
+                                elseif not tool then
+                                    lastTool = nil
+                                end
+                                task.wait(0.15)
+                            end
+                            status("off")
+                        end)
+                    else
+                        status("off")
+                    end
+                end
+            })
+        end)
+    end
     end
 end
