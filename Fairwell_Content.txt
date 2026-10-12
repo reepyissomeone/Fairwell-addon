@@ -633,7 +633,6 @@ return function(tab, reloadContent)
                             closetStatus(kind .. " monitor timed out; toggle Auto Closet off/on to retry")
                         end
                     end)
-                    end)
                 else
                     closetStatus("prompt interaction failed")
                 end
