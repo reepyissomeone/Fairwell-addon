@@ -125,7 +125,10 @@ return function(tab, reloadContent)
             local node = instance
             for _ = 1, 8 do
                 if not node then break end
-                if string.find(string.lower(node.Name), "stem", 1, true) then
+                local lowerName = string.lower(node.Name)
+                -- Player-specific Stem names can include a username/display name.
+                -- Match the stable "stems" prefix instead of a particular player's name.
+                if string.find(lowerName, "stem", 1, true) then
                     return true
                 end
                 node = node.Parent
@@ -162,9 +165,28 @@ return function(tab, reloadContent)
             local root = getRoot()
             if not root then return nil, "character root not found" end
 
+            -- The screenshot shows live Stem entities and their remotes under
+            -- workspace.LiveEntities. Do not bind to the player-specific suffix.
+            local liveEntities = workspace:FindFirstChild("LiveEntities")
+            if liveEntities then
+                for _, entity in ipairs(liveEntities:GetChildren()) do
+                    if string.find(string.lower(entity.Name), "stems", 1, true) then
+                        local entityPart = entity:IsA("BasePart") and entity or
+                            entity:FindFirstChildWhichIsA("BasePart", true)
+                        if entityPart then
+                            local d = (root.Position - entityPart.Position).Magnitude
+                            if d <= 14 then
+                                -- Keep using the normal interaction prompt; don't fire
+                                -- AddStem/StemThrown remotes without knowing their contract.
+                            end
+                        end
+                    end
+                end
+            end
+
             local targets = findStemTargets()
             if #targets == 0 then
-                return nil, "no Stem-named object found"
+                return nil, "no Stem-named object found under workspace"
             end
 
             local bestPrompt, bestDistance
