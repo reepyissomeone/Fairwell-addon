@@ -386,7 +386,7 @@ return function(tab, reloadContent)
 
         pcall(function()
             hoverBox:AddToggle("FairwellAntiGroundskeeperToggle", {
-                Text = "Hover Anti Groundskeeper",
+                Text = "Anti Groundskeeper",
                 Default = false,
                 Callback = function(enabled)
                     env._FairwellAntiGroundskeeper = enabled == true
