@@ -242,22 +242,8 @@ return function(tab, reloadContent)
             return nil, "Stem found, but no nearby enabled prompt"
         end
 
-        local function pressG()
-            local vim = game:GetService("VirtualInputManager")
-            local ok = pcall(function()
-                vim:SendKeyEvent(true, Enum.KeyCode.G, false, game)
-                task.wait(0.08)
-                vim:SendKeyEvent(false, Enum.KeyCode.G, false, game)
-            end)
-            if not ok and type(keypress) == "function" and type(keyrelease) == "function" then
-                pcall(function()
-                    keypress(0x47)
-                    task.wait(0.08)
-                    keyrelease(0x47)
-                end)
-            end
-            return ok
-        end
+        -- PC-only G simulation intentionally removed. On mobile, throwing must use
+        -- the game's shared action/callback, which still needs to be identified.
 
         local function activatePrompt(prompt)
             if not prompt or not prompt.Parent then return false, "prompt disappeared" end
@@ -293,16 +279,15 @@ return function(tab, reloadContent)
                     if prompt then
                         local ok, result = activatePrompt(prompt)
                         setStatus(result)
-                        task.wait(0.4)
-                        local sent = pressG()
-                        if sent then
-                            setStatus("pickup attempted; G input sent (game may ignore simulated input)")
-                        else
-                            setStatus("pickup attempted; G input unavailable")
+                        -- Don't add an extra half-second after the prompt's own hold time.
+                        -- Throwing is handled separately; pickup should react as soon as
+                        -- the interaction completes.
+                        if not ok then
+                            setStatus("prompt activation failed: " .. tostring(result))
                         end
-                        task.wait(0.6)
+                        task.wait(0.12)
                     else
-                        task.wait(0.5)
+                        task.wait(0.25)
                     end
                 end
                 if not env._FairwellStemAutoThrow then
