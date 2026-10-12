@@ -269,4 +269,119 @@ return function(tab, reloadContent)
             })
         end)
     end
+
+    -- Anti Groundskeeper: keep the character slightly above ground while enabled.
+    local hoverOk, hoverBox = pcall(function()
+        return tab:AddLeftGroupbox("Anti Groundskeeper", "wind")
+    end)
+
+    if hoverOk and hoverBox then
+        local Players = game:GetService("Players")
+        local RunService = game:GetService("RunService")
+        local player = Players.LocalPlayer
+        local env = (getgenv and getgenv()) or _G
+        env._FairwellAntiGroundskeeper = false
+        local hoverConnection
+        local hoverAttachment
+        local hoverForce
+        local statusLabel
+
+        pcall(function()
+            statusLabel = hoverBox:AddLabel({Text = "Status: off", DoesWrap = true})
+        end)
+
+        local function status(text)
+            if statusLabel then
+                pcall(function() statusLabel:SetText("Status: " .. text) end)
+            end
+        end
+
+        local function stopHover()
+            if hoverConnection then hoverConnection:Disconnect(); hoverConnection = nil end
+            if hoverForce then hoverForce:Destroy(); hoverForce = nil end
+            if hoverAttachment then hoverAttachment:Destroy(); hoverAttachment = nil end
+            status("off")
+        end
+
+        local function startHover()
+            stopHover()
+            local character = player.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if not root or not humanoid then
+                status("waiting for character")
+                return
+            end
+
+            -- A small upward force counters gravity without launching the player.
+            hoverAttachment = Instance.new("Attachment")
+            hoverAttachment.Name = "FairwellHoverAttachment"
+            hoverAttachment.Parent = root
+
+            hoverForce = Instance.new("VectorForce")
+            hoverForce.Name = "FairwellHoverForce"
+            hoverForce.Attachment0 = hoverAttachment
+            hoverForce.RelativeTo = Enum.ActuatorRelativeTo.World
+            hoverForce.ApplyAtCenterOfMass = true
+            hoverForce.Parent = root
+
+            local hoverHeight = 2.2
+            local baseY = root.Position.Y
+            local lastGroundY = baseY
+            local rayParams = RaycastParams.new()
+            rayParams.FilterType = Enum.RaycastFilterType.Exclude
+            rayParams.FilterDescendantsInstances = {character}
+
+            hoverConnection = RunService.Heartbeat:Connect(function()
+                if not env._FairwellAntiGroundskeeper then stopHover(); return end
+                if not root.Parent or not humanoid.Parent or humanoid.Health <= 0 then
+                    status("waiting for character")
+                    return
+                end
+
+                -- Only hover over grass-like surfaces; remain grounded elsewhere.
+                local result = workspace:Raycast(root.Position, Vector3.new(0, -12, 0), rayParams)
+                local materialName = result and result.Material and result.Material.Name or ""
+                local hitName = result and result.Instance and string.lower(result.Instance.Name) or ""
+                local grass = result and (
+                    materialName == "Grass" or materialName == "LeafyGrass"
+                    or string.find(hitName, "grass", 1, true) ~= nil
+                )
+
+                if grass then
+                    local targetY = result.Position.Y + humanoid.HipHeight + (root.Size.Y * 0.5) + hoverHeight
+                    local errorY = targetY - root.Position.Y
+                    local mass = root.AssemblyMass
+                    hoverForce.Force = Vector3.new(
+                        0,
+                        mass * (workspace.Gravity + math.clamp(errorY * 90 - root.AssemblyLinearVelocity.Y * 18, -workspace.Gravity, workspace.Gravity * 3)),
+                        0
+                    )
+                    status("hovering above grass")
+                else
+                    hoverForce.Force = Vector3.zero
+                    status("standing normally")
+                end
+            end)
+        end
+
+        pcall(function()
+            hoverBox:AddToggle("FairwellAntiGroundskeeperToggle", {
+                Text = "Hover Above Grass",
+                Default = false,
+                Callback = function(enabled)
+                    env._FairwellAntiGroundskeeper = enabled == true
+                    if enabled then startHover() else stopHover() end
+                end
+            })
+        end)
+
+        player.CharacterAdded:Connect(function()
+            if env._FairwellAntiGroundskeeper then
+                task.wait(1)
+                startHover()
+            end
+        end)
+    end
+
 end
