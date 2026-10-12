@@ -1,11 +1,10 @@
 -- Fairwell Heaven: add a tab to the existing MSDoors window
 -- This addon does NOT create a separate window.
+-- No global theme/color changes are applied to MSDoors.
 -- Remote content lives in Fairwell_Content.txt so it can be updated independently.
 
 local env = (getgenv and getgenv()) or _G
 local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt"
-local ACCENT = Color3.fromRGB(27, 147, 227)
-local ACCENT_DARK = Color3.fromRGB(16, 13, 105)
 
 local Library = env.Library or env.Obsidian or env.UI_Library
 local Window = env.Window or env.MainWindow or env.MSDoorsWindow
@@ -17,92 +16,13 @@ if not Window or type(Window.AddTab) ~= "function" then
     return
 end
 
+-- Use the library's own tab icon only; do not recolor any UI elements.
 local ok, tab = pcall(function()
-    return Window:AddTab("Fairwell", "heart")
+    return Window:AddTab("Fairwell", "sparkles")
 end)
 if not ok or not tab then
     warn("[Fairwell] Could not add tab:", tab)
     return
-end
-
--- Tint only the actual Fairwell tab control.
--- Do not match ancestor buttons by searching all descendants: some UI libraries
--- nest the tab strip inside a larger button/frame, which can recolor the whole UI.
-local function tintFairwellTab()
-    local roots = {}
-    local function addRoot(root)
-        if not root then return end
-        for _, existing in ipairs(roots) do
-            if existing == root then return end
-        end
-        table.insert(roots, root)
-    end
-
-    pcall(function() addRoot(game:GetService("CoreGui")) end)
-    pcall(function() addRoot(game:GetService("Players").LocalPlayer:FindFirstChildOfClass("PlayerGui")) end)
-    if type(gethui) == "function" then
-        pcall(function() addRoot(gethui()) end)
-    end
-
-    local targets = {}
-    local function addTarget(target, label)
-        if not target then return end
-        for _, entry in ipairs(targets) do
-            if entry.target == target then
-                if label then entry.label = label end
-                return
-            end
-        end
-        table.insert(targets, {target = target, label = label})
-    end
-
-    for _, root in ipairs(roots) do
-        pcall(function()
-            for _, obj in ipairs(root:GetDescendants()) do
-                if obj:IsA("TextButton") and string.lower((obj.Text or ""):match("^%s*(.-)%s*$") or "") == "fairwell" then
-                    -- Exact button text: never recolor a parent that merely contains this text.
-                    addTarget(obj, obj)
-                elseif obj:IsA("TextLabel") and string.lower((obj.Text or ""):match("^%s*(.-)%s*$") or "") == "fairwell" then
-                    -- If the caption is a label, use its nearest button ancestor only.
-                    local parent = obj.Parent
-                    while parent and parent ~= root do
-                        if parent:IsA("TextButton") or parent:IsA("ImageButton") then
-                            addTarget(parent, obj)
-                            break
-                        end
-                        parent = parent.Parent
-                    end
-                end
-            end
-        end)
-    end
-
-    if #targets == 0 then
-        warn("[Fairwell] Could not find the exact Fairwell tab button to recolor.")
-        return
-    end
-
-    for _, entry in ipairs(targets) do
-        local target, label = entry.target, entry.label
-        pcall(function() target.BackgroundColor3 = ACCENT_DARK end)
-        pcall(function() target.BorderColor3 = ACCENT end)
-        pcall(function() target.ImageColor3 = ACCENT end)
-        pcall(function()
-            local stroke = target:FindFirstChildOfClass("UIStroke")
-            if stroke then stroke.Color = ACCENT end
-        end)
-        if label then
-            pcall(function() label.TextColor3 = Color3.fromRGB(255, 255, 255) end)
-        end
-        -- Only recolor direct icon children, not every descendant of the control.
-        pcall(function()
-            for _, child in ipairs(target:GetChildren()) do
-                if child:IsA("ImageLabel") or child:IsA("ImageButton") then
-                    child.ImageColor3 = ACCENT
-                end
-            end
-        end)
-    end
 end
 
 local function loadRemoteContent()
@@ -125,7 +45,7 @@ local function loadRemoteContent()
         warn("[Fairwell] Remote content must return a function:", contentBuilder)
         return false
     end
-    local built, buildError = pcall(contentBuilder, tab)
+    local built, buildError = pcall(contentBuilder, tab, loadRemoteContent)
     if not built then
         warn("[Fairwell] Remote content failed while building the tab:", buildError)
         return false
@@ -136,7 +56,7 @@ end
 
 if not loadRemoteContent() then
     local fallbackOk, fallback = pcall(function()
-        return tab:AddLeftGroupbox("Fairwell Heaven", "heart")
+        return tab:AddLeftGroupbox("Fairwell Heaven", "sparkles")
     end)
     if fallbackOk and fallback then
         pcall(function()
@@ -145,8 +65,4 @@ if not loadRemoteContent() then
     end
 end
 
--- Run after the tab has been created and content has populated the UI.
-tintFairwellTab()
-task.defer(tintFairwellTab)
-task.delay(1, tintFairwellTab)
-print("[Fairwell] Tab added to MSDoors with its own blue accent.")
+print("[Fairwell] Stylish Fairwell tab added to MSDoors. No global theming applied.")
