@@ -453,7 +453,7 @@ return function(tab, reloadContent)
                     else
                         rayParams.FilterDescendantsInstances = {character}
                         local now = os.clock()
-                        if now - lastScanAt >= 0.8 or not trackedModel or not trackedModel.Parent then
+                        if now - lastScanAt >= 0.8 or (trackedModel and not trackedModel.Parent) then
                             trackedModel, trackedPart = findNearestCreak(root)
                             lastScanAt = now
                         end
