@@ -574,63 +574,61 @@ return function(tab, reloadContent)
                 end)
                 if ok then
                     closetStatus("used hiding ProximityPrompt")
-                    -- Rush: wait until its model disappears before exiting.
-                    -- Ambush: leave when it is far away, then resume watching from outside.
-                    -- Keep the watcher alive through every rebound; stop only when Ambush despawns.
                     task.spawn(function()
-                        local exitedHiding = false
-                        local despawned = false
                         local started = os.clock()
-                        local maxWait = kind == "Ambush" and 120 or 45
-                        local farDistance = 100
-                        local lastThreatSeen = os.clock()
+                        local lastSeen = os.clock()
+                        local exited = false
+                        local finished = false
+                        local maxDuration = kind == "Ambush" and 180 or 60
 
-                        while env._FairwellAutoCloset and os.clock() - started < maxWait do
+                        while env._FairwellAutoCloset and (os.clock() - started) < maxDuration do
                             task.wait(0.25)
+
                             local currentCharacter = player.Character
                             local currentRoot = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
                             local currentHumanoid = currentCharacter and currentCharacter:FindFirstChildOfClass("Humanoid")
-                            if not currentRoot or not currentHumanoid or currentHumanoid.Health <= 0 then break end
+                            if not currentRoot or not currentHumanoid or currentHumanoid.Health <= 0 then
+                                break
+                            end
 
                             local liveThreat, liveDistance, liveKind = findThreat(currentRoot)
                             if liveThreat and liveKind == kind then
-                                lastThreatSeen = os.clock()
+                                lastSeen = os.clock()
+
                                 if kind == "Ambush" then
-                                    if not exitedHiding and liveDistance and liveDistance >= farDistance then
+                                    if not exited and liveDistance and liveDistance >= 100 then
                                         if triggerGetOutOfHiding() then
-                                            exitedHiding = true
-                                            closetStatus("Ambush is far away; exited hiding and monitoring rebounds")
+                                            exited = true
+                                            closetStatus("Ambush far away; outside and watching for rebounds")
                                         else
-                                            closetStatus("Ambush is far away; get-out signal unavailable")
+                                            closetStatus("Ambush far away; could not trigger exit")
                                         end
-                                    elseif exitedHiding then
-                                        closetStatus("Ambush still active; watching for its return")
+                                    elseif exited then
+                                        closetStatus("Ambush active; monitoring rebounds")
                                     else
                                         closetStatus("Ambush nearby; staying hidden")
                                     end
                                 else
-                                    closetStatus("Rush still active; staying hidden")
+                                    closetStatus("Rush active; staying hidden")
                                 end
                             else
-                                -- Don't stop the Ambush watcher during its short gaps between passes.
-                                local absentFor = os.clock() - lastThreatSeen
-                                local despawnGrace = kind == "Ambush" and 5 or 1.2
-                                if absentFor >= despawnGrace then
-                                    despawned = true
-                                    if not exitedHiding and triggerGetOutOfHiding() then
-                                        closetStatus(kind .. " despawned; exiting hiding spot")
-                                    else
-                                        closetStatus(kind .. " despawned")
+                                local missingFor = os.clock() - lastSeen
+                                local grace = kind == "Ambush" and 5 or 1.2
+                                if missingFor >= grace then
+                                    if not exited then
+                                        triggerGetOutOfHiding()
                                     end
+                                    closetStatus(kind .. " despawned; encounter monitor stopped")
+                                    finished = true
                                     break
                                 else
-                                    closetStatus(kind .. " temporarily out of view; still monitoring")
+                                    closetStatus(kind .. " temporarily absent; monitoring")
                                 end
                             end
                         end
 
-                        if not despawned and env._FairwellAutoCloset then
-                            closetStatus(kind .. " monitor timed out; toggle Auto Closet off/on to retry")
+                        if not finished and env._FairwellAutoCloset then
+                            closetStatus(kind .. " monitoring ended; toggle Auto Closet off/on to retry")
                         end
                     end)
                 else
