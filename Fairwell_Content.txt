@@ -272,7 +272,7 @@ return function(tab, reloadContent)
 
     -- Anti Groundskeeper: CFrame hover while enabled; automatically stays above detected ground.
     local hoverOk, hoverBox = pcall(function()
-        return tab:AddLeftGroupbox("Anti Groundskeeper", "wind")
+        return tab:AddRightGroupbox("Anti Groundskeeper", "wind")
     end)
 
     if hoverOk and hoverBox then
@@ -401,7 +401,7 @@ return function(tab, reloadContent)
 
     -- Auto Closet: detect Rush/Ambush models and use hiding ProximityPrompts.
     local closetOk, closetBox = pcall(function()
-        return tab:AddLeftGroupbox("Auto Closet", "door-open")
+        return tab:AddRightGroupbox("Auto Closet", "door-open")
     end)
 
     if closetOk and closetBox then
