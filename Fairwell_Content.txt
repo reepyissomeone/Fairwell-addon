@@ -108,10 +108,22 @@ return function(tab, reloadContent)
         local player = Players.LocalPlayer
         local env = (getgenv and getgenv()) or _G
         env._FairwellStemAutoThrow = false
+        local statusLabel
 
-        local function isStemRelated(instance)
+        local function setStatus(message)
+            print("[Fairwell STEM] " .. message)
+            if statusLabel then
+                pcall(function() statusLabel:SetText("Status: " .. message) end)
+            end
+        end
+
+        pcall(function()
+            statusLabel = stemBox:AddLabel({Text = "Status: idle", DoesWrap = true})
+        end)
+
+        local function nameHasStem(instance)
             local node = instance
-            for _ = 1, 6 do
+            for _ = 1, 8 do
                 if not node then break end
                 if string.find(string.lower(node.Name), "stem", 1, true) then
                     return true
@@ -126,77 +138,154 @@ return function(tab, reloadContent)
             return character and character:FindFirstChild("HumanoidRootPart")
         end
 
+        -- Find Stem-like objects first. The prompt itself often has a generic name,
+        -- so don't require the word "Stem" to appear in the prompt's ancestry.
+        local function findStemTargets()
+            local targets, seen = {}, {}
+            for _, item in ipairs(workspace:GetDescendants()) do
+                if nameHasStem(item) then
+                    local model = item:IsA("Model") and item or item:FindFirstAncestorOfClass("Model")
+                    local part = item:IsA("BasePart") and item or
+                        (model and model:FindFirstChildWhichIsA("BasePart", true)) or
+                        item:FindFirstChildWhichIsA("BasePart", true)
+                    local target = model or part
+                    if target and part and not seen[target] then
+                        seen[target] = true
+                        table.insert(targets, {object = target, part = part})
+                    end
+                end
+            end
+            return targets
+        end
+
         local function findNearbyStemPrompt()
             local root = getRoot()
-            if not root then return nil end
-            local bestPrompt, bestDistance = nil, math.huge
+            if not root then return nil, "character root not found" end
+
+            local targets = findStemTargets()
+            if #targets == 0 then
+                return nil, "no Stem-named object found"
+            end
+
+            local bestPrompt, bestDistance
+            local allPrompts = {}
             for _, item in ipairs(workspace:GetDescendants()) do
-                if item:IsA("ProximityPrompt") and item.Enabled and isStemRelated(item) then
+                if item:IsA("ProximityPrompt") and item.Enabled then
                     local parent = item.Parent
-                    local part = parent and (parent:IsA("BasePart") and parent or parent:FindFirstChildWhichIsA("BasePart", true))
+                    local part = parent and (parent:IsA("BasePart") and parent or
+                        parent:FindFirstChildWhichIsA("BasePart", true))
                     if part then
                         local distance = (root.Position - part.Position).Magnitude
-                        if distance <= math.max(item.MaxActivationDistance + 4, 10) and distance < bestDistance then
-                            bestPrompt, bestDistance = item, distance
+                        if distance <= math.max(item.MaxActivationDistance + 5, 12) then
+                            table.insert(allPrompts, {prompt = item, part = part, distance = distance})
                         end
                     end
                 end
             end
-            return bestPrompt
+
+            -- Prefer prompts inside a Stem model, but also allow a nearby generic
+            -- prompt when the Stem model uses a separate prompt/interaction object.
+            for _, entry in ipairs(allPrompts) do
+                if nameHasStem(entry.prompt) then
+                    if not bestDistance or entry.distance < bestDistance then
+                        bestPrompt, bestDistance = entry.prompt, entry.distance
+                    end
+                end
+            end
+
+            if not bestPrompt then
+                local bestTargetDistance = math.huge
+                for _, target in ipairs(targets) do
+                    local targetDistance = (root.Position - target.part.Position).Magnitude
+                    if targetDistance < bestTargetDistance then
+                        bestTargetDistance = targetDistance
+                    end
+                end
+                for _, entry in ipairs(allPrompts) do
+                    local closestTargetDistance = math.huge
+                    for _, target in ipairs(targets) do
+                        local d = (target.part.Position - entry.part.Position).Magnitude
+                        if d < closestTargetDistance then closestTargetDistance = d end
+                    end
+                    if closestTargetDistance <= 18 and
+                        (not bestDistance or entry.distance < bestDistance) then
+                        bestPrompt, bestDistance = entry.prompt, entry.distance
+                    end
+                end
+            end
+
+            if bestPrompt then
+                return bestPrompt, "prompt found: " .. bestPrompt.Name
+            end
+            return nil, "Stem found, but no nearby enabled prompt"
         end
 
         local function pressG()
-            local sent = false
             local vim = game:GetService("VirtualInputManager")
-            sent = pcall(function()
+            local ok = pcall(function()
                 vim:SendKeyEvent(true, Enum.KeyCode.G, false, game)
-                task.wait(0.06)
+                task.wait(0.08)
                 vim:SendKeyEvent(false, Enum.KeyCode.G, false, game)
             end)
-            if not sent and type(keypress) == "function" and type(keyrelease) == "function" then
+            if not ok and type(keypress) == "function" and type(keyrelease) == "function" then
                 pcall(function()
                     keypress(0x47)
-                    task.wait(0.06)
+                    task.wait(0.08)
                     keyrelease(0x47)
                 end)
             end
+            return ok
         end
 
         local function activatePrompt(prompt)
-            if not prompt or not prompt.Parent then return false end
-            local ok = pcall(function()
+            if not prompt or not prompt.Parent then return false, "prompt disappeared" end
+            local ok, err = pcall(function()
                 prompt:InputHoldBegin()
-                task.wait(math.max(prompt.HoldDuration, 0.15) + 0.05)
+                task.wait(math.max(prompt.HoldDuration, 0.1) + 0.1)
                 prompt:InputHoldEnd()
             end)
-            return ok
+            if not ok then return false, tostring(err) end
+            return true, "prompt activation attempted"
         end
 
         local function runAutoThrow()
             task.spawn(function()
-                print("[Fairwell STEM] Auto-Throw enabled.")
+                setStatus("enabled; searching for Stem")
+                local lastStatus = ""
+                local lastStatusAt = 0
                 while env._FairwellStemAutoThrow do
                     local character = player and player.Character
                     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
                     if not humanoid or humanoid.Health <= 0 then
                         env._FairwellStemAutoThrow = false
+                        setStatus("stopped: character unavailable/dead")
                         break
                     end
 
-                    local prompt = findNearbyStemPrompt()
+                    local prompt, info = findNearbyStemPrompt()
+                    if info ~= lastStatus or os.clock() - lastStatusAt > 5 then
+                        setStatus(info)
+                        lastStatus, lastStatusAt = info, os.clock()
+                    end
+
                     if prompt then
-                        activatePrompt(prompt)
-                        task.wait(0.45)
-                        -- Keep sending G while enabled; the game decides whether a Stem is held.
-                        pressG()
-                        task.wait(0.35)
-                    else
-                        -- Also keep attempting G after pickup, even if the held item isn't a Tool named Stem.
-                        pressG()
+                        local ok, result = activatePrompt(prompt)
+                        setStatus(result)
+                        task.wait(0.4)
+                        local sent = pressG()
+                        if sent then
+                            setStatus("pickup attempted; G input sent (game may ignore simulated input)")
+                        else
+                            setStatus("pickup attempted; G input unavailable")
+                        end
                         task.wait(0.6)
+                    else
+                        task.wait(0.5)
                     end
                 end
-                print("[Fairwell STEM] Auto-Throw stopped.")
+                if not env._FairwellStemAutoThrow then
+                    setStatus("off")
+                end
             end)
         end
 
@@ -208,6 +297,8 @@ return function(tab, reloadContent)
                     env._FairwellStemAutoThrow = enabled == true
                     if env._FairwellStemAutoThrow then
                         runAutoThrow()
+                    else
+                        setStatus("off")
                     end
                 end
             })
