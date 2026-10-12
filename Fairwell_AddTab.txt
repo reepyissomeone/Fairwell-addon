@@ -4,7 +4,7 @@
 -- Remote content lives in Fairwell_Content.txt so it can be updated independently.
 
 local env = (getgenv and getgenv()) or _G
-local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=auto-giggle-glowstick-20261012"
+local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=glowstick-activation-timing-20261012"
 
 local Library = env.Library or env.Obsidian or env.UI_Library
 local Window = env.Window or env.MainWindow or env.MSDoorsWindow
