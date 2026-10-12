@@ -446,16 +446,22 @@ return function(tab, reloadContent)
 
         local function findThreat(root)
             local best, bestDistance, bestKind
+            local seen = {}
             for _, item in ipairs(workspace:GetDescendants()) do
                 if item:IsA("Model") or item:IsA("BasePart") then
                     local kind = threatKind(item.Name)
-                    if kind then
-                        local part = item:IsA("BasePart") and item or item.PrimaryPart
-                            or item:FindFirstChildWhichIsA("BasePart", true)
+                    -- Avoid counting every named part inside the same entity as a separate threat.
+                    local model = item:IsA("Model") and item or item:FindFirstAncestorOfClass("Model")
+                    if kind and (not model or not seen[model]) then
+                        local target = model or item
+                        local targetKind = threatKind(target.Name) or kind
+                        local part = target:IsA("BasePart") and target or target.PrimaryPart
+                            or target:FindFirstChildWhichIsA("BasePart", true)
                         if part then
                             local distance = (root.Position - part.Position).Magnitude
+                            if model then seen[model] = true end
                             if distance <= 220 and (not bestDistance or distance < bestDistance) then
-                                best, bestDistance, bestKind = item, distance, kind
+                                best, bestDistance, bestKind = target, distance, targetKind
                             end
                         end
                     end
@@ -483,8 +489,7 @@ return function(tab, reloadContent)
             if string.find(words, "hide", 1, true)
                 or string.find(words, "closet", 1, true)
                 or string.find(words, "wardrobe", 1, true)
-                or string.find(words, "locker", 1, true)
-                or string.find(words, "enter", 1, true) then
+                or string.find(words, "locker", 1, true) then
                 return true
             end
             local node = prompt.Parent
