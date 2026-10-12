@@ -703,4 +703,27 @@ return function(tab, reloadContent)
     end
 
 
+    -- Private experiment notes: only display this section to the designated tester.
+    local Players = game:GetService("Players")
+    local localPlayer = Players.LocalPlayer
+    if localPlayer and localPlayer.Name == "FIXROBLOX_015" then
+        local experimentBox
+        pcall(function()
+            experimentBox = tab:AddRightGroupbox("Experiments", "flask-conical")
+        end)
+        if experimentBox then
+            pcall(function()
+                experimentBox:AddLabel({
+                    Text = "Pivot / Creak AI experiment",
+                    DoesWrap = true
+                })
+                experimentBox:AddLabel({
+                    Text = "Diagnostic only: with Creak spawned, enable Pivot, move into a wall, then disable Pivot. Record whether Creak stops approaching or freezes. This panel does not automate the bypass.",
+                    DoesWrap = true
+                })
+            end)
+        end
+    end
+
+
 end
