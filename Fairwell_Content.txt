@@ -1215,28 +1215,77 @@ return function(tab, reloadContent)
         local selectedItemNames = {}
         for _, choice in ipairs(itemChoices) do selectedItemNames[choice] = true end
 
-        -- Floor-only items are filtered using the currently loaded floor/room containers.
-        local function currentFloor()
-            local names = {}
+        -- Detect the active DOORS floor and subfloor from live room containers.
+        -- Prefer structural clues over searching every descendant, which can match
+        -- leftover models/assets from a different floor.
+        local function currentFloorInfo()
+            local roots = {}
             for _, obj in ipairs(workspace:GetChildren()) do
-                names[string.lower(obj.Name)] = true
+                table.insert(roots, obj)
             end
-            local allText = ""
-            for _, obj in ipairs(workspace:GetDescendants()) do
-                local n = string.lower(obj.Name)
-                if n == "currentrooms" or n == "rooms" then allText = allText .. " " .. n end
-                if string.find(n, "backdoor", 1, true) or string.find(n, "mines", 1, true)
-                    or string.find(n, "hotel", 1, true) or string.find(n, "outdoors", 1, true) then
-                    allText = allText .. " " .. n
+            local function hasName(fragment)
+                fragment = string.lower(fragment)
+                for _, root in ipairs(roots) do
+                    if string.find(string.lower(root.Name), fragment, 1, true) then return true end
+                end
+                return false
+            end
+
+            local floor = "Unknown"
+            local subfloor = "Unknown"
+            local roomLabel = nil
+            local currentRooms = workspace:FindFirstChild("CurrentRooms")
+            local roomsFolder = workspace:FindFirstChild("Rooms")
+
+            if hasName("backdoor") then
+                floor, subfloor = "The Backdoor", "The Backdoor"
+            elseif hasName("mines") then
+                floor, subfloor = "The Mines", "The Mines"
+            elseif hasName("outdoors") or hasName("groundskeeper") then
+                floor, subfloor = "The Outdoors", "The Outdoors"
+            elseif hasName("castle") then
+                floor, subfloor = "The Castle", "The Castle"
+            elseif hasName("rooms") or hasName("a-000") then
+                floor, subfloor = "The Rooms", "The Rooms"
+            elseif currentRooms or roomsFolder then
+                floor, subfloor = "The Hotel", "The Hotel"
+            end
+
+            local activeFolder = currentRooms or roomsFolder
+            if activeFolder then
+                local latestNumber, latestRoom
+                for _, room in ipairs(activeFolder:GetChildren()) do
+                    local number = tonumber(room.Name:match("%d+"))
+                    if number and (not latestNumber or number > latestNumber) then
+                        latestNumber, latestRoom = number, room
+                    end
+                end
+                if latestNumber then roomLabel = string.format("Room %03d", latestNumber) end
+
+                -- Detect known subfloor segments from active room/model names only.
+                local roomText = string.lower((latestRoom and latestRoom.Name or "") .. " ")
+                if latestRoom then
+                    for _, obj in ipairs(latestRoom:GetDescendants()) do
+                        local n = string.lower(obj.Name)
+                        if string.find(n, "nest", 1, true) then roomText = roomText .. " nest" end
+                        if string.find(n, "dam", 1, true) then roomText = roomText .. " dam" end
+                        if string.find(n, "rooms", 1, true) or string.find(n, "a-000", 1, true) then
+                            roomText = roomText .. " rooms"
+                        end
+                    end
+                end
+                if floor == "The Mines" and string.find(roomText, "nest", 1, true) then
+                    subfloor = "The Mines — The Nest"
+                elseif floor == "The Mines" and string.find(roomText, "dam", 1, true) then
+                    subfloor = "The Mines — The Dam"
                 end
             end
-            for n in pairs(names) do allText = allText .. " " .. n end
-            if string.find(allText, "backdoor", 1, true) then return "Backdoor" end
-            if string.find(allText, "mines", 1, true) then return "Mines" end
-            if string.find(allText, "rooms", 1, true) or string.find(allText, "a-000", 1, true) then return "The Rooms" end
-            if string.find(allText, "outdoors", 1, true) or string.find(allText, "groundskeeper", 1, true) then return "Outdoors" end
-            if string.find(allText, "hotel", 1, true) or workspace:FindFirstChild("CurrentRooms") then return "Hotel" end
-            return "Unknown"
+            return floor, subfloor, roomLabel
+        end
+
+        local function currentFloor()
+            local floor = currentFloorInfo()
+            return floor
         end
 
         local itemFloor = {
@@ -1353,7 +1402,7 @@ return function(tab, reloadContent)
                             end
                         end
                     end
-                    setStatus("active on " .. currentFloor() .. "; " .. tostring(count) .. " item candidates")
+                    local floor, subfloor, roomLabel = currentFloorInfo()\n                    setStatus("active: " .. floor .. " / " .. subfloor .. (roomLabel and (" / " .. roomLabel) or "") .. "; " .. tostring(count) .. " item candidates")
                 end
                 task.wait(1)
             end
