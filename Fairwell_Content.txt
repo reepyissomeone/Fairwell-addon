@@ -1095,7 +1095,7 @@ return function(tab, reloadContent)
     local itemNotifyState = {running = true, enabled = false}
     itemNotifyEnv._FairwellItemNotifyState = itemNotifyState
     local itemNotifyBox
-    pcall(function() itemNotifyBox = tab:AddLeftGroupbox("Any Floor", "bell") end)
+    pcall(function() itemNotifyBox = closetBox end)
 
     if itemNotifyBox then
         local statusLabel
