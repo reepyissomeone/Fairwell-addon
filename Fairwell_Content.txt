@@ -1089,6 +1089,92 @@ return function(tab, reloadContent)
         end
     end
 
+    -- All Floors item notifications: detect newly appearing recognizable pickups.
+    local itemNotifyEnv = (getgenv and getgenv()) or _G
+    if itemNotifyEnv._FairwellItemNotifyState then itemNotifyEnv._FairwellItemNotifyState.running = false end
+    local itemNotifyState = {running = true, enabled = false}
+    itemNotifyEnv._FairwellItemNotifyState = itemNotifyState
+    local itemNotifyBox
+    pcall(function() itemNotifyBox = tab:AddLeftGroupbox("All Floors - Item Alerts", "bell") end)
+
+    if itemNotifyBox then
+        local statusLabel
+        local seen = {}
+        local startedAt = os.clock()
+        local known = {
+            key=true, lockpick=true, vitamins=true, bandage=true, lighter=true,
+            flashlight=true, candle=true, crucifix=true, skeletonkey=true,
+            herb=true, gold=true, coin=true, coins=true, battery=true,
+            batteries=true, glowstick=true, glowsticks=true, shears=true,
+            starlight=true, starlightvial=true, candy=true, potion=true,
+            bottle=true, spray=true, tablet=true, laserpointer=true,
+            gummyflashlight=true, fuse=true, lever=true, book=true, paper=true
+        }
+        pcall(function()
+            statusLabel = itemNotifyBox:AddLabel({Text="Status: off", DoesWrap=true})
+            itemNotifyBox:AddLabel({Text="Notifies when recognizable item pickups appear in the world. Works across floors when the item is visible to your client.", DoesWrap=true})
+        end)
+        local function setStatus(s)
+            if statusLabel then pcall(function() statusLabel:SetText("Status: " .. s) end) end
+        end
+        local function norm(s) return string.lower(tostring(s or "")):gsub("[%s%p_%-]", "") end
+        local function candidate(obj)
+            if not obj or not obj.Parent then return false end
+            local n = norm(obj.Name)
+            if known[n] then return true end
+            for name in pairs(known) do
+                if #name >= 5 and string.find(n, name, 1, true) then return true end
+            end
+            if obj:IsA("Model") then
+                for _, d in ipairs(obj:GetDescendants()) do
+                    if d:IsA("ProximityPrompt") and d.Enabled then
+                        if string.find(n, "item", 1, true) or string.find(n, "pickup", 1, true) or string.find(n, "collect", 1, true) then
+                            return true
+                        end
+                    end
+                end
+            end
+            return obj:IsA("Tool") and known[n]
+        end
+        pcall(function()
+            itemNotifyBox:AddToggle("FairwellAllFloorItemNotifications", {
+                Text="Item Notifications", Default=false,
+                Callback=function(enabled)
+                    itemNotifyState.enabled = enabled == true
+                    seen = {}
+                    startedAt = os.clock()
+                    setStatus(itemNotifyState.enabled and "scanning all floors" or "off")
+                end
+            })
+        end)
+        task.spawn(function()
+            while itemNotifyState.running do
+                if itemNotifyState.enabled then
+                    local count = 0
+                    for _, obj in ipairs(workspace:GetDescendants()) do
+                        if not itemNotifyState.enabled then break end
+                        if (obj:IsA("Model") or obj:IsA("Tool")) and candidate(obj) then
+                            count += 1
+                            local key = obj:GetFullName()
+                            if not seen[key] then
+                                seen[key] = true
+                                if os.clock() - startedAt > 2 then
+                                    pcall(function()
+                                        if tab and tab.Notify then
+                                            tab:Notify({Title="Item found", Description=obj.Name:gsub("_", " "), Time=4})
+                                        end
+                                    end)
+                                end
+                            end
+                        end
+                    end
+                    setStatus("active; " .. tostring(count) .. " item candidates")
+                end
+                task.wait(1)
+            end
+        end)
+    end
+
     -- Auto Giggle Glowstick: equips and throws a real Glowstick toward a nearby Giggle.
     -- This uses the normal Tool activation path; it does not fire arbitrary remotes.
     local gigglePlayers = game:GetService("Players")
