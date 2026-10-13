@@ -1109,7 +1109,7 @@ return function(tab, reloadContent)
             bulklight=true, candle=true, candy=true, cheese=true, compass=true,
             crucifix=true, donut=true, electricalroomkey=true, flashlight=true,
             fuse=true, glitchfragment=true, glowstick=true, glowsticks=true, gold=true,
-            greenherb=true, gween soda=true, ironkey=true, key=true, hotelkey=true,
+            greenherb=true, gweensoda=true, ironkey=true, key=true, hotelkey=true,
             backdoorkey=true, lockpick=true, lighter=true, lotus=true, lotuspetal=true,
             moonlightcandle=true, moonlightfloat=true, multitool=true, nvcs3000=true,
             paper=true, puzzlepainting=true, rift=true, riftjar=true, shakelight=true,
