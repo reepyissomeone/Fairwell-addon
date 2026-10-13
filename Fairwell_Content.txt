@@ -1194,7 +1194,8 @@ return function(tab, reloadContent)
             local iconAsset
             if string.find(lowerItemName, "starlight", 1, true) then
                 iconAsset = "126024358190295"
-            elseif string.find(lowerItemName, "moonlight", 1, true) then
+            elseif string.find(lowerItemName, "moonlight", 1, true) or string.find(lowerItemName, "crucifix", 1, true) then
+                -- Crucifix is grouped with Moonlight items for Fairwell's lore-based categories.
                 iconAsset = "114411758858046"
             elseif string.find(lowerItemName, "heal", 1, true) or string.find(lowerItemName, "bandage", 1, true) or string.find(lowerItemName, "medkit", 1, true) then
                 iconAsset = "13629907226"
