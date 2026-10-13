@@ -1095,7 +1095,7 @@ return function(tab, reloadContent)
     local itemNotifyState = {running = true, enabled = false}
     itemNotifyEnv._FairwellItemNotifyState = itemNotifyState
     local itemNotifyBox
-    pcall(function() itemNotifyBox = tab:AddLeftGroupbox("All Floors - Item Alerts", "bell") end)
+    pcall(function() itemNotifyBox = tab:AddLeftGroupbox("Any Floor", "bell") end)
 
     if itemNotifyBox then
         local statusLabel
@@ -1145,6 +1145,42 @@ return function(tab, reloadContent)
         }
         local selectedItemNames = {}
         for _, choice in ipairs(itemChoices) do selectedItemNames[choice] = true end
+
+        -- Floor-only items are filtered using the currently loaded floor/room containers.
+        local function currentFloor()
+            local names = {}
+            for _, obj in ipairs(workspace:GetChildren()) do
+                names[string.lower(obj.Name)] = true
+            end
+            local allText = ""
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                local n = string.lower(obj.Name)
+                if n == "currentrooms" or n == "rooms" then allText = allText .. " " .. n end
+                if string.find(n, "backdoor", 1, true) or string.find(n, "mines", 1, true)
+                    or string.find(n, "hotel", 1, true) or string.find(n, "outdoors", 1, true) then
+                    allText = allText .. " " .. n
+                end
+            end
+            for n in pairs(names) do allText = allText .. " " .. n end
+            if string.find(allText, "backdoor", 1, true) then return "Backdoor" end
+            if string.find(allText, "mines", 1, true) then return "Mines" end
+            if string.find(allText, "rooms", 1, true) or string.find(allText, "a-000", 1, true) then return "The Rooms" end
+            if string.find(allText, "outdoors", 1, true) or string.find(allText, "groundskeeper", 1, true) then return "Outdoors" end
+            if string.find(allText, "hotel", 1, true) or workspace:FindFirstChild("CurrentRooms") then return "Hotel" end
+            return "Unknown"
+        end
+
+        local itemFloor = {
+            ["Backdoor Key"] = "Backdoor", ["Starlight Vial"] = "Backdoor",
+            ["Starlight Bottle"] = "Backdoor", ["Starlight Jug"] = "The Rooms",
+            ["Shakelight"] = "The Rooms", ["Glowstick"] = "Mines",
+            ["Straplight"] = "Mines", ["Bulklight"] = "Mines",
+            ["Battery Pack"] = "Mines", ["Bandage Pack"] = "Mines",
+            ["Laser Pointer"] = "Mines", ["Shears"] = "Mines",
+            ["Gween Soda"] = "Mines", ["Bread"] = "Mines", ["Cheese"] = "Mines",
+            ["Lotus"] = "Outdoors", ["Lotus Petal"] = "Outdoors",
+            ["Iron Key"] = "Outdoors", ["Compass"] = "Outdoors", ["Lantern"] = "Outdoors"
+        }
         pcall(function()
             statusLabel = itemNotifyBox:AddLabel({Text="Status: off", DoesWrap=true})
             itemNotifyBox:AddLabel({Text="Notifies when recognizable item pickups appear in the world. Works across floors when the item is visible to your client.", DoesWrap=true})
@@ -1230,7 +1266,13 @@ return function(tab, reloadContent)
                                         break
                                     end
                                 end
-                                if wantsNotification and os.clock() - startedAt > 2 then
+                                local floor = currentFloor()
+                                local requiredFloor
+                                for choice, onlyFloor in pairs(itemFloor) do
+                                    if norm(choice) == detectedNorm then requiredFloor = onlyFloor break end
+                                end
+                                local correctFloor = not requiredFloor or floor == requiredFloor
+                                if wantsNotification and correctFloor and os.clock() - startedAt > 2 then
                                     -- Use the MSDoors/Fairwell popup notification system, not a label in the addon.
                                     local sent = false
                                     pcall(function()
@@ -1263,7 +1305,7 @@ return function(tab, reloadContent)
                             end
                         end
                     end
-                    setStatus("active; " .. tostring(count) .. " item candidates")
+                    setStatus("active on " .. currentFloor() .. "; " .. tostring(count) .. " item candidates")
                 end
                 task.wait(1)
             end
