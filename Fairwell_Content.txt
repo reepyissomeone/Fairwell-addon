@@ -1402,7 +1402,8 @@ return function(tab, reloadContent)
                             end
                         end
                     end
-                    local floor, subfloor, roomLabel = currentFloorInfo()\n                    setStatus("active: " .. floor .. " / " .. subfloor .. (roomLabel and (" / " .. roomLabel) or "") .. "; " .. tostring(count) .. " item candidates")
+                    local floor, subfloor, roomLabel = currentFloorInfo()
+                    setStatus("active: " .. floor .. " / " .. subfloor .. (roomLabel and (" / " .. roomLabel) or "") .. "; " .. tostring(count) .. " item candidates")
                 end
                 task.wait(1)
             end
