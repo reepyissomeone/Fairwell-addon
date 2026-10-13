@@ -1188,10 +1188,37 @@ return function(tab, reloadContent)
             heading.TextSize = 14
             heading.TextXAlignment = Enum.TextXAlignment.Left
             heading.Parent = card
+            -- User-provided Roblox image/texture IDs for item-category decorations.
+            -- These are displayed as images in the popup; they do not replace item detection.
+            local lowerItemName = string.lower(tostring(itemName))
+            local iconAsset
+            if string.find(lowerItemName, "starlight", 1, true) then
+                iconAsset = "126024358190295"
+            elseif string.find(lowerItemName, "moonlight", 1, true) then
+                iconAsset = "114411758858046"
+            elseif string.find(lowerItemName, "heal", 1, true) or string.find(lowerItemName, "bandage", 1, true) or string.find(lowerItemName, "medkit", 1, true) then
+                iconAsset = "13629907226"
+            elseif string.find(lowerItemName, "lockpick", 1, true) or string.find(lowerItemName, "key", 1, true) or string.find(lowerItemName, "tool", 1, true) then
+                iconAsset = "484396035"
+            elseif string.find(lowerItemName, "flashlight", 1, true) or string.find(lowerItemName, "lighter", 1, true) or string.find(lowerItemName, "glowstick", 1, true) or string.find(lowerItemName, "candle", 1, true) or string.find(lowerItemName, "lantern", 1, true) then
+                iconAsset = "103531352052753"
+            end
+
+            if iconAsset then
+                local itemIcon = Instance.new("ImageLabel")
+                itemIcon.Name = "ItemIcon"
+                itemIcon.BackgroundTransparency = 1
+                itemIcon.Position = UDim2.fromOffset(12, 27)
+                itemIcon.Size = UDim2.fromOffset(26, 26)
+                itemIcon.ScaleType = Enum.ScaleType.Fit
+                itemIcon.Image = "rbxassetid://" .. iconAsset
+                itemIcon.Parent = card
+            end
+
             local detail = Instance.new("TextLabel")
             detail.BackgroundTransparency = 1
-            detail.Position = UDim2.fromOffset(12, 27)
-            detail.Size = UDim2.new(1, -24, 0, 26)
+            detail.Position = UDim2.fromOffset(iconAsset and 48 or 12, 27)
+            detail.Size = UDim2.new(1, iconAsset and -60 or -24, 0, 26)
             detail.Font = Enum.Font.Gotham
             detail.Text = tostring(itemName)
             detail.TextColor3 = Color3.new(1, 1, 1)
