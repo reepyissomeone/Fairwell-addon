@@ -1278,12 +1278,18 @@ return function(tab, reloadContent)
                 floor, subfloor = "The Mines", "The Mines"
             elseif anyNameContains({"hotel-", "hotelminus", "hotelminusvision"}, false) then
                 floor, subfloor = "Hotel-", "Hotel- Vision"
-            elseif anyNameContains({"hotel", "currentrooms"}, false) or activeRooms then
-                floor, subfloor = "The Hotel", "The Hotel"
-            elseif anyNameContains({"lobby", "elevator", "lobbyfloor"}, false) then
+            elseif anyNameContains({"lobby", "lobbyfloor", "lobbyroom", "lobbyrooms"}, false) then
+                -- Lobby markers must be checked before the generic CurrentRooms fallback;
+                -- MSDoors can keep a CurrentRooms folder present while the player is in the lobby.
                 floor, subfloor = "Lobby", "Lobby"
+            elseif anyNameContains({"hotel-", "hotelminus", "hotelminusvision"}, false) then
+                floor, subfloor = "Hotel-", "Hotel- Vision"
+            elseif anyNameContains({"hotel"}, false) then
+                floor, subfloor = "The Hotel", "The Hotel"
             elseif anyNameContains({"rooms", "a-000", "a000"}, false) then
                 floor, subfloor = "The Rooms", "The Rooms Vision"
+            elseif activeRooms then
+                floor, subfloor = "The Hotel", "The Hotel"
             end
 
             -- The Mines contains named regions; only label a subfloor when an
