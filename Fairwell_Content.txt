@@ -1200,7 +1200,6 @@ return function(tab, reloadContent)
             local oldCameraCFrame = camera and camera.CFrame
             local oldCameraType = camera and camera.CameraType
             local oldAutoRotate = humanoid and humanoid.AutoRotate
-            local oldRootCFrame = root and root.CFrame
             local lockConnection
             local ok, err = pcall(function()
                 if tool.Parent ~= character then humanoid:EquipTool(tool) end
@@ -1210,34 +1209,37 @@ return function(tab, reloadContent)
                 local remote = folder and folder:FindFirstChild("Remote")
                 if not (remote and remote:IsA("RemoteEvent")) then remote = tool:FindFirstChild("Remote", true) end
                 if not (remote and remote:IsA("RemoteEvent")) then error("Glowsticks Remote not found") end
-                if not root then error("HumanoidRootPart not found") end
+                if not root or not root:IsA("BasePart") then error("HumanoidRootPart not found") end
 
-                -- Rotate the character root so the rig's body, not just the camera,
-                -- faces the Giggle. Keep the camera behind the character and aimed at it.
+                -- Face the target with the complete character pivot before sending the normal
+                -- Glowsticks request. This is the strongest client-side rotation attempt, but
+                -- the game server may still override it if character rotation is server-owned.
                 humanoid.AutoRotate = false
+                local lastFacing = nil
                 local function faceTarget()
                     if not targetPart.Parent or not root.Parent or not character.Parent then return end
                     local pos = root.Position
                     local target = targetPart.Position
                     local flatTarget = Vector3.new(target.X, pos.Y, target.Z)
-                    if (flatTarget - pos).Magnitude > 0.05 then
+                    local delta = flatTarget - pos
+                    if delta.Magnitude > 0.05 then
                         local facing = CFrame.lookAt(pos, flatTarget)
-                        root.CFrame = facing
-                        -- Pivot the complete rig to the same yaw while preserving its root position.
-                        -- This keeps the torso/legs aligned even on rigs where root rotation alone is resisted.
-                        local pivot = character:GetPivot()
-                        local pivotOffset = root.CFrame:ToObjectSpace(pivot)
-                        character:PivotTo(facing * pivotOffset)
+                        local currentPivot = character:GetPivot()
+                        local rootToPivot = root.CFrame:ToObjectSpace(currentPivot)
+                        character:PivotTo(facing * rootToPivot)
+                        lastFacing = facing
                     end
                     if camera then
                         camera.CameraType = Enum.CameraType.Scriptable
-                        local behind = root.Position - root.CFrame.LookVector * 8 + Vector3.new(0, 3.5, 0)
-                        camera.CFrame = CFrame.lookAt(behind, target)
+                        local lookFrom = root.Position - root.CFrame.LookVector * 8 + Vector3.new(0, 3.5, 0)
+                        camera.CFrame = CFrame.lookAt(lookFrom, target)
                     end
                 end
                 faceTarget()
                 lockConnection = giggleRunService.RenderStepped:Connect(faceTarget)
 
+                -- Let the rotation replicate for a brief moment before using the game's normal throw.
+                task.wait(0.18)
                 local started, throws = os.clock(), 0
                 while giggleState.enabled and targetPart.Parent and countGlowsticks(character) > 0
                     and throws < 40 and os.clock() - started < 5 do
@@ -1246,14 +1248,11 @@ return function(tab, reloadContent)
                     throws += 1
                     task.wait(0.09)
                 end
-                setGiggleStatus("sent " .. throws .. " throw requests; Glowsticks remaining: " .. countGlowsticks(character))
+                setGiggleStatus("faced target locally; sent " .. throws .. " throw requests. Server-visible facing depends on DOORS replication.")
             end)
             if lockConnection then pcall(function() lockConnection:Disconnect() end) end
             if humanoid and humanoid.Parent and oldAutoRotate ~= nil then
                 pcall(function() humanoid.AutoRotate = oldAutoRotate end)
-            end
-            if root and root.Parent and oldRootCFrame and not giggleState.enabled then
-                -- Do not snap the player back; only restore normal rotation control.
             end
             if camera and oldCameraCFrame and camera.Parent then
                 pcall(function()
