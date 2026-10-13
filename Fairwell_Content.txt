@@ -1212,20 +1212,27 @@ return function(tab, reloadContent)
                 if not (remote and remote:IsA("RemoteEvent")) then error("Glowsticks Remote not found") end
                 if not root then error("HumanoidRootPart not found") end
 
-                -- Keep the character's body facing the Giggle, and keep the camera aimed
-                -- at it every render frame (not just once per throw interval).
+                -- Rotate the character root so the rig's body, not just the camera,
+                -- faces the Giggle. Keep the camera behind the character and aimed at it.
                 humanoid.AutoRotate = false
                 local function faceTarget()
-                    if not targetPart.Parent or not root.Parent then return end
+                    if not targetPart.Parent or not root.Parent or not character.Parent then return end
                     local pos = root.Position
                     local target = targetPart.Position
                     local flatTarget = Vector3.new(target.X, pos.Y, target.Z)
                     if (flatTarget - pos).Magnitude > 0.05 then
-                        root.CFrame = CFrame.lookAt(pos, flatTarget)
+                        local facing = CFrame.lookAt(pos, flatTarget)
+                        root.CFrame = facing
+                        -- Pivot the complete rig to the same yaw while preserving its root position.
+                        -- This keeps the torso/legs aligned even on rigs where root rotation alone is resisted.
+                        local pivot = character:GetPivot()
+                        local pivotOffset = root.CFrame:ToObjectSpace(pivot)
+                        character:PivotTo(facing * pivotOffset)
                     end
                     if camera then
                         camera.CameraType = Enum.CameraType.Scriptable
-                        camera.CFrame = CFrame.lookAt(camera.CFrame.Position, target)
+                        local behind = root.Position - root.CFrame.LookVector * 8 + Vector3.new(0, 3.5, 0)
+                        camera.CFrame = CFrame.lookAt(behind, target)
                     end
                 end
                 faceTarget()
