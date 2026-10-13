@@ -1261,9 +1261,15 @@ return function(tab, reloadContent)
         local function candidate(obj)
             if not obj or not obj.Parent then return false end
             local n = norm(obj.Name)
+            -- TimeLevers are room mechanisms, not inventory pickups; don't let "lever"
+            -- substring matching classify them as ordinary Levers.
+            if string.find(n, "timelever", 1, true) then return false end
             if known[n] then return true end
+            -- Accept pickup wrappers such as "Pickup_Candle" while avoiding generic
+            -- substring collisions (for example TimeLever containing "lever").
             for name in pairs(known) do
-                if #name >= 5 and string.find(n, name, 1, true) then return true end
+                if #name >= 5 and (string.sub(n, 1, #name) == name
+                    or string.sub(n, -#name) == name) then return true end
             end
             if obj:IsA("Model") then
                 for _, d in ipairs(obj:GetDescendants()) do
