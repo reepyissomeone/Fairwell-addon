@@ -1142,11 +1142,11 @@ return function(tab, reloadContent)
         }
         local importantItems = {
             key=true, hotelkey=true, backdoorkey=true, ironkey=true, retrokey=true,
-            electricalroomkey=true, keycard=true, skeletonkey=true,
+            electricalroomkey=true, keycard=true,
             fuse=true, fusebox=true, breaker=true, breakerpole=true,
             book=true, librarybook=true, solutionpaper=true, paper=true, lever=true,
             generator=true, generatorfuse=true, breakerlever=true, courtyardkey=true,
-            roomskey=true, rift=true, riftjar=true, crucifix=true, holyhandgrenade=true
+            roomskey=true, rift=true, riftjar=true, holyhandgrenade=true
         }
 
         -- Dedicated popup UI, independent of the tab/library notification API.
@@ -1197,9 +1197,9 @@ return function(tab, reloadContent)
             elseif string.find(lowerItemName, "moonlight", 1, true) or string.find(lowerItemName, "crucifix", 1, true) then
                 -- Crucifix is grouped with Moonlight items for Fairwell's lore-based categories.
                 iconAsset = "114411758858046"
-            elseif string.find(lowerItemName, "heal", 1, true) or string.find(lowerItemName, "bandage", 1, true) or string.find(lowerItemName, "medkit", 1, true) then
+            elseif string.find(lowerItemName, "heal", 1, true) or string.find(lowerItemName, "bandage", 1, true) or string.find(lowerItemName, "medkit", 1, true) or string.find(lowerItemName, "smoothie", 1, true) or string.find(lowerItemName, "herb", 1, true) or string.find(lowerItemName, "aloe", 1, true) then
                 iconAsset = "13629907226"
-            elseif string.find(lowerItemName, "lockpick", 1, true) or string.find(lowerItemName, "key", 1, true) or string.find(lowerItemName, "tool", 1, true) then
+            elseif string.find(lowerItemName, "lockpick", 1, true) or string.find(lowerItemName, "key", 1, true) or string.find(lowerItemName, "tool", 1, true) or string.find(lowerItemName, "shears", 1, true) or string.find(lowerItemName, "fuse", 1, true) or string.find(lowerItemName, "breaker", 1, true) then
                 iconAsset = "484396035"
             elseif string.find(lowerItemName, "flashlight", 1, true) or string.find(lowerItemName, "lighter", 1, true) or string.find(lowerItemName, "glowstick", 1, true) or string.find(lowerItemName, "candle", 1, true) or string.find(lowerItemName, "lantern", 1, true) then
                 iconAsset = "103531352052753"
