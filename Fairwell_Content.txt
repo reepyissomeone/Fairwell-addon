@@ -1142,8 +1142,8 @@ return function(tab, reloadContent)
         }
         local importantItems = {
             key=true, hotelkey=true, backdoorkey=true, ironkey=true, retrokey=true,
-            electricalroomkey=true, keycard=true, skeletonkey=true, lockpick=true,
-            lockpickbundle=true, fuse=true, fusebox=true, breaker=true, breakerpole=true,
+            electricalroomkey=true, keycard=true, skeletonkey=true,
+            fuse=true, fusebox=true, breaker=true, breakerpole=true,
             book=true, librarybook=true, solutionpaper=true, paper=true, lever=true,
             generator=true, generatorfuse=true, breakerlever=true, courtyardkey=true,
             roomskey=true, rift=true, riftjar=true, crucifix=true, holyhandgrenade=true
