@@ -1215,71 +1215,90 @@ return function(tab, reloadContent)
         local selectedItemNames = {}
         for _, choice in ipairs(itemChoices) do selectedItemNames[choice] = true end
 
-        -- Detect the active DOORS floor and subfloor from live room containers.
-        -- Prefer structural clues over searching every descendant, which can match
-        -- leftover models/assets from a different floor.
+        -- Detect current floor/subfloor using active workspace names and room structure.
+        -- Order matters: more specific subfloors must win over generic room folders.
         local function currentFloorInfo()
-            local roots = {}
-            for _, obj in ipairs(workspace:GetChildren()) do
-                table.insert(roots, obj)
+            local allNames = {}
+            local function addName(obj)
+                if obj then allNames[string.lower(obj.Name)] = true end
             end
-            local function hasName(fragment)
-                fragment = string.lower(fragment)
-                for _, root in ipairs(roots) do
-                    if string.find(string.lower(root.Name), fragment, 1, true) then return true end
+            for _, obj in ipairs(workspace:GetChildren()) do addName(obj) end
+
+            -- Inspect only names, not arbitrary text or item descriptions.
+            -- Include nested room containers because some MSDoors versions place
+            -- the active floor marker below Workspace rather than at its root.
+            local activeRooms = workspace:FindFirstChild("CurrentRooms")
+                or workspace:FindFirstChild("Rooms")
+            local activeRoomNumber, activeRoom
+            if activeRooms then
+                for _, room in ipairs(activeRooms:GetChildren()) do
+                    local number = tonumber(room.Name:match("%d+"))
+                    if number and (not activeRoomNumber or number > activeRoomNumber) then
+                        activeRoomNumber, activeRoom = number, room
+                    end
+                end
+            end
+
+            local roomNames = {}
+            if activeRoom then
+                table.insert(roomNames, string.lower(activeRoom.Name))
+                for _, obj in ipairs(activeRoom:GetDescendants()) do
+                    table.insert(roomNames, string.lower(obj.Name))
+                end
+            end
+
+            local function anyNameContains(needles, includeRoomNames)
+                for name in pairs(allNames) do
+                    for _, needle in ipairs(needles) do
+                        if string.find(name, needle, 1, true) then return true end
+                    end
+                end
+                if includeRoomNames then
+                    for _, name in ipairs(roomNames) do
+                        for _, needle in ipairs(needles) do
+                            if string.find(name, needle, 1, true) then return true end
+                        end
+                    end
                 end
                 return false
             end
 
-            local floor = "Unknown"
-            local subfloor = "Unknown"
-            local roomLabel = nil
-            local currentRooms = workspace:FindFirstChild("CurrentRooms")
-            local roomsFolder = workspace:FindFirstChild("Rooms")
+            local floor, subfloor = "Unknown", "Unknown"
+            local roomLabel = activeRoomNumber and string.format("Room %03d", activeRoomNumber) or nil
 
-            if hasName("backdoor") then
+            if anyNameContains({"stairwell", "stairwellrooms"}, false) then
+                floor, subfloor = "The Stairwell", "The Stairwell"
+            elseif anyNameContains({"archives", "sectora", "sectorz", "a-000", "a000"}, true) then
+                floor, subfloor = "The Archives", "The Archives"
+            elseif anyNameContains({"backdoor", "backdoors"}, false) then
                 floor, subfloor = "The Backdoor", "The Backdoor"
-            elseif hasName("mines") then
-                floor, subfloor = "The Mines", "The Mines"
-            elseif hasName("outdoors") or hasName("groundskeeper") then
+            elseif anyNameContains({"outdoors", "groundskeeper", "bramble", "eyestalk"}, false) then
                 floor, subfloor = "The Outdoors", "The Outdoors"
-            elseif hasName("castle") then
-                floor, subfloor = "The Castle", "The Castle"
-            elseif hasName("rooms") or hasName("a-000") then
-                floor, subfloor = "The Rooms", "The Rooms"
-            elseif currentRooms or roomsFolder then
+            elseif anyNameContains({"mines", "minecart", "the nest", "nestroom", "damroom"}, false) then
+                floor, subfloor = "The Mines", "The Mines"
+            elseif anyNameContains({"hotel-", "hotelminus", "hotelminusvision"}, false) then
+                floor, subfloor = "Hotel-", "Hotel- Vision"
+            elseif anyNameContains({"hotel", "currentrooms"}, false) or activeRooms then
                 floor, subfloor = "The Hotel", "The Hotel"
+            elseif anyNameContains({"lobby", "elevator", "lobbyfloor"}, false) then
+                floor, subfloor = "Lobby", "Lobby"
+            elseif anyNameContains({"rooms", "a-000", "a000"}, false) then
+                floor, subfloor = "The Rooms", "The Rooms Vision"
             end
 
-            local activeFolder = currentRooms or roomsFolder
-            if activeFolder then
-                local latestNumber, latestRoom
-                for _, room in ipairs(activeFolder:GetChildren()) do
-                    local number = tonumber(room.Name:match("%d+"))
-                    if number and (not latestNumber or number > latestNumber) then
-                        latestNumber, latestRoom = number, room
-                    end
-                end
-                if latestNumber then roomLabel = string.format("Room %03d", latestNumber) end
-
-                -- Detect known subfloor segments from active room/model names only.
-                local roomText = string.lower((latestRoom and latestRoom.Name or "") .. " ")
-                if latestRoom then
-                    for _, obj in ipairs(latestRoom:GetDescendants()) do
-                        local n = string.lower(obj.Name)
-                        if string.find(n, "nest", 1, true) then roomText = roomText .. " nest" end
-                        if string.find(n, "dam", 1, true) then roomText = roomText .. " dam" end
-                        if string.find(n, "rooms", 1, true) or string.find(n, "a-000", 1, true) then
-                            roomText = roomText .. " rooms"
-                        end
-                    end
-                end
-                if floor == "The Mines" and string.find(roomText, "nest", 1, true) then
+            -- The Mines contains named regions; only label a subfloor when an
+            -- actual region marker is found in the active room's descendants.
+            if floor == "The Mines" then
+                if anyNameContains({"stairwell"}, true) then
+                    subfloor = "The Stairwell"
+                elseif anyNameContains({"nest", "grumble"}, true) then
                     subfloor = "The Mines — The Nest"
-                elseif floor == "The Mines" and string.find(roomText, "dam", 1, true) then
+                elseif anyNameContains({"dam"}, true) then
                     subfloor = "The Mines — The Dam"
                 end
             end
+
+            -- Report the active room number when the current folder uses numeric names.
             return floor, subfloor, roomLabel
         end
 
