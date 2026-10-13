@@ -1122,7 +1122,7 @@ return function(tab, reloadContent)
             candybag=true, candybags=true, buddy=true, tipjar=true, bread=true,
             scanner=true, solutionpaper=true, librarybook=true, painting=true,
             lever=true, fusebox=true, breaker=true, stardust=true, riftjar=true,
-            glowstick=true, lockpickbundle=true, vitamins=true, keycard=true
+            glowstick=true, vitamins=true, keycard=true
         }
         local itemChoices = {
             -- Obtainable pickups/resources only. Decorative paintings and unavailable/admin-only items are excluded.
@@ -1132,7 +1132,7 @@ return function(tab, reloadContent)
             "Donut", "Drone", "Electrical Room Key", "Flashlight", "Fuse", "Fuse Box",
             "Glitch Bandage", "Glitch Fragment", "Glowstick", "Gold", "Green Herb", "Gween Soda",
             "Holy Egg Grenade", "Holy Hand Grenade", "Hotel Key", "Iron Key", "Key", "Lantern",
-            "Laser Pointer", "Lighter", "Lockpick", "Lockpick Bundle", "Lotus", "Lotus Petal",
+            "Laser Pointer", "Lighter", "Lockpick", "Lotus", "Lotus Petal",
             "Moonlight Candle", "Moonlight Float", "Multitool", "Nanner", "Nanner Peel",
             "Paper", "Potion", "Potions", "Rift", "Rift Jar", "Rush Jar", "Shears",
             "Shakelight", "Shield Potion", "Skeleton Key", "Smoothie", "Solution Paper",
@@ -1260,27 +1260,26 @@ return function(tab, reloadContent)
         local function norm(s) return string.lower(tostring(s or "")):gsub("[%s%p_%-]", "") end
         local function candidate(obj)
             if not obj or not obj.Parent then return false end
-            local n = norm(obj.Name)
-            -- TimeLevers are room mechanisms, not inventory pickups; don't let "lever"
-            -- substring matching classify them as ordinary Levers.
-            if string.find(n, "timelever", 1, true) then return false end
-            if known[n] then return true end
-            -- Accept pickup wrappers such as "Pickup_Candle" while avoiding generic
-            -- substring collisions (for example TimeLever containing "lever").
-            for name in pairs(known) do
-                if #name >= 5 and (string.sub(n, 1, #name) == name
-                    or string.sub(n, -#name) == name) then return true end
-            end
-            if obj:IsA("Model") then
-                for _, d in ipairs(obj:GetDescendants()) do
-                    if d:IsA("ProximityPrompt") and d.Enabled then
-                        if string.find(n, "item", 1, true) or string.find(n, "pickup", 1, true) or string.find(n, "collect", 1, true) then
-                            return true
-                        end
-                    end
+
+            -- Reject room mechanisms and scenery even if a nested child happens to
+            -- share an item name (e.g. TimeLever/Lever, Candle Medium, Ripped Wall).
+            local node = obj
+            for _ = 1, 8 do
+                if not node then break end
+                local ancestorName = norm(node.Name)
+                if string.find(ancestorName, "timelever", 1, true)
+                    or string.find(ancestorName, "candlemedium", 1, true)
+                    or string.find(ancestorName, "rippedwall", 1, true) then
+                    return false
                 end
+                node = node.Parent
             end
-            return obj:IsA("Tool") and known[n]
+
+            -- Exact names only. Prefix/suffix matching and generic "item"/"pickup"
+            -- prompt heuristics caused scenery and room mechanisms to trigger alerts.
+            local n = norm(obj.Name)
+            if not known[n] then return false end
+            return obj:IsA("Model") or obj:IsA("Tool")
         end
         pcall(function()
             itemNotifyBox:AddDropdown("FairwellItemNotificationChoices", {
