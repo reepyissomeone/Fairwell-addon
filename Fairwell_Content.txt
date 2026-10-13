@@ -1347,7 +1347,7 @@ return function(tab, reloadContent)
                                 local isImportant = importantItems[detectedNorm] == true
                                 if wantsNotification and correctFloor and not isImportant and os.clock() - startedAt > 2 then
                                     showItemPopup(detectedName)
-                                endd
+                                end
                             end
                         end
                     end
