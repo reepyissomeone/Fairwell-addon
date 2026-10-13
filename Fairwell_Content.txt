@@ -1124,6 +1124,27 @@ return function(tab, reloadContent)
             lever=true, fusebox=true, breaker=true, stardust=true, riftjar=true,
             glowstick=true, lockpickbundle=true, vitamins=true, keycard=true
         }
+        local itemChoices = {
+            "A90's Stop Sign", "Alarm Clock", "Aloe", "Backdoor Key", "Bandage Pack", "Bandages",
+            "Batteries", "Battery Pack", "Big Bomb", "Book", "Bomb Box", "Boxing Gloves", "Bread",
+            "Breaker Pole", "Buddy", "Bulklight", "Candy", "Candy Bags", "Candle", "Cheese",
+            "Compass", "Crucifix", "Donut", "Electrical Room Key", "Flashlight", "Fuse",
+            "Glitch Fragment", "Glowstick", "Gold", "Gold Blaster", "Green Herb", "Gween Soda",
+            "Hiding Box", "Holy Hand Grenade", "Hotel Key", "Iron Key", "Key", "Lantern",
+            "Laser Pointer", "Library Book", "Lighter", "Lockpick", "Lockpick Bundle", "Lotus",
+            "Lotus Petal", "M249", "Mini-Shield", "Moonlight Candle", "Moonlight Float",
+            "Multitool", "Nanner", "Nanner Peel", "NVCS-3000", "Paper", "Painting",
+            "Potion", "Puzzle Painting", "Rift", "Rift Jar", "Scanner", "Shears", "Shield Potion",
+            "Shakelight", "Skeleton Key", "Smoothie", "Solution Paper", "Stardust",
+            "Starlight Bottle", "Starlight Jug", "Starlight Vial", "Straplight", "Throwable Prop",
+            "Tip Jar", "Vitamins", "Fuse Box", "Breaker", "Keycard", "Lever", "Painting",
+            "Retro Key", "Potions", "Waiting Ticket", "Birdseeds", "Pizza", "Cup of Coffee",
+            "Evil Dollar", "Knockback Stick", "Glitch Bandage", "Rush Jar", "Holy Egg Grenade",
+            "Drone", "Rift", "Candy", "Candy Bag", "Green Herb", "Bandage", "Battery",
+            "Flashlight", "Lighter", "Lockpick", "Candle", "Crucifix", "Vitamins"
+        }
+        local selectedItemNames = {}
+        for _, choice in ipairs(itemChoices) do selectedItemNames[choice] = true end
         pcall(function()
             statusLabel = itemNotifyBox:AddLabel({Text="Status: off", DoesWrap=true})
             itemNotifyBox:AddLabel({Text="Notifies when recognizable item pickups appear in the world. Works across floors when the item is visible to your client.", DoesWrap=true})
@@ -1151,6 +1172,32 @@ return function(tab, reloadContent)
             return obj:IsA("Tool") and known[n]
         end
         pcall(function()
+            itemNotifyBox:AddDropdown("FairwellItemNotificationChoices", {
+                Text = "Notify for these items",
+                Values = itemChoices,
+                Default = itemChoices,
+                Multi = true,
+                AllowNull = true,
+                Callback = function(values)
+                    selectedItemNames = {}
+                    if type(values) == "table" then
+                        for key, value in pairs(values) do
+                            if type(key) == "number" and type(value) == "string" then
+                                selectedItemNames[value] = true
+                            elseif type(key) == "string" and value == true then
+                                selectedItemNames[key] = true
+                            end
+                        end
+                    end
+                    setStatus("selection updated: " .. tostring((function()
+                        local n = 0
+                        for _ in pairs(selectedItemNames) do n += 1 end
+                        return n
+                    end)()) .. " item types")
+                end
+            })
+        end)
+        pcall(function()
             itemNotifyBox:AddToggle("FairwellAllFloorItemNotifications", {
                 Text="Item Notifications", Default=false,
                 Callback=function(enabled)
@@ -1172,10 +1219,21 @@ return function(tab, reloadContent)
                             local key = obj:GetFullName()
                             if not seen[key] then
                                 seen[key] = true
-                                if os.clock() - startedAt > 2 then
+                                local detectedName = obj.Name:gsub("_", " ")
+                                local detectedNorm = norm(detectedName)
+                                local wantsNotification = false
+                                for choice in pairs(selectedItemNames) do
+                                    local choiceNorm = norm(choice)
+                                    if detectedNorm == choiceNorm or string.find(detectedNorm, choiceNorm, 1, true)
+                                        or string.find(choiceNorm, detectedNorm, 1, true) then
+                                        wantsNotification = true
+                                        break
+                                    end
+                                end
+                                if wantsNotification and os.clock() - startedAt > 2 then
                                     pcall(function()
                                         if tab and tab.Notify then
-                                            tab:Notify({Title="Item found", Description=obj.Name:gsub("_", " "), Time=4})
+                                            tab:Notify({Title="Item found", Description=detectedName, Time=4})
                                         end
                                     end)
                                 end
