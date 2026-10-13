@@ -1125,23 +1125,20 @@ return function(tab, reloadContent)
             glowstick=true, lockpickbundle=true, vitamins=true, keycard=true
         }
         local itemChoices = {
-            "A90's Stop Sign", "Alarm Clock", "Aloe", "Backdoor Key", "Bandage Pack", "Bandages",
-            "Batteries", "Battery Pack", "Big Bomb", "Book", "Bomb Box", "Boxing Gloves", "Bread",
-            "Breaker Pole", "Buddy", "Bulklight", "Candy", "Candy Bags", "Candle", "Cheese",
-            "Compass", "Crucifix", "Donut", "Electrical Room Key", "Flashlight", "Fuse",
-            "Glitch Fragment", "Glowstick", "Gold", "Gold Blaster", "Green Herb", "Gween Soda",
-            "Hiding Box", "Holy Hand Grenade", "Hotel Key", "Iron Key", "Key", "Lantern",
-            "Laser Pointer", "Library Book", "Lighter", "Lockpick", "Lockpick Bundle", "Lotus",
-            "Lotus Petal", "M249", "Mini-Shield", "Moonlight Candle", "Moonlight Float",
-            "Multitool", "Nanner", "Nanner Peel", "NVCS-3000", "Paper", "Painting",
-            "Potion", "Puzzle Painting", "Rift", "Rift Jar", "Scanner", "Shears", "Shield Potion",
-            "Shakelight", "Skeleton Key", "Smoothie", "Solution Paper", "Stardust",
-            "Starlight Bottle", "Starlight Jug", "Starlight Vial", "Straplight", "Throwable Prop",
-            "Tip Jar", "Vitamins", "Fuse Box", "Breaker", "Keycard", "Lever", "Painting",
-            "Retro Key", "Potions", "Waiting Ticket", "Birdseeds", "Pizza", "Cup of Coffee",
-            "Evil Dollar", "Knockback Stick", "Glitch Bandage", "Rush Jar", "Holy Egg Grenade",
-            "Drone", "Rift", "Candy", "Candy Bag", "Green Herb", "Bandage", "Battery",
-            "Flashlight", "Lighter", "Lockpick", "Candle", "Crucifix", "Vitamins"
+            -- Obtainable pickups/resources only. Decorative paintings and unavailable/admin-only items are excluded.
+            "Alarm Clock", "Aloe", "Backdoor Key", "Bandage", "Bandage Pack", "Bandages",
+            "Batteries", "Battery", "Battery Pack", "Bread", "Bulklight", "Candy", "Candy Bag",
+            "Candy Bags", "Candle", "Cheese", "Compass", "Crucifix", "Cup of Coffee",
+            "Donut", "Drone", "Electrical Room Key", "Flashlight", "Fuse", "Fuse Box",
+            "Glitch Bandage", "Glitch Fragment", "Glowstick", "Gold", "Green Herb", "Gween Soda",
+            "Holy Egg Grenade", "Holy Hand Grenade", "Hotel Key", "Iron Key", "Key", "Lantern",
+            "Laser Pointer", "Lighter", "Lockpick", "Lockpick Bundle", "Lotus", "Lotus Petal",
+            "Moonlight Candle", "Moonlight Float", "Multitool", "Nanner", "Nanner Peel",
+            "Paper", "Potion", "Potions", "Rift", "Rift Jar", "Rush Jar", "Shears",
+            "Shakelight", "Shield Potion", "Skeleton Key", "Smoothie", "Solution Paper",
+            "Stardust", "Starlight Bottle", "Starlight Jug", "Starlight Vial", "Straplight",
+            "Tip Jar", "Throwable Prop", "Vitamins", "Waiting Ticket", "Birdseeds", "Pizza",
+            "Retro Key", "Keycard", "Breaker", "Breaker Pole", "Lever", "Generator"
         }
         local importantItems = {
             key=true, hotelkey=true, backdoorkey=true, ironkey=true, retrokey=true,
