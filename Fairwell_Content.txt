@@ -1101,14 +1101,28 @@ return function(tab, reloadContent)
         local statusLabel
         local seen = {}
         local startedAt = os.clock()
+        -- Current and floor-specific DOORS item names, plus notable vision/event items.
+        -- Detection is name-based; add actual MSDoors model aliases here if they differ.
         local known = {
-            key=true, lockpick=true, vitamins=true, bandage=true, lighter=true,
-            flashlight=true, candle=true, crucifix=true, skeletonkey=true,
-            herb=true, gold=true, coin=true, coins=true, battery=true,
-            batteries=true, glowstick=true, glowsticks=true, shears=true,
-            starlight=true, starlightvial=true, candy=true, potion=true,
-            bottle=true, spray=true, tablet=true, laserpointer=true,
-            gummyflashlight=true, fuse=true, lever=true, book=true, paper=true
+            alarmclock=true, aloe=true, bandage=true, bandages=true, bandagepack=true,
+            batteries=true, batterypack=true, battery=true, book=true, breakerpole=true,
+            bulklight=true, candle=true, candy=true, cheese=true, compass=true,
+            crucifix=true, donut=true, electricalroomkey=true, flashlight=true,
+            fuse=true, glitchfragment=true, glowstick=true, glowsticks=true, gold=true,
+            greenherb=true, gween soda=true, ironkey=true, key=true, hotelkey=true,
+            backdoorkey=true, lockpick=true, lighter=true, lotus=true, lotuspetal=true,
+            moonlightcandle=true, moonlightfloat=true, multitool=true, nvcs3000=true,
+            paper=true, puzzlepainting=true, rift=true, riftjar=true, shakelight=true,
+            skeletonkey=true, shears=true, starlightbottle=true, starlightjug=true,
+            starlightvial=true, straplight=true, smoothie=true, vitamins=true,
+            laserpointer=true, lantern=true, goldblaster=true, holyhandgrenade=true,
+            minishield=true, shieldpotion=true, potion=true, bigbomb=true,
+            throwableprop=true, bombbox=true, boxinggloves=true, knockbomb=true,
+            nanner=true, nannerpeel=true, hidingbox=true, a90stopsign=true,
+            candybag=true, candybags=true, buddy=true, tipjar=true, bread=true,
+            scanner=true, solutionpaper=true, librarybook=true, painting=true,
+            lever=true, fusebox=true, breaker=true, stardust=true, riftjar=true,
+            glowstick=true, lockpickbundle=true, vitamins=true, keycard=true
         }
         pcall(function()
             statusLabel = itemNotifyBox:AddLabel({Text="Status: off", DoesWrap=true})
