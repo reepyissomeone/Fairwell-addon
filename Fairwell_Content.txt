@@ -1231,11 +1231,34 @@ return function(tab, reloadContent)
                                     end
                                 end
                                 if wantsNotification and os.clock() - startedAt > 2 then
+                                    -- Use the MSDoors/Fairwell popup notification system, not a label in the addon.
+                                    local sent = false
                                     pcall(function()
-                                        if tab and tab.Notify then
-                                            tab:Notify({Title="Item found", Description=detectedName, Time=4})
+                                        if tab and type(tab.Notify) == "function" then
+                                            tab:Notify({
+                                                Title = "ITEM FOUND",
+                                                Description = detectedName,
+                                                Time = 4
+                                            })
+                                            sent = true
                                         end
                                     end)
+                                    if not sent then
+                                        pcall(function()
+                                            local library = env.Library or env.Obsidian or env.UI_Library
+                                            if library and type(library.Notify) == "function" then
+                                                library:Notify({
+                                                    Title = "ITEM FOUND",
+                                                    Description = detectedName,
+                                                    Time = 4
+                                                })
+                                                sent = true
+                                            end
+                                        end)
+                                    end
+                                    if not sent then
+                                        warn("[Fairwell] Item found: " .. detectedName .. " (notification API unavailable)")
+                                    end
                                 end
                             end
                         end
