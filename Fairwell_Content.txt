@@ -1176,6 +1176,20 @@ return function(tab, reloadContent)
                 })
             end)
         end
+        local showItemPopup
+        pcall(function()
+            itemNotifyBox:AddButton({
+                Text = "Test Item Notification",
+                Func = function()
+                    if type(showItemPopup) == "function" then
+                        showItemPopup("Test Item")
+                    else
+                        warn("[Fairwell] Notification preview is not ready yet.")
+                    end
+                end,
+                Tooltip = "Preview the notification with your current customization settings"
+            })
+        end)
         addSettingDropdown("FairwellNotifyTheme", "Notification theme",
             {"Fairwell Blue", "Starlight", "Moonlight", "Minimal"}, popupSettings.theme,
             function(v) if type(v) == "string" then popupSettings.theme = v end end)
@@ -1226,7 +1240,7 @@ return function(tab, reloadContent)
         end)
 
         local popupSerial = 0
-        local function showItemPopup(itemName)
+        showItemPopup = function(itemName)
             if not popupGui or not popupGui.Parent then return end
             popupSerial += 1
             local y = 70 + ((popupSerial - 1) % 4) * 82
