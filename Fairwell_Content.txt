@@ -1094,8 +1094,13 @@ return function(tab, reloadContent)
     if itemNotifyEnv._FairwellItemNotifyState then itemNotifyEnv._FairwellItemNotifyState.running = false end
     local itemNotifyState = {running = true, enabled = false}
     itemNotifyEnv._FairwellItemNotifyState = itemNotifyState
+    -- Give Item Notifications its own groupbox so it remains visible even if
+    -- the Auto Closet / Any Floor groupbox fails to initialize.
     local itemNotifyBox
-    pcall(function() itemNotifyBox = closetBox end)
+    local itemNotifyBoxOk, itemNotifyBoxResult = pcall(function()
+        return tab:AddRightGroupbox("Item Notifications", "bell")
+    end)
+    if itemNotifyBoxOk then itemNotifyBox = itemNotifyBoxResult end
 
     -- Dedicated groupbox for popup appearance and timing customization.
     local notifyCustomizeBox
