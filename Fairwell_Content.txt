@@ -1278,7 +1278,7 @@ return function(tab, reloadContent)
             local card = Instance.new("Frame")
             card.Name = "ItemDetectedPopup"
             card.AnchorPoint = Vector2.new(1, 0)
-            card.Position = UDim2.new(1, popupSettings.animation == "None" and finalX or offscreenX, 0, y)
+            card.Position = UDim2.new(1, popupSettings.animation == "Slide from right" and offscreenX or finalX, 0, y)
             card.Size = UDim2.fromOffset(width, height)
             card.BackgroundColor3 = popupSettings.theme == "Starlight" and Color3.fromRGB(35, 24, 65)
                 or popupSettings.theme == "Moonlight" and Color3.fromRGB(25, 34, 62)
@@ -1356,14 +1356,20 @@ return function(tab, reloadContent)
             end
 
             if popupSettings.animation == "Fade" then
+                local targetTransparency = popupSettings.theme == "Minimal" and 0.12 or 0
                 card.BackgroundTransparency = 1
+                stroke.Transparency = 1
                 heading.TextTransparency = 1
                 detail.TextTransparency = 1
-                if card:FindFirstChild("ItemIcon") then card.ItemIcon.ImageTransparency = 1 end
-                TweenService:Create(card, TweenInfo.new(animTime), {BackgroundTransparency = popupSettings.theme == "Minimal" and 0.12 or 0}):Play()
-                TweenService:Create(heading, TweenInfo.new(0.25), {TextTransparency = 0}):Play()
-                TweenService:Create(detail, TweenInfo.new(0.25), {TextTransparency = 0}):Play()
-                if card:FindFirstChild("ItemIcon") then TweenService:Create(card.ItemIcon, TweenInfo.new(0.25), {ImageTransparency = 0}):Play() end
+                local fadeInInfo = TweenInfo.new(animTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                TweenService:Create(card, fadeInInfo, {BackgroundTransparency = targetTransparency}):Play()
+                TweenService:Create(stroke, fadeInInfo, {Transparency = 0}):Play()
+                TweenService:Create(heading, fadeInInfo, {TextTransparency = 0}):Play()
+                TweenService:Create(detail, fadeInInfo, {TextTransparency = 0}):Play()
+                if card:FindFirstChild("ItemIcon") then
+                    card.ItemIcon.ImageTransparency = 1
+                    TweenService:Create(card.ItemIcon, fadeInInfo, {ImageTransparency = 0}):Play()
+                end
             elseif popupSettings.animation == "Pop" then
                 card.Size = UDim2.fromOffset(0, 0)
                 TweenService:Create(card, TweenInfo.new(animTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(width, height)}):Play()
@@ -1377,7 +1383,14 @@ return function(tab, reloadContent)
                 task.delay(popupSettings.duration, function()
                     if not card or not card.Parent then return end
                     if popupSettings.animation == "Fade" then
-                        local fade = TweenService:Create(card, TweenInfo.new(0.25), {BackgroundTransparency = 1})
+                        local fadeInfo = TweenInfo.new(math.max(0.2, animTime), Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+                        local fade = TweenService:Create(card, fadeInfo, {BackgroundTransparency = 1})
+                        TweenService:Create(stroke, fadeInfo, {Transparency = 1}):Play()
+                        TweenService:Create(heading, fadeInfo, {TextTransparency = 1}):Play()
+                        TweenService:Create(detail, fadeInfo, {TextTransparency = 1}):Play()
+                        if card:FindFirstChild("ItemIcon") then
+                            TweenService:Create(card.ItemIcon, fadeInfo, {ImageTransparency = 1}):Play()
+                        end
                         fade:Play()
                         fade.Completed:Once(function() pcall(function() card:Destroy() end) end)
                     elseif popupSettings.animation == "None" then
