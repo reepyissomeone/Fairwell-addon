@@ -1350,14 +1350,6 @@ return function(tab, reloadContent)
             detail.Size = UDim2.new(1, iconAsset and (popupSettings.icons == "Larger icons" and -72 or -62) or -24, 0, math.max(20, height * 0.45))
             detail.Font = Enum.Font.Gotham
             detail.Text = tostring(itemName)
-            -- Custom text elements support the live detected-item token.
-            for _, customElement in ipairs(animationEditor.elements) do
-                if customElement.kind == "Item Name ({{item_name}})" or customElement.kind == "Heading Text" then
-                    local customText = tostring(customElement.text or ""):gsub("{{item_name}}", tostring(itemName))
-                    if customElement.kind == "Item Name ({{item_name}})" then detail.Text = customText
-                    else heading.Text = customText end
-                end
-            end
             detail.TextColor3 = Color3.new(1, 1, 1)
             detail.TextSize = popupSettings.size == "Compact" and 12 or (popupSettings.size == "Large" and 17 or 15)
             detail.TextWrapped = true
@@ -1376,50 +1368,7 @@ return function(tab, reloadContent)
                 end)
             end
 
-            -- Apply the selected editor element's keyframes to the actual popup.
-            for _, customElement in ipairs(animationEditor.elements) do
-                if #customElement.keyframes > 0 then
-                    local first = customElement.keyframes[1]
-                    local last = customElement.keyframes[#customElement.keyframes]
-                    task.spawn(function()
-                        local startClock = os.clock()
-                        while card.Parent do
-                            local elapsed = os.clock() - startClock
-                            local a, b = first, last
-                            for index = 1, #customElement.keyframes - 1 do
-                                if elapsed >= customElement.keyframes[index].time and elapsed <= customElement.keyframes[index + 1].time then
-                                    a, b = customElement.keyframes[index], customElement.keyframes[index + 1]
-                                    break
-                                end
-                            end
-                            local span = math.max(0.001, b.time - a.time)
-                            local alpha = math.clamp((elapsed - a.time) / span, 0, 1)
-                            local x = a.x + (b.x - a.x) * alpha
-                            local yOffset = a.y + (b.y - a.y) * alpha
-                            local scale = a.scale + (b.scale - a.scale) * alpha
-                            local transparency = a.transparency + (b.transparency - a.transparency) * alpha
-                            if customElement.kind == "Item Name ({{item_name}})" then
-                                detail.Position = UDim2.fromOffset(12 + x, math.max(22, height * 0.42) + yOffset)
-                                detail.Size = UDim2.new(1, (iconAsset and (popupSettings.icons == "Larger icons" and -72 or -62) or -24) * scale, 0, math.max(20, height * 0.45) * scale)
-                                detail.TextTransparency = transparency
-                            elseif customElement.kind == "Heading Text" then
-                                heading.Position = UDim2.fromOffset(12 + x, 4 + yOffset)
-                                heading.TextTransparency = transparency
-                            elseif customElement.kind == "Accent Panel" then
-                                card.Position = UDim2.new(1, finalX + x, 0, y + yOffset)
-                                card.BackgroundTransparency = transparency
-                            elseif customElement.kind == "Item Icon" and card:FindFirstChild("ItemIcon") then
-                                local image = card.ItemIcon
-                                image.Position = UDim2.new(1, -10 + x, 0.5, 4 + yOffset)
-                                image.Size = UDim2.fromOffset((popupSettings.icons == "Larger icons" and 48 or 34) * scale, (popupSettings.icons == "Larger icons" and 48 or 34) * scale)
-                                image.ImageTransparency = transparency
-                            end
-                            if elapsed >= last.time then break end
-                            task.wait(0.03)
-                        end
-                    end)
-                end
-            end
+            -- Keep popup rendering independent of the removed custom animation editor.
 
             if popupSettings.animation == "Fade" then
                 local targetTransparency = popupSettings.theme == "Minimal" and 0.12 or 0
