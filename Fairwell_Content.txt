@@ -1097,6 +1097,12 @@ return function(tab, reloadContent)
     local itemNotifyBox
     pcall(function() itemNotifyBox = closetBox end)
 
+    -- Dedicated groupbox for popup appearance and timing customization.
+    local notifyCustomizeBox
+    pcall(function()
+        notifyCustomizeBox = tab:AddLeftGroupbox("Notification Customization", "sliders-horizontal")
+    end)
+
     if itemNotifyBox then
         local statusLabel
         local seen = {}
