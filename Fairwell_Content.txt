@@ -1111,7 +1111,11 @@ return function(tab, reloadContent)
         -- Detection is name-based; add actual MSDoors model aliases here if they differ.
         local known = {
             alarmclock=true, aloe=true, bandage=true, bandages=true, bandagepack=true,
-            batteries=true, batterypack=true, battery=true, book=true, breakerpole=true,
+            batteries=true, batterypack=true, battery=true,
+            batterypickup=true, batteryitem=true, batterymodel=true,
+            batteriespickup=true, batteriesmodel=true, batterypackpickup=true,
+            batterypackitem=true, batterypackmodel=true, batterytool=true,
+            book=true, breakerpole=true,
             bulklight=true, candle=true, candy=true, cheese=true, compass=true,
             crucifix=true, donut=true, electricalroomkey=true, flashlight=true,
             fuse=true, glitchfragment=true, glowstick=true, glowsticks=true, gold=true,
@@ -1318,7 +1322,7 @@ return function(tab, reloadContent)
                 iconAsset = "13629907226"
             elseif string.find(lowerItemName, "lockpick", 1, true) or string.find(lowerItemName, "key", 1, true) or string.find(lowerItemName, "tool", 1, true) or string.find(lowerItemName, "shears", 1, true) or string.find(lowerItemName, "fuse", 1, true) or string.find(lowerItemName, "breaker", 1, true) then
                 iconAsset = "96878074199117"
-            elseif string.find(lowerItemName, "flashlight", 1, true) or string.find(lowerItemName, "lighter", 1, true) or string.find(lowerItemName, "glowstick", 1, true) or string.find(lowerItemName, "candle", 1, true) or string.find(lowerItemName, "lantern", 1, true) then
+            elseif string.find(lowerItemName, "flashlight", 1, true) or string.find(lowerItemName, "lighter", 1, true) or string.find(lowerItemName, "laser pointer", 1, true) or string.find(lowerItemName, "laserpointer", 1, true) or string.find(lowerItemName, "glowstick", 1, true) or string.find(lowerItemName, "candle", 1, true) or string.find(lowerItemName, "lantern", 1, true) then
                 iconAsset = "103531352052753"
             end
             if popupSettings.icons == "No icons" then iconAsset = nil end
@@ -1581,6 +1585,13 @@ return function(tab, reloadContent)
             if statusLabel then pcall(function() statusLabel:SetText("Status: " .. s) end) end
         end
         local function norm(s) return string.lower(tostring(s or "")):gsub("[%s%p_%-]", "") end
+        -- Normalize common MSDoors/DOORS pickup model aliases to the selectable item name.
+        local itemAliases = {
+            batterypickup="Battery", batteryitem="Battery", batterymodel="Battery",
+            batteriespickup="Batteries", batteriesmodel="Batteries",
+            batterypackpickup="Battery Pack", batterypackitem="Battery Pack",
+            batterypackmodel="Battery Pack", batterytool="Battery"
+        }
         local function candidate(obj)
             if not obj or not obj.Parent then return false end
 
@@ -1652,7 +1663,8 @@ return function(tab, reloadContent)
                             local key = obj:GetFullName()
                             if not seen[key] then
                                 seen[key] = true
-                                local detectedName = obj.Name:gsub("_", " ")
+                                local rawDetectedName = obj.Name:gsub("_", " ")
+                                local detectedName = itemAliases[norm(rawDetectedName)] or rawDetectedName
                                 local detectedNorm = norm(detectedName)
                                 local wantsNotification = false
                                 for choice in pairs(selectedItemNames) do
