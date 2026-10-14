@@ -1149,7 +1149,7 @@ return function(tab, reloadContent)
             roomskey=true, rift=true, riftjar=true, holyhandgrenade=true
         }
 
-        -- Dedicated popup UI, independent of the tab/library notification API.
+        -- Customizable item notification popup and timing controls.
         local TweenService = game:GetService("TweenService")
         local popupParent = (gethui and gethui()) or game:GetService("CoreGui")
         local oldPopup = popupParent:FindFirstChild("FairwellItemPopupGui")
@@ -1161,41 +1161,114 @@ return function(tab, reloadContent)
         popupGui.DisplayOrder = 9999
         popupGui.Parent = popupParent
         itemNotifyState.popupGui = popupGui
+
+        local popupSettings = {
+            theme = "Fairwell Blue", animation = "Slide from right",
+            duration = 3.5, size = "Standard", icons = "Category icons",
+            sound = "Off", heading = "ITEM DETECTED", customHeading = "FAIRWELL ALERT",
+            delay = 1
+        }
+        local function addSettingDropdown(id, label, values, defaultValue, callback)
+            pcall(function()
+                itemNotifyBox:AddDropdown(id, {
+                    Text = label, Values = values, Default = defaultValue,
+                    Callback = callback
+                })
+            end)
+        end
+        addSettingDropdown("FairwellNotifyTheme", "Notification theme",
+            {"Fairwell Blue", "Starlight", "Moonlight", "Minimal"}, popupSettings.theme,
+            function(v) if type(v) == "string" then popupSettings.theme = v end end)
+        addSettingDropdown("FairwellNotifyAnimation", "Animation",
+            {"Slide from right", "Fade", "Pop", "None"}, popupSettings.animation,
+            function(v) if type(v) == "string" then popupSettings.animation = v end end)
+        addSettingDropdown("FairwellNotifyDuration", "Popup duration",
+            {"2 seconds", "3.5 seconds", "5 seconds", "Until dismissed"}, "3.5 seconds",
+            function(v)
+                if v == "2 seconds" then popupSettings.duration = 2
+                elseif v == "5 seconds" then popupSettings.duration = 5
+                elseif v == "Until dismissed" then popupSettings.duration = 0
+                else popupSettings.duration = 3.5 end
+            end)
+        addSettingDropdown("FairwellNotifySize", "Popup size",
+            {"Compact", "Standard", "Large"}, popupSettings.size,
+            function(v) if type(v) == "string" then popupSettings.size = v end end)
+        addSettingDropdown("FairwellNotifyIcons", "Icons",
+            {"Category icons", "Larger icons", "No icons"}, popupSettings.icons,
+            function(v) if type(v) == "string" then popupSettings.icons = v end end)
+        addSettingDropdown("FairwellNotifySound", "Notification sound",
+            {"Off", "Soft", "DOORS-style"}, popupSettings.sound,
+            function(v) if type(v) == "string" then popupSettings.sound = v end end)
+        addSettingDropdown("FairwellNotifyHeading", "Popup heading",
+            {"ITEM DETECTED", "ITEM FOUND", "FAIRWELL ALERT", "Custom"}, popupSettings.heading,
+            function(v) if type(v) == "string" then popupSettings.heading = v end end)
+        pcall(function()
+            itemNotifyBox:AddInput("FairwellNotifyCustomHeading", {
+                Text = "Custom heading text", Default = "FAIRWELL ALERT",
+                Placeholder = "Enter heading",
+                Callback = function(v)
+                    if type(v) == "string" and v ~= "" then popupSettings.customHeading = string.sub(v, 1, 32) end
+                end
+            })
+        end)
+        pcall(function()
+            itemNotifyBox:AddInput("FairwellNotifyDelay", {
+                Text = "Custom scan delay (seconds)", Default = "1",
+                Placeholder = "0.1 - 10",
+                Callback = function(v)
+                    local n = tonumber(v)
+                    if n then popupSettings.delay = math.clamp(n, 0.1, 10) end
+                end
+            })
+        end)
+        pcall(function()
+            itemNotifyBox:AddLabel({Text = "Custom scan delay controls how often Fairwell checks for new items. Popup duration and style are configured above.", DoesWrap = true})
+        end)
+
         local popupSerial = 0
         local function showItemPopup(itemName)
             if not popupGui or not popupGui.Parent then return end
             popupSerial += 1
-            local y = 70 + ((popupSerial - 1) % 4) * 72
+            local y = 70 + ((popupSerial - 1) % 4) * 82
+            local width, height = 300, 60
+            if popupSettings.size == "Compact" then width, height = 250, 48
+            elseif popupSettings.size == "Large" then width, height = 340, 76 end
             local card = Instance.new("Frame")
             card.Name = "ItemDetectedPopup"
             card.AnchorPoint = Vector2.new(1, 0)
-            card.Position = UDim2.new(1, 330, 0, y)
-            card.Size = UDim2.fromOffset(300, 60)
-            card.BackgroundColor3 = Color3.fromRGB(16, 13, 45)
+            card.Position = UDim2.new(1, popupSettings.animation == "None" and -14 or 360, 0, y)
+            card.Size = UDim2.fromOffset(width, height)
+            card.BackgroundColor3 = popupSettings.theme == "Starlight" and Color3.fromRGB(35, 24, 65)
+                or popupSettings.theme == "Moonlight" and Color3.fromRGB(25, 34, 62)
+                or popupSettings.theme == "Minimal" and Color3.fromRGB(25, 25, 29)
+                or Color3.fromRGB(16, 13, 45)
+            card.BackgroundTransparency = popupSettings.theme == "Minimal" and 0.12 or 0
             card.BorderSizePixel = 0
             card.Parent = popupGui
             local stroke = Instance.new("UIStroke")
-            stroke.Color = Color3.fromRGB(27, 147, 227)
+            stroke.Color = popupSettings.theme == "Starlight" and Color3.fromRGB(190, 145, 255)
+                or popupSettings.theme == "Moonlight" and Color3.fromRGB(145, 195, 255)
+                or popupSettings.theme == "Minimal" and Color3.fromRGB(115, 115, 125)
+                or Color3.fromRGB(27, 147, 227)
             stroke.Thickness = 2
             stroke.Parent = card
             local heading = Instance.new("TextLabel")
             heading.BackgroundTransparency = 1
-            heading.Position = UDim2.fromOffset(12, 5)
-            heading.Size = UDim2.new(1, -24, 0, 20)
+            heading.Position = UDim2.fromOffset(12, 4)
+            heading.Size = UDim2.new(1, -24, 0, math.max(18, height * 0.34))
             heading.Font = Enum.Font.GothamBold
-            heading.Text = "ITEM DETECTED"
-            heading.TextColor3 = Color3.fromRGB(90, 195, 255)
-            heading.TextSize = 14
+            heading.Text = popupSettings.heading == "Custom" and popupSettings.customHeading or popupSettings.heading
+            heading.TextColor3 = stroke.Color
+            heading.TextSize = popupSettings.size == "Compact" and 12 or 14
             heading.TextXAlignment = Enum.TextXAlignment.Left
+            heading.TextTruncate = Enum.TextTruncate.AtEnd
             heading.Parent = card
-            -- User-provided Roblox image/texture IDs for item-category decorations.
-            -- These are displayed as images in the popup; they do not replace item detection.
+
             local lowerItemName = string.lower(tostring(itemName))
             local iconAsset
             if string.find(lowerItemName, "starlight", 1, true) then
                 iconAsset = "126024358190295"
             elseif string.find(lowerItemName, "moonlight", 1, true) or string.find(lowerItemName, "crucifix", 1, true) then
-                -- Crucifix is grouped with Moonlight items for Fairwell's lore-based categories.
                 iconAsset = "114411758858046"
             elseif string.find(lowerItemName, "heal", 1, true) or string.find(lowerItemName, "bandage", 1, true) or string.find(lowerItemName, "medkit", 1, true) or string.find(lowerItemName, "smoothie", 1, true) or string.find(lowerItemName, "herb", 1, true) or string.find(lowerItemName, "aloe", 1, true) then
                 iconAsset = "13629907226"
@@ -1204,41 +1277,78 @@ return function(tab, reloadContent)
             elseif string.find(lowerItemName, "flashlight", 1, true) or string.find(lowerItemName, "lighter", 1, true) or string.find(lowerItemName, "glowstick", 1, true) or string.find(lowerItemName, "candle", 1, true) or string.find(lowerItemName, "lantern", 1, true) then
                 iconAsset = "103531352052753"
             end
-
+            if popupSettings.icons == "No icons" then iconAsset = nil end
             if iconAsset then
                 local itemIcon = Instance.new("ImageLabel")
                 itemIcon.Name = "ItemIcon"
                 itemIcon.BackgroundTransparency = 1
                 itemIcon.AnchorPoint = Vector2.new(1, 0.5)
-                itemIcon.Position = UDim2.new(1, -12, 0.5, 5)
-                itemIcon.Size = UDim2.fromOffset(38, 38)
+                itemIcon.Position = UDim2.new(1, -10, 0.5, 4)
+                itemIcon.Size = popupSettings.icons == "Larger icons" and UDim2.fromOffset(48, 48) or UDim2.fromOffset(34, 34)
                 itemIcon.ScaleType = Enum.ScaleType.Fit
                 itemIcon.Image = "rbxassetid://" .. iconAsset
                 itemIcon.Parent = card
             end
-
             local detail = Instance.new("TextLabel")
             detail.BackgroundTransparency = 1
-            detail.Position = UDim2.fromOffset(12, 27)
-            detail.Size = UDim2.new(1, iconAsset and -76 or -24, 0, 26)
+            detail.Position = UDim2.fromOffset(12, math.max(22, height * 0.42))
+            detail.Size = UDim2.new(1, iconAsset and (popupSettings.icons == "Larger icons" and -72 or -62) or -24, 0, math.max(20, height * 0.45))
             detail.Font = Enum.Font.Gotham
             detail.Text = tostring(itemName)
             detail.TextColor3 = Color3.new(1, 1, 1)
-            detail.TextSize = 15
+            detail.TextSize = popupSettings.size == "Compact" and 12 or (popupSettings.size == "Large" and 17 or 15)
             detail.TextWrapped = true
             detail.TextXAlignment = Enum.TextXAlignment.Left
             detail.Parent = card
-            TweenService:Create(card, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                Position = UDim2.new(1, -14, 0, y)
-            }):Play()
-            task.delay(3.5, function()
-                if not card or not card.Parent then return end
-                local out = TweenService:Create(card, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
-                    Position = UDim2.new(1, 330, 0, y)
-                })
-                out:Play()
-                out.Completed:Once(function() pcall(function() card:Destroy() end) end)
-            end)
+
+            if popupSettings.sound ~= "Off" then
+                pcall(function()
+                    local sound = Instance.new("Sound")
+                    sound.Name = "FairwellItemNotificationSound"
+                    sound.SoundId = popupSettings.sound == "Soft" and "rbxassetid://9118823101" or "rbxassetid://6026984224"
+                    sound.Volume = popupSettings.sound == "Soft" and 0.25 or 0.45
+                    sound.Parent = popupGui
+                    sound:Play()
+                    task.delay(3, function() pcall(function() sound:Destroy() end) end)
+                end)
+            end
+
+            if popupSettings.animation == "Fade" then
+                card.BackgroundTransparency = 1
+                heading.TextTransparency = 1
+                detail.TextTransparency = 1
+                if card:FindFirstChild("ItemIcon") then card.ItemIcon.ImageTransparency = 1 end
+                TweenService:Create(card, TweenInfo.new(0.25), {BackgroundTransparency = popupSettings.theme == "Minimal" and 0.12 or 0}):Play()
+                TweenService:Create(heading, TweenInfo.new(0.25), {TextTransparency = 0}):Play()
+                TweenService:Create(detail, TweenInfo.new(0.25), {TextTransparency = 0}):Play()
+                if card:FindFirstChild("ItemIcon") then TweenService:Create(card.ItemIcon, TweenInfo.new(0.25), {ImageTransparency = 0}):Play() end
+            elseif popupSettings.animation == "Pop" then
+                card.Size = UDim2.fromOffset(0, 0)
+                TweenService:Create(card, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(width, height)}):Play()
+            elseif popupSettings.animation == "Slide from right" then
+                TweenService:Create(card, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                    Position = UDim2.new(1, -14, 0, y)
+                }):Play()
+            end
+
+            if popupSettings.duration > 0 then
+                task.delay(popupSettings.duration, function()
+                    if not card or not card.Parent then return end
+                    if popupSettings.animation == "Fade" then
+                        local fade = TweenService:Create(card, TweenInfo.new(0.25), {BackgroundTransparency = 1})
+                        fade:Play()
+                        fade.Completed:Once(function() pcall(function() card:Destroy() end) end)
+                    elseif popupSettings.animation == "None" then
+                        pcall(function() card:Destroy() end)
+                    else
+                        local out = TweenService:Create(card, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
+                            Position = UDim2.new(1, width + 30, 0, y)
+                        })
+                        out:Play()
+                        out.Completed:Once(function() pcall(function() card:Destroy() end) end)
+                    end
+                end)
+            end
         end
 
         local selectedItemNames = {}
@@ -1459,7 +1569,7 @@ return function(tab, reloadContent)
                     local floor, subfloor, roomLabel = currentFloorInfo()
                     setStatus("active: " .. floor .. " / " .. subfloor .. (roomLabel and (" / " .. roomLabel) or "") .. "; " .. tostring(count) .. " item candidates")
                 end
-                task.wait(1)
+                task.wait(popupSettings.delay)
             end
         end)
     end
