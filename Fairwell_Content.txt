@@ -1130,9 +1130,16 @@ return function(tab, reloadContent)
             throwableprop=true, bombbox=true, boxinggloves=true, knockbomb=true,
             nanner=true, nannerpeel=true, hidingbox=true, a90stopsign=true,
             candybag=true, candybags=true, buddy=true, tipjar=true, bread=true,
-            scanner=true, solutionpaper=true, librarybook=true, painting=true,
+            scanner=true, solutionpaper=true, librarybook=true,
             lever=true, fusebox=true, breaker=true, stardust=true, riftjar=true,
-            glowstick=true, vitamins=true, keycard=true
+            glowstick=true, vitamins=true, keycard=true,
+            cupofcoffee=true, drone=true, glitchbandage=true, holyegggrenade=true,
+            potions=true, rushjar=true, waitingticket=true, birdseeds=true,
+            pizza=true, retrokey=true, generator=true, breakerpole=true,
+            starlightbottle=true, starlightjug=true, starlightvial=true,
+            bandagepack=true, candybag=true, candypack=true, shakelight=true,
+            shieldpotion=true, throwableprop=true, rift=true, tipjar=true,
+            nannerpeel=true, bread=true, keycard=true, generatorfuse=true
         }
         local itemChoices = {
             -- Obtainable pickups/resources only. Decorative paintings and unavailable/admin-only items are excluded.
