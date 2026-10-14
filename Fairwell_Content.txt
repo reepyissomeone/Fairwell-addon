@@ -1257,6 +1257,77 @@ return function(tab, reloadContent)
             settingsBox:AddLabel({Text = "Notification delay controls how long Fairwell waits before showing a detected-item popup. Display time controls how long it stays visible; background scanning remains separate.", DoesWrap = true})
         end)
 
+        -- Custom notification keyframe editor (live popup elements + timeline).
+        local animationEditor = {elements = {}, selected = 0, nextId = 0, pending = {time = 0, x = 0, y = 0, scale = 100, transparency = 0}}
+        local animationEditorEnv = (getgenv and getgenv()) or _G
+        animationEditorEnv._FairwellNotificationAnimation = animationEditor
+        local function editorElementChoices()
+            local choices = {}
+            for _, element in ipairs(animationEditor.elements) do
+                table.insert(choices, element.name .. " [" .. element.kind .. "]")
+            end
+            return #choices > 0 and choices or {"(add an element first)"}
+        end
+        local function editorSelected()
+            return animationEditor.elements[animationEditor.selected]
+        end
+        local function refreshEditorStatus()
+            if animationEditor.status then
+                local element = editorSelected()
+                animationEditor.status:SetText(element and (element.name .. " — " .. #element.keyframes .. " keyframe(s)") or "Add an element to start building an animation.")
+            end
+        end
+        if settingsBox then
+            pcall(function() settingsBox:AddLabel({Text = "Keyframe Animation Editor", DoesWrap = true}) end)
+            pcall(function()
+                settingsBox:AddDropdown("FWAnimAddKind", {Text = "Element to add", Values = {"Item Name ({{item_name}})", "Heading Text", "Accent Panel", "Item Icon"}, Default = "Item Name ({{item_name}})", Callback = function(v) animationEditor.pendingKind = v end})
+            end)
+            pcall(function()
+                settingsBox:AddButton({Text = "Add Element", Func = function()
+                    animationEditor.nextId += 1
+                    local kind = animationEditor.pendingKind or "Item Name ({{item_name}})"
+                    local element = {id = animationEditor.nextId, kind = kind, name = kind, text = kind == "Item Name ({{item_name}})" and "{{item_name}}" or kind, keyframes = {}}
+                    table.insert(animationEditor.elements, element)
+                    animationEditor.selected = #animationEditor.elements
+                    refreshEditorStatus()
+                end})
+            end)
+            pcall(function()
+                settingsBox:AddDropdown("FWAnimSelectElement", {Text = "Select Element", Values = {"(add an element first)"}, Default = "(add an element first)", Callback = function(v)
+                    for index, element in ipairs(animationEditor.elements) do
+                        if v == element.name .. " [" .. element.kind .. "]" then animationEditor.selected = index break end
+                    end
+                    refreshEditorStatus()
+                end})
+            end)
+            pcall(function()
+                settingsBox:AddInput("FWAnimElementText", {Text = "Element text (use {{item_name}})", Default = "{{item_name}}", Placeholder = "{{item_name}}", Callback = function(v)
+                    local element = editorSelected()
+                    if element then element.text = tostring(v or "") end
+                end})
+            end)
+            pcall(function()
+                settingsBox:AddSlider("FWAnimKeyTime", {Text = "Keyframe time (seconds)", Default = 0, Min = 0, Max = 5, Rounding = 2, Compact = false, Callback = function(v) animationEditor.pending.time = tonumber(v) or 0 end})
+                settingsBox:AddSlider("FWAnimKeyX", {Text = "Keyframe X offset", Default = 0, Min = -200, Max = 200, Rounding = 0, Compact = false, Callback = function(v) animationEditor.pending.x = tonumber(v) or 0 end})
+                settingsBox:AddSlider("FWAnimKeyY", {Text = "Keyframe Y offset", Default = 0, Min = -100, Max = 100, Rounding = 0, Compact = false, Callback = function(v) animationEditor.pending.y = tonumber(v) or 0 end})
+                settingsBox:AddSlider("FWAnimKeyScale", {Text = "Keyframe scale (%)", Default = 100, Min = 10, Max = 160, Rounding = 0, Compact = false, Callback = function(v) animationEditor.pending.scale = tonumber(v) or 100 end})
+                settingsBox:AddSlider("FWAnimKeyTransparency", {Text = "Keyframe transparency (%)", Default = 0, Min = 0, Max = 100, Rounding = 0, Compact = false, Callback = function(v) animationEditor.pending.transparency = tonumber(v) or 0 end})
+            end)
+            pcall(function()
+                settingsBox:AddButton({Text = "Add Keyframe", Func = function()
+                    local element = editorSelected()
+                    if not element then return end
+                    table.insert(element.keyframes, {time = animationEditor.pending.time, x = animationEditor.pending.x, y = animationEditor.pending.y, scale = animationEditor.pending.scale / 100, transparency = animationEditor.pending.transparency / 100})
+                    table.sort(element.keyframes, function(a, b) return a.time < b.time end)
+                    refreshEditorStatus()
+                end})
+                animationEditor.status = settingsBox:AddLabel({Text = "Add an element to start building an animation.", DoesWrap = true})
+                settingsBox:AddButton({Text = "Preview Animation", Func = function()
+                    if showItemPopup then showItemPopup("Preview Item") end
+                end})
+            end)
+        end
+
         local popupSerial = 0
         showItemPopup = function(itemName)
             if not popupGui or not popupGui.Parent then return end
