@@ -1228,9 +1228,9 @@ return function(tab, reloadContent)
         -- Sliders are easier to adjust on touch screens than typing numeric values.
         pcall(function()
             settingsBox:AddSlider("FairwellNotifyScanIntervalSlider", {
-                Text = "Background scan interval (seconds)", Default = 1, Min = 0.1, Max = 5,
+                Text = "Notification delay (seconds)", Default = 1, Min = 0, Max = 10,
                 Rounding = 1, Compact = false,
-                Callback = function(v) popupSettings.delay = math.clamp(tonumber(v) or 1, 0.1, 5) end
+                Callback = function(v) popupSettings.delay = math.clamp(tonumber(v) or 1, 0, 10) end
             })
         end)
         pcall(function()
@@ -1248,7 +1248,7 @@ return function(tab, reloadContent)
             })
         end)
         pcall(function()
-            settingsBox:AddLabel({Text = "Notification display time controls how long each popup stays visible. Background scan interval controls how often items are checked. Animation speed and scale are separate.", DoesWrap = true})
+            settingsBox:AddLabel({Text = "Notification delay controls how long Fairwell waits before showing a detected-item popup. Display time controls how long it stays visible; background scanning remains separate.", DoesWrap = true})
         end)
 
         local popupSerial = 0
