@@ -1542,8 +1542,8 @@ return function(tab, reloadContent)
             ["Iron Key"] = "Outdoors", ["Compass"] = "Outdoors", ["Lantern"] = "Outdoors"
         }
         pcall(function()
-            statusLabel = itemNotifyBox:AddLabel({Text="Status: off", DoesWrap=true})
-            itemNotifyBox:AddLabel({Text="Notifies when recognizable item pickups appear in the world. Works across floors when the item is visible to your client.", DoesWrap=true})
+            statusLabel = settingsBox:AddLabel({Text="Item Notifications: off", DoesWrap=true})
+            settingsBox:AddLabel({Text="Choose which pickups trigger alerts, then enable Item Notifications. Floor-specific items only alert on their matching floor.", DoesWrap=true})
         end)
         local function setStatus(s)
             if statusLabel then pcall(function() statusLabel:SetText("Status: " .. s) end) end
@@ -1592,7 +1592,7 @@ return function(tab, reloadContent)
             return obj:IsA("Model") or obj:IsA("Tool")
         end
         pcall(function()
-            itemNotifyBox:AddDropdown("FairwellItemNotificationChoices", {
+            settingsBox:AddDropdown("FairwellItemNotificationChoices", {
                 Text = "Notify for these items",
                 Values = itemChoices,
                 Default = (function()
@@ -1624,7 +1624,7 @@ return function(tab, reloadContent)
             })
         end)
         pcall(function()
-            itemNotifyBox:AddToggle("FairwellAllFloorItemNotifications", {
+            settingsBox:AddToggle("FairwellAllFloorItemNotifications", {
                 Text="Item Notifications", Default=false,
                 Callback=function(enabled)
                     itemNotifyState.enabled = enabled == true
