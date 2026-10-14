@@ -1150,6 +1150,7 @@ return function(tab, reloadContent)
         }
 
         -- Customizable item notification popup and timing controls.
+        local settingsBox = notifyCustomizeBox or itemNotifyBox
         local TweenService = game:GetService("TweenService")
         local popupParent = (gethui and gethui()) or game:GetService("CoreGui")
         local oldPopup = popupParent:FindFirstChild("FairwellItemPopupGui")
@@ -1170,7 +1171,7 @@ return function(tab, reloadContent)
         }
         local function addSettingDropdown(id, label, values, defaultValue, callback)
             pcall(function()
-                itemNotifyBox:AddDropdown(id, {
+                settingsBox:AddDropdown(id, {
                     Text = label, Values = values, Default = defaultValue,
                     Callback = callback
                 })
@@ -1178,7 +1179,7 @@ return function(tab, reloadContent)
         end
         local showItemPopup
         pcall(function()
-            itemNotifyBox:AddButton({
+            settingsBox:AddButton({
                 Text = "Test Item Notification",
                 Func = function()
                     if type(showItemPopup) == "function" then
@@ -1196,14 +1197,13 @@ return function(tab, reloadContent)
         addSettingDropdown("FairwellNotifyAnimation", "Animation",
             {"Slide from right", "Fade", "Pop", "None"}, popupSettings.animation,
             function(v) if type(v) == "string" then popupSettings.animation = v end end)
-        addSettingDropdown("FairwellNotifyDuration", "Popup duration",
-            {"2 seconds", "3.5 seconds", "5 seconds", "Until dismissed"}, "3.5 seconds",
-            function(v)
-                if v == "2 seconds" then popupSettings.duration = 2
-                elseif v == "5 seconds" then popupSettings.duration = 5
-                elseif v == "Until dismissed" then popupSettings.duration = 0
-                else popupSettings.duration = 3.5 end
-            end)
+        pcall(function()
+            settingsBox:AddSlider("FairwellNotifyDurationSlider", {
+                Text = "Notification display time (seconds)", Default = 3.5, Min = 1, Max = 10,
+                Rounding = 1, Compact = false,
+                Callback = function(v) popupSettings.duration = math.clamp(tonumber(v) or 3.5, 1, 10) end
+            })
+        end)
         addSettingDropdown("FairwellNotifySize", "Popup size",
             {"Compact", "Standard", "Large"}, popupSettings.size,
             function(v) if type(v) == "string" then popupSettings.size = v end end)
@@ -1217,7 +1217,7 @@ return function(tab, reloadContent)
             {"ITEM DETECTED", "ITEM FOUND", "FAIRWELL ALERT", "Custom"}, popupSettings.heading,
             function(v) if type(v) == "string" then popupSettings.heading = v end end)
         pcall(function()
-            itemNotifyBox:AddInput("FairwellNotifyCustomHeading", {
+            settingsBox:AddInput("FairwellNotifyCustomHeading", {
                 Text = "Custom heading text", Default = "FAIRWELL ALERT",
                 Placeholder = "Enter heading",
                 Callback = function(v)
@@ -1227,28 +1227,28 @@ return function(tab, reloadContent)
         end)
         -- Sliders are easier to adjust on touch screens than typing numeric values.
         pcall(function()
-            itemNotifyBox:AddSlider("FairwellNotifyDelaySlider", {
-                Text = "Item scan interval (seconds)", Default = 1, Min = 0.1, Max = 5,
+            settingsBox:AddSlider("FairwellNotifyScanIntervalSlider", {
+                Text = "Background scan interval (seconds)", Default = 1, Min = 0.1, Max = 5,
                 Rounding = 1, Compact = false,
                 Callback = function(v) popupSettings.delay = math.clamp(tonumber(v) or 1, 0.1, 5) end
             })
         end)
         pcall(function()
-            itemNotifyBox:AddSlider("FairwellNotifySpeedSlider", {
+            settingsBox:AddSlider("FairwellNotifySpeedSlider", {
                 Text = "Animation speed", Default = 3, Min = 1, Max = 10,
                 Rounding = 0, Compact = false,
                 Callback = function(v) popupSettings.animSpeed = math.clamp((tonumber(v) or 3) / 10, 0.1, 1) end
             })
         end)
         pcall(function()
-            itemNotifyBox:AddSlider("FairwellNotifyScaleSlider", {
+            settingsBox:AddSlider("FairwellNotifyScaleSlider", {
                 Text = "Popup scale (%)", Default = 100, Min = 70, Max = 130,
                 Rounding = 0, Compact = false,
                 Callback = function(v) popupSettings.scale = math.clamp((tonumber(v) or 100) / 100, 0.7, 1.3) end
             })
         end)
         pcall(function()
-            itemNotifyBox:AddLabel({Text = "Scan interval controls how often Fairwell checks for items. Animation speed and scale adjust the popup. Size also adapts automatically to your screen.", DoesWrap = true})
+            settingsBox:AddLabel({Text = "Notification display time controls how long each popup stays visible. Background scan interval controls how often items are checked. Animation speed and scale are separate.", DoesWrap = true})
         end)
 
         local popupSerial = 0
