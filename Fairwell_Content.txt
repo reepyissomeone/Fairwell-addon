@@ -1682,7 +1682,7 @@ return function(tab, reloadContent)
                                 end
                                 local correctFloor = not requiredFloor or floor == requiredFloor
                                 local isImportant = importantItems[detectedNorm] == true
-                                if wantsNotification and correctFloor and not isImportant and os.clock() - startedAt > 2 then
+                                if wantsNotification and correctFloor and os.clock() - startedAt > 2 then
                                     local detectedObject = obj
                                     local waitBeforePopup = popupSettings.delay
                                     task.delay(waitBeforePopup, function()
