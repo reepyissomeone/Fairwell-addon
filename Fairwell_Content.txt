@@ -1465,8 +1465,11 @@ return function(tab, reloadContent)
             end
         end
 
+        -- Start with the important items selected; the user can add any other item in the dropdown.
         local selectedItemNames = {}
-        for _, choice in ipairs(itemChoices) do selectedItemNames[choice] = true end
+        for _, choice in ipairs(itemChoices) do
+            if importantItems[norm(choice)] then selectedItemNames[choice] = true end
+        end
 
         -- Detect current floor/subfloor using active workspace names and room structure.
         -- Order matters: more specific subfloors must win over generic room folders.
@@ -1588,9 +1591,21 @@ return function(tab, reloadContent)
         -- Normalize common MSDoors/DOORS pickup model aliases to the selectable item name.
         local itemAliases = {
             batterypickup="Battery", batteryitem="Battery", batterymodel="Battery",
-            batteriespickup="Batteries", batteriesmodel="Batteries",
-            batterypackpickup="Battery Pack", batterypackitem="Battery Pack",
-            batterypackmodel="Battery Pack", batterytool="Battery"
+            batteriespickup="Batteries", batteriesmodel="Batteries", batterytool="Battery",
+            batterypackpickup="Battery Pack", batterypackitem="Battery Pack", batterypackmodel="Battery Pack",
+            laserpointerpickup="Laser Pointer", laserpointeritem="Laser Pointer", laserpointermodel="Laser Pointer",
+            keypickup="Key", keymodel="Key", hotelkeypickup="Hotel Key",
+            backdoorkeypickup="Backdoor Key", ironkeypickup="Iron Key", retrokeypickup="Retro Key",
+            fusepickup="Fuse", fusemodel="Fuse", fuseboxpickup="Fuse Box",
+            breakerpickup="Breaker", breakermodel="Breaker", breakerpolepickup="Breaker Pole",
+            bandagepickup="Bandage", bandagemodel="Bandage",
+            flashlightpickup="Flashlight", flashlightmodel="Flashlight",
+            lighterpickup="Lighter", lightermodel="Lighter",
+            candlepickup="Candle", candleitem="Candle", candlemodel="Candle",
+            crucifixpickup="Crucifix", crucifixmodel="Crucifix",
+            lockpickpickup="Lockpick", lockpickmodel="Lockpick",
+            vitaminspickup="Vitamins", vitaminsmodel="Vitamins",
+            glowstickpickup="Glowstick", glowstickmodel="Glowstick"
         }
         local function candidate(obj)
             if not obj or not obj.Parent then return false end
@@ -1612,14 +1627,20 @@ return function(tab, reloadContent)
             -- Exact names only. Prefix/suffix matching and generic "item"/"pickup"
             -- prompt heuristics caused scenery and room mechanisms to trigger alerts.
             local n = norm(obj.Name)
-            if not known[n] then return false end
+            if not known[n] and not itemAliases[n] then return false end
             return obj:IsA("Model") or obj:IsA("Tool")
         end
         pcall(function()
             itemNotifyBox:AddDropdown("FairwellItemNotificationChoices", {
                 Text = "Notify for these items",
                 Values = itemChoices,
-                Default = itemChoices,
+                Default = (function()
+                    local defaults = {}
+                    for _, choice in ipairs(itemChoices) do
+                        if importantItems[norm(choice)] then table.insert(defaults, choice) end
+                    end
+                    return defaults
+                end)(),
                 Multi = true,
                 AllowNull = true,
                 Callback = function(values)
@@ -1669,8 +1690,7 @@ return function(tab, reloadContent)
                                 local wantsNotification = false
                                 for choice in pairs(selectedItemNames) do
                                     local choiceNorm = norm(choice)
-                                    if detectedNorm == choiceNorm or string.find(detectedNorm, choiceNorm, 1, true)
-                                        or string.find(choiceNorm, detectedNorm, 1, true) then
+                                    if detectedNorm == choiceNorm then
                                         wantsNotification = true
                                         break
                                     end
@@ -1699,7 +1719,8 @@ return function(tab, reloadContent)
                     local floor, subfloor, roomLabel = currentFloorInfo()
                     setStatus("active: " .. floor .. " / " .. subfloor .. (roomLabel and (" / " .. roomLabel) or "") .. "; " .. tostring(count) .. " item candidates")
                 end
-                task.wait(popupSettings.delay)
+                -- Keep scanning responsive without tying the scan loop to popup delay.
+                task.wait(0.5)
             end
         end)
     end
