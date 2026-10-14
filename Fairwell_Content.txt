@@ -1597,7 +1597,15 @@ return function(tab, reloadContent)
                                 local correctFloor = not requiredFloor or floor == requiredFloor
                                 local isImportant = importantItems[detectedNorm] == true
                                 if wantsNotification and correctFloor and not isImportant and os.clock() - startedAt > 2 then
-                                    showItemPopup(detectedName)
+                                    local detectedObject = obj
+                                    local waitBeforePopup = popupSettings.delay
+                                    task.delay(waitBeforePopup, function()
+                                        if itemNotifyState.running and itemNotifyState.enabled
+                                            and detectedObject and detectedObject.Parent
+                                            and type(showItemPopup) == "function" then
+                                            showItemPopup(detectedName)
+                                        end
+                                    end)
                                 end
                             end
                         end
