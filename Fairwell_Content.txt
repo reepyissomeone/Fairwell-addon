@@ -1257,76 +1257,103 @@ return function(tab, reloadContent)
             settingsBox:AddLabel({Text = "Notification delay controls how long Fairwell waits before showing a detected-item popup. Display time controls how long it stays visible; background scanning remains separate.", DoesWrap = true})
         end)
 
-        -- Custom notification keyframe editor (live popup elements + timeline).
+        -- Standalone mobile-friendly animation studio, separate from the Fairwell tab.
         local animationEditor = {elements = {}, selected = 0, nextId = 0, pending = {time = 0, x = 0, y = 0, scale = 100, transparency = 0}}
         local animationEditorEnv = (getgenv and getgenv()) or _G
         animationEditorEnv._FairwellNotificationAnimation = animationEditor
-        local function editorElementChoices()
-            local choices = {}
-            for _, element in ipairs(animationEditor.elements) do
-                table.insert(choices, element.name .. " [" .. element.kind .. "]")
-            end
-            return #choices > 0 and choices or {"(add an element first)"}
+        local studioGui, studioPanel, studioStatus, studioTimeline, studioPreview
+        local studioFields = {}
+        local studioAccent = Color3.fromRGB(27, 147, 227)
+        local function studioNew(className, props, parent)
+            local obj = Instance.new(className)
+            for key, value in pairs(props or {}) do pcall(function() obj[key] = value end) end
+            obj.Parent = parent
+            return obj
         end
-        local function editorSelected()
+        local function studioButton(parent, text, position, size, callback)
+            local b = studioNew("TextButton", {Text=text, Position=position, Size=size, BackgroundColor3=Color3.fromRGB(16,13,45), TextColor3=Color3.new(1,1,1), TextSize=13, Font=Enum.Font.GothamSemibold, BorderSizePixel=0, AutoButtonColor=true}, parent)
+            studioNew("UIStroke", {Color=studioAccent, Thickness=1}, b)
+            b.Activated:Connect(callback)
+            return b
+        end
+        local function studioLabel(parent, text, position, size)
+            return studioNew("TextLabel", {Text=text, Position=position, Size=size, BackgroundTransparency=1, TextColor3=Color3.fromRGB(220,230,255), TextSize=12, Font=Enum.Font.Gotham, TextXAlignment=Enum.TextXAlignment.Left, TextWrapped=true}, parent)
+        end
+        local function studioSelected()
             return animationEditor.elements[animationEditor.selected]
         end
-        local function refreshEditorStatus()
-            if animationEditor.status then
-                local element = editorSelected()
-                animationEditor.status:SetText(element and (element.name .. " — " .. #element.keyframes .. " keyframe(s)") or "Add an element to start building an animation.")
+        local function studioRefresh()
+            if not studioGui then return end
+            if studioStatus then
+                local e=studioSelected()
+                studioStatus.Text=e and ("Selected: "..e.name.."  |  "..#e.keyframes.." keyframe(s)") or "Add an element to begin."
+            end
+            if studioTimeline then
+                for _, child in ipairs(studioTimeline:GetChildren()) do if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end end
+                for index,e in ipairs(animationEditor.elements) do
+                    local y=4+(index-1)*31
+                    studioButton(studioTimeline, (index==animationEditor.selected and "▶ " or "")..e.name, UDim2.fromOffset(4,y), UDim2.new(0.52,-6,0,26), function() animationEditor.selected=index studioRefresh() end)
+                    for k,key in ipairs(e.keyframes) do
+                        local dot=studioButton(studioTimeline, "◆ "..string.format("%.1fs",key.time), UDim2.new(0.54+(math.clamp(key.time,0,5)/5)*0.42,-10,y), UDim2.fromOffset(48,26), function() animationEditor.pending={time=key.time,x=key.x,y=key.y,scale=key.scale*100,transparency=key.transparency*100}; studioRefresh() end)
+                        dot.TextSize=10
+                    end
+                end
+                studioTimeline.CanvasSize=UDim2.fromOffset(0, math.max(120,#animationEditor.elements*31+8))
+            end
+            if studioPreview then
+                for _,child in ipairs(studioPreview:GetChildren()) do if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end end
+                local sample=studioNew("Frame",{Name="PreviewCard",Position=UDim2.new(0.5,-110,0.5,-26),Size=UDim2.fromOffset(220,52),BackgroundColor3=Color3.fromRGB(16,13,45),BorderSizePixel=0},studioPreview)
+                studioNew("UIStroke",{Color=studioAccent,Thickness=2},sample)
+                studioNew("TextLabel",{Name="PreviewHeading",Text="ITEM DETECTED",Position=UDim2.fromOffset(10,4),Size=UDim2.new(1,-20,0,18),BackgroundTransparency=1,TextColor3=studioAccent,TextSize=12,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left},sample)
+                local text="Preview Item"
+                local e=studioSelected()
+                if e and (e.kind=="Item Name ({{item_name}})" or e.kind=="Heading Text") then text=tostring(e.text or "{{item_name}}"):gsub("{{item_name}}","Preview Item") end
+                studioNew("TextLabel",{Name="PreviewItem",Text=text,Position=UDim2.fromOffset(10,24),Size=UDim2.new(1,-20,0,22),BackgroundTransparency=1,TextColor3=Color3.new(1,1,1),TextSize=14,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left},sample)
             end
         end
-        if settingsBox then
-            pcall(function() settingsBox:AddLabel({Text = "Keyframe Animation Editor", DoesWrap = true}) end)
-            pcall(function()
-                settingsBox:AddDropdown("FWAnimAddKind", {Text = "Element to add", Values = {"Item Name ({{item_name}})", "Heading Text", "Accent Panel", "Item Icon"}, Default = "Item Name ({{item_name}})", Callback = function(v) animationEditor.pendingKind = v end})
-            end)
-            pcall(function()
-                settingsBox:AddButton({Text = "Add Element", Func = function()
-                    animationEditor.nextId += 1
-                    local kind = animationEditor.pendingKind or "Item Name ({{item_name}})"
-                    local element = {id = animationEditor.nextId, kind = kind, name = kind, text = kind == "Item Name ({{item_name}})" and "{{item_name}}" or kind, keyframes = {}}
-                    table.insert(animationEditor.elements, element)
-                    animationEditor.selected = #animationEditor.elements
-                    refreshEditorStatus()
-                end})
-            end)
-            pcall(function()
-                settingsBox:AddDropdown("FWAnimSelectElement", {Text = "Select Element", Values = {"(add an element first)"}, Default = "(add an element first)", Callback = function(v)
-                    for index, element in ipairs(animationEditor.elements) do
-                        if v == element.name .. " [" .. element.kind .. "]" then animationEditor.selected = index break end
-                    end
-                    refreshEditorStatus()
-                end})
-            end)
-            pcall(function()
-                settingsBox:AddInput("FWAnimElementText", {Text = "Element text (use {{item_name}})", Default = "{{item_name}}", Placeholder = "{{item_name}}", Callback = function(v)
-                    local element = editorSelected()
-                    if element then element.text = tostring(v or "") end
-                end})
-            end)
-            pcall(function()
-                settingsBox:AddSlider("FWAnimKeyTime", {Text = "Keyframe time (seconds)", Default = 0, Min = 0, Max = 5, Rounding = 2, Compact = false, Callback = function(v) animationEditor.pending.time = tonumber(v) or 0 end})
-                settingsBox:AddSlider("FWAnimKeyX", {Text = "Keyframe X offset", Default = 0, Min = -200, Max = 200, Rounding = 0, Compact = false, Callback = function(v) animationEditor.pending.x = tonumber(v) or 0 end})
-                settingsBox:AddSlider("FWAnimKeyY", {Text = "Keyframe Y offset", Default = 0, Min = -100, Max = 100, Rounding = 0, Compact = false, Callback = function(v) animationEditor.pending.y = tonumber(v) or 0 end})
-                settingsBox:AddSlider("FWAnimKeyScale", {Text = "Keyframe scale (%)", Default = 100, Min = 10, Max = 160, Rounding = 0, Compact = false, Callback = function(v) animationEditor.pending.scale = tonumber(v) or 100 end})
-                settingsBox:AddSlider("FWAnimKeyTransparency", {Text = "Keyframe transparency (%)", Default = 0, Min = 0, Max = 100, Rounding = 0, Compact = false, Callback = function(v) animationEditor.pending.transparency = tonumber(v) or 0 end})
-            end)
-            pcall(function()
-                settingsBox:AddButton({Text = "Add Keyframe", Func = function()
-                    local element = editorSelected()
-                    if not element then return end
-                    table.insert(element.keyframes, {time = animationEditor.pending.time, x = animationEditor.pending.x, y = animationEditor.pending.y, scale = animationEditor.pending.scale / 100, transparency = animationEditor.pending.transparency / 100})
-                    table.sort(element.keyframes, function(a, b) return a.time < b.time end)
-                    refreshEditorStatus()
-                end})
-                animationEditor.status = settingsBox:AddLabel({Text = "Add an element to start building an animation.", DoesWrap = true})
-                settingsBox:AddButton({Text = "Preview Animation", Func = function()
-                    if showItemPopup then showItemPopup("Preview Item") end
-                end})
-            end)
+        local function studioBuild()
+            if studioGui and studioGui.Parent then studioGui.Enabled=true return end
+            local player=game:GetService("Players").LocalPlayer
+            local pg=player and player:FindFirstChildOfClass("PlayerGui")
+            if not pg then return end
+            studioGui=studioNew("ScreenGui",{Name="FairwellAnimationStudio",ResetOnSpawn=false,DisplayOrder=9999,ZIndexBehavior=Enum.ZIndexBehavior.Sibling},pg)
+            local open=studioButton(studioGui,"FW ANIM",UDim2.new(1,-94,0.5,-20),UDim2.fromOffset(84,40),function() studioPanel.Visible=not studioPanel.Visible end)
+            open.AnchorPoint=Vector2.new(0,0)
+            studioPanel=studioNew("Frame",{Name="StudioWindow",Position=UDim2.new(0.04,0,0.08,0),Size=UDim2.new(0.92,0,0.82,0),BackgroundColor3=Color3.fromRGB(8,8,24),BorderSizePixel=0,Visible=true},studioGui)
+            studioNew("UIStroke",{Color=studioAccent,Thickness=2},studioPanel)
+            local top=studioNew("Frame",{Size=UDim2.new(1,0,0,36),BackgroundColor3=Color3.fromRGB(16,13,69),BorderSizePixel=0},studioPanel)
+            studioLabel(top,"FAIRWELL • NOTIFICATION ANIMATION STUDIO",UDim2.fromOffset(10,0),UDim2.new(1,-52,1,0))
+            studioButton(top,"×",UDim2.new(1,-34,0,3),UDim2.fromOffset(30,30),function() studioPanel.Visible=false end)
+            local previewLabel=studioLabel(studioPanel,"PREVIEW",UDim2.new(0,10,0,42),UDim2.new(1,-20,0,18))
+            studioPreview=studioNew("Frame",{Position=UDim2.new(0,8,0,62),Size=UDim2.new(1,-16,0,100),BackgroundColor3=Color3.fromRGB(22,22,36),BorderSizePixel=0,ClipsDescendants=true},studioPanel)
+            studioLabel(studioPanel,"TIMELINE  •  tap a track or ◆ keyframe",UDim2.new(0,10,0,166),UDim2.new(1,-20,0,18))
+            studioTimeline=studioNew("ScrollingFrame",{Position=UDim2.new(0,8,0,186),Size=UDim2.new(1,-16,0,100),BackgroundColor3=Color3.fromRGB(13,13,31),BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.fromOffset(0,120)},studioPanel)
+            local controls=studioNew("ScrollingFrame",{Position=UDim2.new(0,8,0,292),Size=UDim2.new(1,-16,1,-330),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.fromOffset(0,320)},studioPanel)
+            local function action(text,x,y,w,fn) return studioButton(controls,text,UDim2.fromOffset(x,y),UDim2.new(w, -6,0,30),fn) end
+            action("+ Item Name",0,0,0.5,function() animationEditor.nextId+=1 table.insert(animationEditor.elements,{id=animationEditor.nextId,kind="Item Name ({{item_name}})",name="Item Name",text="{{item_name}}",keyframes={}}) animationEditor.selected=#animationEditor.elements studioRefresh() end)
+            action("+ Heading",0.5,0,0.5,function() animationEditor.nextId+=1 table.insert(animationEditor.elements,{id=animationEditor.nextId,kind="Heading Text",name="Heading",text="ITEM DETECTED",keyframes={}}) animationEditor.selected=#animationEditor.elements studioRefresh() end)
+            action("+ Panel",0,34,0.5,function() animationEditor.nextId+=1 table.insert(animationEditor.elements,{id=animationEditor.nextId,kind="Accent Panel",name="Accent Panel",text="",keyframes={}}) animationEditor.selected=#animationEditor.elements studioRefresh() end)
+            action("+ Icon",0.5,34,0.5,function() animationEditor.nextId+=1 table.insert(animationEditor.elements,{id=animationEditor.nextId,kind="Item Icon",name="Item Icon",text="",keyframes={}}) animationEditor.selected=#animationEditor.elements studioRefresh() end)
+            local function sliderRow(label,key,y,min,max,default)
+                studioLabel(controls,label,UDim2.fromOffset(2,y),UDim2.new(0.38,0,0,26))
+                local box=studioNew("TextBox",{Text=tostring(default),Position=UDim2.new(0.4,0,0,y),Size=UDim2.new(0.6,-4,0,28),BackgroundColor3=Color3.fromRGB(25,25,45),TextColor3=Color3.new(1,1,1),TextSize=13,Font=Enum.Font.Gotham,ClearTextOnFocus=false,BorderSizePixel=0},controls)
+                box.FocusLost:Connect(function() animationEditor.pending[key]=math.clamp(tonumber(box.Text) or default,min,max) end)
+            end
+            sliderRow("Time (sec)","time",70,0,5,0)
+            sliderRow("X offset","x",104,-200,200,0)
+            sliderRow("Y offset","y",138,-100,100,0)
+            sliderRow("Scale (%)","scale",172,10,160,100)
+            sliderRow("Transparency (%)","transparency",206,0,100,0)
+            action("ADD KEYFRAME",0,242,0.5,function() local e=studioSelected() if not e then return end local p=animationEditor.pending table.insert(e.keyframes,{time=p.time,x=p.x,y=p.y,scale=p.scale/100,transparency=p.transparency/100}) table.sort(e.keyframes,function(a,b)return a.time<b.time end) studioRefresh() end)
+            action("PREVIEW POPUP",0.5,242,0.5,function() if showItemPopup then showItemPopup("Preview Item") end end)
+            studioStatus=studioLabel(studioPanel,"Add an element to begin.",UDim2.new(0,10,1,-30),UDim2.new(1,-20,0,24))
+            local dragging,dragStart,startPos
+            top.InputBegan:Connect(function(input) if input.UserInputType==Enum.UserInputType.Touch or input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true dragStart=input.Position startPos=studioPanel.Position end end)
+            top.InputChanged:Connect(function(input) if dragging and (input.UserInputType==Enum.UserInputType.Touch or input.UserInputType==Enum.UserInputType.MouseMovement) then local d=input.Position-dragStart studioPanel.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y) end end)
+            game:GetService("UserInputService").InputEnded:Connect(function(input) if input.UserInputType==Enum.UserInputType.Touch or input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
+            studioRefresh()
         end
+        task.defer(studioBuild)
 
         local popupSerial = 0
         showItemPopup = function(itemName)
