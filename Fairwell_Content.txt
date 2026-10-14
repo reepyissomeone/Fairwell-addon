@@ -1200,9 +1200,16 @@ return function(tab, reloadContent)
         addSettingDropdown("FairwellNotifyTheme", "Notification theme",
             {"Fairwell Blue", "Starlight", "Moonlight", "Minimal"}, popupSettings.theme,
             function(v) if type(v) == "string" then popupSettings.theme = v end end)
+        local openAnimationStudio
         addSettingDropdown("FairwellNotifyAnimation", "Animation",
-            {"Slide from right", "Fade", "Pop", "None"}, popupSettings.animation,
-            function(v) if type(v) == "string" then popupSettings.animation = v end end)
+            {"Slide from right", "Fade", "Pop", "None", "Custom"}, popupSettings.animation,
+            function(v)
+                if type(v) ~= "string" then return end
+                popupSettings.animation = v
+                if v == "Custom" and type(openAnimationStudio) == "function" then
+                    openAnimationStudio()
+                end
+            end)
         pcall(function()
             settingsBox:AddSlider("FairwellNotifyDurationSlider", {
                 Text = "Notification display time (seconds)", Default = 3.5, Min = 1, Max = 10,
@@ -1353,6 +1360,7 @@ return function(tab, reloadContent)
             game:GetService("UserInputService").InputEnded:Connect(function(input) if input.UserInputType==Enum.UserInputType.Touch or input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
             studioRefresh()
         end
+        openAnimationStudio = studioBuild
         task.defer(studioBuild)
 
         local popupSerial = 0
