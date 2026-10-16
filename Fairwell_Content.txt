@@ -950,9 +950,8 @@ return function(tab, reloadContent)
     end
 
 
-    -- Skip Gate Room [Useless]: repeatedly move the character directly to the
-    -- detected Gate until it opens. Use an absolute target position, not a gate-relative
-    -- CFrame offset, because Gate may be a nested model or a single part.
+    -- Skip Gate Room [Useless]: find the Gate room, then repeatedly teleport to
+    -- the ROOM'S EXIT DOOR (not the Gate object) until that door opens.
     do
         local gateOk, gateBox = pcall(function()
             return closetBox or tab:AddRightGroupbox("Any Floor", "door-open")
@@ -967,55 +966,82 @@ return function(tab, reloadContent)
             pcall(function()
                 gateStatus = gateBox:AddLabel({Text = "Gate Room: off", DoesWrap = true})
             end)
-
             local function setGateStatus(message)
                 if gateStatus then pcall(function() gateStatus:SetText("Gate Room: " .. message) end) end
             end
-
             local function getRoot()
                 local character = player.Character
                 return character and character:FindFirstChild("HumanoidRootPart")
             end
-
-            local function objectPosition(object)
+            local function partFor(object)
                 if not object then return nil end
-                if object:IsA("BasePart") then return object.Position end
+                if object:IsA("BasePart") then return object end
                 if object:IsA("Model") then
-                    local part = object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart", true)
-                    if part then return part.Position end
+                    return object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart", true)
                 end
-                local part = object:FindFirstChildWhichIsA("BasePart", true)
-                return part and part.Position or nil
+                return object:FindFirstChildWhichIsA("BasePart", true)
             end
-
-            local function findGateRoom(root)
+            local function getGateRoom(root)
                 local rooms = workspace:FindFirstChild("CurrentRooms")
                 if not rooms then return nil end
                 local bestRoom, bestGate, bestDistance
                 for _, room in ipairs(rooms:GetChildren()) do
-                    for _, object in ipairs(room:GetDescendants()) do
-                        if string.lower(object.Name) == "gate" then
-                            local position = objectPosition(object)
-                            if position then
-                                local distance = (root.Position - position).Magnitude
+                    for _, obj in ipairs(room:GetDescendants()) do
+                        if string.lower(obj.Name) == "gate" then
+                            local part = partFor(obj)
+                            if part then
+                                local distance = (root.Position - part.Position).Magnitude
                                 if not bestDistance or distance < bestDistance then
-                                    bestRoom, bestGate, bestDistance = room, object, distance
+                                    bestRoom, bestGate, bestDistance = room, obj, distance
                                 end
                             end
                         end
                     end
                 end
-                if bestRoom and bestGate and bestDistance and bestDistance <= 180 then
-                    return bestRoom, bestGate, bestDistance
-                end
-                return nil, nil, bestDistance
+                if bestDistance and bestDistance <= 180 then return bestRoom, bestGate end
+                return nil
             end
-
-            local function gateLooksOpen(gate)
-                if not gate or not gate.Parent then return true end
+            local function findExitDoor(room, gate)
+                -- Prefer the room's actual numbered exit door (often named Door, Door1,
+                -- or DoorModel), and exclude the Gate puzzle object itself.
+                local candidates = {}
+                for _, obj in ipairs(room:GetDescendants()) do
+                    local name = string.lower(obj.Name)
+                    if obj ~= gate and not obj:IsDescendantOf(gate)
+                        and (name == "door" or name == "doorframe" or name == "doorcollision"
+                            or name == "door model" or name == "door1" or name == "exitdoor"
+                            or name == "exit door") then
+                        local part = partFor(obj)
+                        if part then table.insert(candidates, {object = obj, part = part}) end
+                    end
+                end
+                if #candidates == 0 then
+                    -- Fallback: choose a door-like object in this room, never Gate.
+                    for _, obj in ipairs(room:GetDescendants()) do
+                        local name = string.lower(obj.Name)
+                        if obj ~= gate and not obj:IsDescendantOf(gate)
+                            and string.find(name, "door", 1, true)
+                            and not string.find(name, "gate", 1, true) then
+                            local part = partFor(obj)
+                            if part then table.insert(candidates, {object = obj, part = part}) end
+                        end
+                    end
+                end
+                local gatePart = partFor(gate)
+                table.sort(candidates, function(a, b)
+                    if gatePart then
+                        return (a.part.Position - gatePart.Position).Magnitude
+                            > (b.part.Position - gatePart.Position).Magnitude
+                    end
+                    return a.part.Position.Z < b.part.Position.Z
+                end)
+                return candidates[1] and candidates[1].object, candidates[1] and candidates[1].part
+            end
+            local function doorAppearsOpen(door)
+                if not door or not door.Parent then return true end
                 local parts = {}
-                if gate:IsA("BasePart") then table.insert(parts, gate) end
-                for _, obj in ipairs(gate:GetDescendants()) do
+                if door:IsA("BasePart") then table.insert(parts, door) end
+                for _, obj in ipairs(door:GetDescendants()) do
                     if obj:IsA("BasePart") then table.insert(parts, obj) end
                 end
                 if #parts == 0 then return false end
@@ -1026,37 +1052,24 @@ return function(tab, reloadContent)
                 end
                 return true
             end
-
-            local function teleportToGate(root, gate)
-                local position = objectPosition(gate)
+            local function teleportToDoor(root, door, doorPart)
                 local character = player.Character
-                if not position or not character or not root or not root.Parent then
-                    return false, "gate position/character missing"
-                end
-
-                -- Teleport just in front of the gate, at the player's current height offset.
-                -- The fallback writes the root CFrame if PivotTo is blocked by the character rig.
-                local targetPosition = position + Vector3.new(0, 2.5, 4)
-                local target = CFrame.new(targetPosition)
-                local ok = pcall(function() character:PivotTo(target) end)
-                if not ok then
-                    ok = pcall(function() root.CFrame = target end)
-                end
-                if not ok then return false, "teleport call failed" end
-                return true
+                if not character or not root or not root.Parent or not doorPart then return false end
+                -- Move to the approach side of the exit door, not to the gate/key puzzle.
+                local offset = doorPart.CFrame.LookVector * -4
+                local target = CFrame.lookAt(doorPart.Position + offset + Vector3.new(0, 2.5, 0), doorPart.Position)
+                return pcall(function() character:PivotTo(target) end)
             end
-
             pcall(function()
                 gateBox:AddToggle("FairwellSkipGateRoomToggle", {
                     Text = "Skip Gate Room [Useless]",
                     Default = false,
                     Callback = function(enabled)
                         env._FairwellSkipGateRoom = enabled == true
-                        setGateStatus(enabled and "searching loaded rooms for Gate" or "off")
+                        setGateStatus(enabled and "searching for Gate room exit door" or "off")
                     end
                 })
             end)
-
             task.spawn(function()
                 while true do
                     if env._FairwellSkipGateRoom then
@@ -1064,20 +1077,18 @@ return function(tab, reloadContent)
                         if not root then
                             setGateStatus("waiting for character")
                         else
-                            local room, gate, distance = findGateRoom(root)
+                            local room, gate = getGateRoom(root)
                             if room and gate then
-                                if gateLooksOpen(gate) then
-                                    setGateStatus("Gate appears open in " .. room.Name)
+                                local door, doorPart = findExitDoor(room, gate)
+                                if not door then
+                                    setGateStatus("Gate room found; exit door not identified")
+                                elseif doorAppearsOpen(door) then
+                                    setGateStatus("exit door appears open in " .. room.Name)
                                 else
-                                    local ok, reason = teleportToGate(root, gate)
-                                    if ok then
-                                        setGateStatus("teleporting to Gate in " .. room.Name)
-                                    else
-                                        setGateStatus(reason or "teleport failed")
-                                    end
+                                    local ok = teleportToDoor(root, door, doorPart)
+                                    setGateStatus(ok and ("teleporting to EXIT DOOR in " .. room.Name)
+                                        or "exit-door teleport failed")
                                 end
-                            elseif distance then
-                                setGateStatus("Gate detected but too far away")
                             else
                                 setGateStatus("waiting until you enter a Gate room")
                             end
