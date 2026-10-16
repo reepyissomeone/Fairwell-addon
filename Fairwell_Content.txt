@@ -950,8 +950,9 @@ return function(tab, reloadContent)
     end
 
 
-    -- Skip Gate Room [Useless]: repeatedly teleport to the Gate/door until the
-    -- game opens it, or the Gate object disappears/changes state.
+    -- Skip Gate Room [Useless]: repeatedly move the character directly to the
+    -- detected Gate until it opens. Use an absolute target position, not a gate-relative
+    -- CFrame offset, because Gate may be a nested model or a single part.
     do
         local gateOk, gateBox = pcall(function()
             return closetBox or tab:AddRightGroupbox("Any Floor", "door-open")
@@ -967,11 +968,8 @@ return function(tab, reloadContent)
                 gateStatus = gateBox:AddLabel({Text = "Gate Room: off", DoesWrap = true})
             end)
 
-            local lastGateRoom = nil
             local function setGateStatus(message)
-                if gateStatus then
-                    pcall(function() gateStatus:SetText("Gate Room: " .. message) end)
-                end
+                if gateStatus then pcall(function() gateStatus:SetText("Gate Room: " .. message) end) end
             end
 
             local function getRoot()
@@ -980,6 +978,7 @@ return function(tab, reloadContent)
             end
 
             local function objectPosition(object)
+                if not object then return nil end
                 if object:IsA("BasePart") then return object.Position end
                 if object:IsA("Model") then
                     local part = object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart", true)
@@ -1006,10 +1005,10 @@ return function(tab, reloadContent)
                         end
                     end
                 end
-                if bestRoom and bestGate and bestDistance and bestDistance <= 140 then
+                if bestRoom and bestGate and bestDistance and bestDistance <= 180 then
                     return bestRoom, bestGate, bestDistance
                 end
-                return nil
+                return nil, nil, bestDistance
             end
 
             local function gateLooksOpen(gate)
@@ -1019,33 +1018,32 @@ return function(tab, reloadContent)
                 for _, obj in ipairs(gate:GetDescendants()) do
                     if obj:IsA("BasePart") then table.insert(parts, obj) end
                 end
-                if #parts == 0 then return true end
-                local collidable = 0
+                if #parts == 0 then return false end
                 for _, part in ipairs(parts) do
                     if part.CanCollide and part.Transparency < 0.95 and part.LocalTransparencyModifier < 0.95 then
-                        collidable = collidable + 1
+                        return false
                     end
                 end
-                return collidable == 0
+                return true
             end
 
             local function teleportToGate(root, gate)
                 local position = objectPosition(gate)
-                if not position then return false end
-                -- Stay a little in front of the gate rather than inside its geometry.
-                local targetCFrame
-                if gate:IsA("BasePart") then
-                    targetCFrame = gate.CFrame * CFrame.new(0, 0, -(gate.Size.Z / 2 + 2.5))
-                elseif gate:IsA("Model") then
-                    targetCFrame = gate:GetPivot() * CFrame.new(0, 0, -4)
-                else
-                    targetCFrame = CFrame.new(position + Vector3.new(0, 0, -4))
-                end
                 local character = player.Character
-                if not character or not root or not root.Parent then return false end
-                return pcall(function()
-                    character:PivotTo(targetCFrame + Vector3.new(0, 2, 0))
-                end)
+                if not position or not character or not root or not root.Parent then
+                    return false, "gate position/character missing"
+                end
+
+                -- Teleport just in front of the gate, at the player's current height offset.
+                -- The fallback writes the root CFrame if PivotTo is blocked by the character rig.
+                local targetPosition = position + Vector3.new(0, 2.5, 4)
+                local target = CFrame.new(targetPosition)
+                local ok = pcall(function() character:PivotTo(target) end)
+                if not ok then
+                    ok = pcall(function() root.CFrame = target end)
+                end
+                if not ok then return false, "teleport call failed" end
+                return true
             end
 
             pcall(function()
@@ -1054,12 +1052,7 @@ return function(tab, reloadContent)
                     Default = false,
                     Callback = function(enabled)
                         env._FairwellSkipGateRoom = enabled == true
-                        if not enabled then
-                            lastGateRoom = nil
-                            setGateStatus("off")
-                        else
-                            setGateStatus("searching loaded rooms for Gate")
-                        end
+                        setGateStatus(enabled and "searching loaded rooms for Gate" or "off")
                     end
                 })
             end)
@@ -1068,26 +1061,29 @@ return function(tab, reloadContent)
                 while true do
                     if env._FairwellSkipGateRoom then
                         local root = getRoot()
-                        if root then
-                            local room, gate = findGateRoom(root)
+                        if not root then
+                            setGateStatus("waiting for character")
+                        else
+                            local room, gate, distance = findGateRoom(root)
                             if room and gate then
-                                local roomId = room:GetFullName()
-                                if lastGateRoom ~= roomId then lastGateRoom = roomId end
                                 if gateLooksOpen(gate) then
                                     setGateStatus("Gate appears open in " .. room.Name)
                                 else
-                                    teleportToGate(root, gate)
-                                    setGateStatus("teleporting to Gate in " .. room.Name .. " until it opens")
+                                    local ok, reason = teleportToGate(root, gate)
+                                    if ok then
+                                        setGateStatus("teleporting to Gate in " .. room.Name)
+                                    else
+                                        setGateStatus(reason or "teleport failed")
+                                    end
                                 end
+                            elseif distance then
+                                setGateStatus("Gate detected but too far away")
                             else
-                                lastGateRoom = nil
                                 setGateStatus("waiting until you enter a Gate room")
                             end
-                        else
-                            setGateStatus("waiting for character")
                         end
                     end
-                    task.wait(0.2)
+                    task.wait(0.15)
                 end
             end)
         end
