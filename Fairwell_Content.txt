@@ -1012,6 +1012,7 @@ return function(tab, reloadContent, hotelTab)
                 gateBox:AddToggle("FairwellDeleteGateToggle", {
                     Text = "Delete Gate",
                     Tooltip = "The same effect as just noclipping",
+                    Description = "The same effect as just noclipping",
                     Risky = true,
                     Default = false,
                     Callback = function(enabled)
