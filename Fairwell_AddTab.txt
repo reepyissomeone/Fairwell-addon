@@ -4,7 +4,7 @@
 -- Remote content lives in Fairwell_Content.txt so it can be updated independently.
 
 local env = (getgenv and getgenv()) or _G
-local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=gatedelete-20261016h"
+local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=deletegate-hoteltab-20261016i"
 
 local Library = env.Library or env.Obsidian or env.UI_Library
 local Window = env.Window or env.MainWindow or env.MSDoorsWindow
@@ -24,6 +24,12 @@ if not ok or not tab then
     warn("[Fairwell] Could not add tab:", tab)
     return
 end
+
+local hotelTab
+local hotelTabOk, createdHotelTab = pcall(function()
+    return Window:AddTab("Hotel", "building-2")
+end)
+if hotelTabOk then hotelTab = createdHotelTab end
 
 local function loadRemoteContent()
     local fetched, source = pcall(function() return game:HttpGet(CONTENT_URL) end)
