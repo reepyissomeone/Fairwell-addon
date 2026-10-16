@@ -950,6 +950,142 @@ return function(tab, reloadContent)
     end
 
 
+    -- Skip Gate Room [Useless]: detect the active numbered room and locally bypass
+    -- any object named exactly "Gate" when entering that room.
+    do
+        local gateOk, gateBox = pcall(function()
+            return closetBox or tab:AddRightGroupbox("Any Floor", "door-open")
+        end)
+        if gateOk and gateBox then
+            local Players = game:GetService("Players")
+            local player = Players.LocalPlayer
+            local env = (getgenv and getgenv()) or _G
+            env._FairwellSkipGateRoom = false
+
+            local gateStatus
+            pcall(function()
+                gateStatus = gateBox:AddLabel({Text = "Gate Room: off", DoesWrap = true})
+            end)
+
+            local modifiedParts = {}
+            local lastGateRoom = nil
+
+            local function restoreGateParts()
+                for part, old in pairs(modifiedParts) do
+                    if part and part.Parent then
+                        pcall(function()
+                            part.CanCollide = old.CanCollide
+                            part.LocalTransparencyModifier = old.LocalTransparencyModifier
+                        end)
+                    end
+                end
+                table.clear(modifiedParts)
+            end
+
+            local function setGateStatus(message)
+                if gateStatus then
+                    pcall(function() gateStatus:SetText("Gate Room: " .. message) end)
+                end
+            end
+
+            local function getCurrentRoom()
+                local rooms = workspace:FindFirstChild("CurrentRooms")
+                if not rooms then return nil end
+                local character = player.Character
+                local root = character and character:FindFirstChild("HumanoidRootPart")
+                if not root then return nil end
+
+                -- In DOORS, the highest numbered entry in CurrentRooms is the active room.
+                local currentNumber, currentRoom
+                for _, room in ipairs(rooms:GetChildren()) do
+                    local number = tonumber(room.Name:match("%d+"))
+                    if number and (not currentNumber or number > currentNumber) then
+                        currentNumber, currentRoom = number, room
+                    end
+                end
+                return currentRoom
+            end
+
+            local function findNamedGate(room)
+                if not room then return nil end
+                for _, object in ipairs(room:GetDescendants()) do
+                    if string.lower(object.Name) == "gate" then
+                        return object
+                    end
+                end
+                return nil
+            end
+
+            local function bypassGate(gate)
+                local changed = 0
+                local function bypassPart(part)
+                    if not part:IsA("BasePart") then return end
+                    if not modifiedParts[part] then
+                        modifiedParts[part] = {
+                            CanCollide = part.CanCollide,
+                            LocalTransparencyModifier = part.LocalTransparencyModifier
+                        }
+                    end
+                    part.CanCollide = false
+                    part.LocalTransparencyModifier = 1
+                    changed = changed + 1
+                end
+
+                if gate:IsA("BasePart") then bypassPart(gate) end
+                for _, object in ipairs(gate:GetDescendants()) do
+                    bypassPart(object)
+                end
+                return changed
+            end
+
+            pcall(function()
+                gateBox:AddToggle("FairwellSkipGateRoomToggle", {
+                    Text = "Skip Gate Room [Useless]",
+                    Default = false,
+                    Callback = function(enabled)
+                        env._FairwellSkipGateRoom = enabled == true
+                        if not enabled then
+                            restoreGateParts()
+                            lastGateRoom = nil
+                            setGateStatus("off")
+                        else
+                            setGateStatus("looking for current Gate room")
+                        end
+                    end
+                })
+            end)
+
+            task.spawn(function()
+                while true do
+                    if env._FairwellSkipGateRoom then
+                        local room = getCurrentRoom()
+                        if room then
+                            local gate = findNamedGate(room)
+                            if gate then
+                                local roomId = room:GetFullName()
+                                if lastGateRoom ~= roomId then
+                                    restoreGateParts()
+                                    local count = bypassGate(gate)
+                                    lastGateRoom = roomId
+                                    setGateStatus(count > 0 and ("bypassing Gate in " .. room.Name) or "Gate found")
+                                else
+                                    -- Reapply if the game recreates or re-enables gate parts while in the room.
+                                    bypassGate(gate)
+                                end
+                            elseif lastGateRoom ~= room:GetFullName() then
+                                restoreGateParts()
+                                lastGateRoom = room:GetFullName()
+                                setGateStatus("current room has no Gate")
+                            end
+                        end
+                    end
+                    task.wait(0.35)
+                end
+            end)
+        end
+    end
+
+
     -- Friendly Entities experiment: client-side diagnostics only.
     -- Noise is an MSDoors entity/feature, independent of Pivot.
     if friendlyLocalPlayer and friendlyLocalPlayer.Name == "FIXROBLOX_015" then
