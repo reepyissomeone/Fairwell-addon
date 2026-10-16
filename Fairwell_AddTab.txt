@@ -4,7 +4,7 @@
 -- Remote content lives in Fairwell_Content.txt so it can be updated independently.
 
 local env = (getgenv and getgenv()) or _G
-local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=roomentry-roomexit-stop-20261016g"
+local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=gatedelete-20261016h"
 
 local Library = env.Library or env.Obsidian or env.UI_Library
 local Window = env.Window or env.MainWindow or env.MSDoorsWindow
