@@ -950,9 +950,8 @@ return function(tab, reloadContent)
     end
 
 
-    -- Skip Gate Room [Useless]: locate Gate objects across all loaded numbered
-    -- rooms, then choose the one closest to the player's character. CurrentRooms
-    -- may contain several preloaded rooms, so never assume the highest number is current.
+    -- Skip Gate Room [Useless]: repeatedly teleport to the Gate/door until the
+    -- game opens it, or the Gate object disappears/changes state.
     do
         local gateOk, gateBox = pcall(function()
             return closetBox or tab:AddRightGroupbox("Any Floor", "door-open")
@@ -968,25 +967,11 @@ return function(tab, reloadContent)
                 gateStatus = gateBox:AddLabel({Text = "Gate Room: off", DoesWrap = true})
             end)
 
-            local modifiedParts = {}
             local lastGateRoom = nil
-
             local function setGateStatus(message)
                 if gateStatus then
                     pcall(function() gateStatus:SetText("Gate Room: " .. message) end)
                 end
-            end
-
-            local function restoreGateParts()
-                for part, old in pairs(modifiedParts) do
-                    if part and part.Parent then
-                        pcall(function()
-                            part.CanCollide = old.CanCollide
-                            part.LocalTransparencyModifier = old.LocalTransparencyModifier
-                        end)
-                    end
-                end
-                table.clear(modifiedParts)
             end
 
             local function getRoot()
@@ -1007,10 +992,8 @@ return function(tab, reloadContent)
             local function findGateRoom(root)
                 local rooms = workspace:FindFirstChild("CurrentRooms")
                 if not rooms then return nil end
-
                 local bestRoom, bestGate, bestDistance
                 for _, room in ipairs(rooms:GetChildren()) do
-                    -- Gate may be a Model, Folder, MeshPart, or nested under another model.
                     for _, object in ipairs(room:GetDescendants()) do
                         if string.lower(object.Name) == "gate" then
                             local position = objectPosition(object)
@@ -1023,33 +1006,46 @@ return function(tab, reloadContent)
                         end
                     end
                 end
-
-                -- Only activate when the player has actually reached the gate room,
-                -- not merely because a later room is preloaded ahead.
                 if bestRoom and bestGate and bestDistance and bestDistance <= 140 then
                     return bestRoom, bestGate, bestDistance
                 end
-                return nil, nil, bestDistance
+                return nil
             end
 
-            local function bypassGate(gate)
-                local changed = 0
-                local function bypassPart(part)
-                    if not part:IsA("BasePart") then return end
-                    if not modifiedParts[part] then
-                        modifiedParts[part] = {
-                            CanCollide = part.CanCollide,
-                            LocalTransparencyModifier = part.LocalTransparencyModifier
-                        }
-                    end
-                    part.CanCollide = false
-                    part.LocalTransparencyModifier = 1
-                    changed = changed + 1
+            local function gateLooksOpen(gate)
+                if not gate or not gate.Parent then return true end
+                local parts = {}
+                if gate:IsA("BasePart") then table.insert(parts, gate) end
+                for _, obj in ipairs(gate:GetDescendants()) do
+                    if obj:IsA("BasePart") then table.insert(parts, obj) end
                 end
+                if #parts == 0 then return true end
+                local collidable = 0
+                for _, part in ipairs(parts) do
+                    if part.CanCollide and part.Transparency < 0.95 and part.LocalTransparencyModifier < 0.95 then
+                        collidable = collidable + 1
+                    end
+                end
+                return collidable == 0
+            end
 
-                if gate:IsA("BasePart") then bypassPart(gate) end
-                for _, object in ipairs(gate:GetDescendants()) do bypassPart(object) end
-                return changed
+            local function teleportToGate(root, gate)
+                local position = objectPosition(gate)
+                if not position then return false end
+                -- Stay a little in front of the gate rather than inside its geometry.
+                local targetCFrame
+                if gate:IsA("BasePart") then
+                    targetCFrame = gate.CFrame * CFrame.new(0, 0, -(gate.Size.Z / 2 + 2.5))
+                elseif gate:IsA("Model") then
+                    targetCFrame = gate:GetPivot() * CFrame.new(0, 0, -4)
+                else
+                    targetCFrame = CFrame.new(position + Vector3.new(0, 0, -4))
+                end
+                local character = player.Character
+                if not character or not root or not root.Parent then return false end
+                return pcall(function()
+                    character:PivotTo(targetCFrame + Vector3.new(0, 2, 0))
+                end)
             end
 
             pcall(function()
@@ -1059,7 +1055,6 @@ return function(tab, reloadContent)
                     Callback = function(enabled)
                         env._FairwellSkipGateRoom = enabled == true
                         if not enabled then
-                            restoreGateParts()
                             lastGateRoom = nil
                             setGateStatus("off")
                         else
@@ -1077,14 +1072,14 @@ return function(tab, reloadContent)
                             local room, gate = findGateRoom(root)
                             if room and gate then
                                 local roomId = room:GetFullName()
-                                if lastGateRoom ~= roomId then
-                                    restoreGateParts()
-                                    lastGateRoom = roomId
+                                if lastGateRoom ~= roomId then lastGateRoom = roomId end
+                                if gateLooksOpen(gate) then
+                                    setGateStatus("Gate appears open in " .. room.Name)
+                                else
+                                    teleportToGate(root, gate)
+                                    setGateStatus("teleporting to Gate in " .. room.Name .. " until it opens")
                                 end
-                                local count = bypassGate(gate)
-                                setGateStatus(count > 0 and ("bypassing Gate in " .. room.Name) or ("Gate found in " .. room.Name))
                             else
-                                if lastGateRoom then restoreGateParts() end
                                 lastGateRoom = nil
                                 setGateStatus("waiting until you enter a Gate room")
                             end
@@ -1092,7 +1087,7 @@ return function(tab, reloadContent)
                             setGateStatus("waiting for character")
                         end
                     end
-                    task.wait(0.25)
+                    task.wait(0.2)
                 end
             end)
         end
