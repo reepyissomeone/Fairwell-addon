@@ -953,7 +953,7 @@ return function(tab, reloadContent, hotelTab)
     -- Delete Gate: remove the Gate after the player enters its room.
     do
         local gateOk, gateBox = pcall(function()
-            return (hotelTab or tab):AddLeftGroupbox("Delete Gate", "trash-2")
+            return tab:AddLeftGroupbox("Hotel", "building-2")
         end)
         if gateOk and gateBox then
             local Players = game:GetService("Players")
@@ -1012,6 +1012,7 @@ return function(tab, reloadContent, hotelTab)
                 gateBox:AddToggle("FairwellDeleteGateToggle", {
                     Text = "Delete Gate",
                     Tooltip = "The same effect as just noclipping",
+                    Risky = true,
                     Default = false,
                     Callback = function(enabled)
                         env._FairwellDeleteGate = enabled == true
