@@ -950,8 +950,9 @@ return function(tab, reloadContent)
     end
 
 
-    -- Skip Gate Room [Useless]: detect the active numbered room and locally bypass
-    -- any object named exactly "Gate" when entering that room.
+    -- Skip Gate Room [Useless]: locate Gate objects across all loaded numbered
+    -- rooms, then choose the one closest to the player's character. CurrentRooms
+    -- may contain several preloaded rooms, so never assume the highest number is current.
     do
         local gateOk, gateBox = pcall(function()
             return closetBox or tab:AddRightGroupbox("Any Floor", "door-open")
@@ -970,6 +971,12 @@ return function(tab, reloadContent)
             local modifiedParts = {}
             local lastGateRoom = nil
 
+            local function setGateStatus(message)
+                if gateStatus then
+                    pcall(function() gateStatus:SetText("Gate Room: " .. message) end)
+                end
+            end
+
             local function restoreGateParts()
                 for part, old in pairs(modifiedParts) do
                     if part and part.Parent then
@@ -982,38 +989,47 @@ return function(tab, reloadContent)
                 table.clear(modifiedParts)
             end
 
-            local function setGateStatus(message)
-                if gateStatus then
-                    pcall(function() gateStatus:SetText("Gate Room: " .. message) end)
-                end
+            local function getRoot()
+                local character = player.Character
+                return character and character:FindFirstChild("HumanoidRootPart")
             end
 
-            local function getCurrentRoom()
+            local function objectPosition(object)
+                if object:IsA("BasePart") then return object.Position end
+                if object:IsA("Model") then
+                    local part = object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart", true)
+                    if part then return part.Position end
+                end
+                local part = object:FindFirstChildWhichIsA("BasePart", true)
+                return part and part.Position or nil
+            end
+
+            local function findGateRoom(root)
                 local rooms = workspace:FindFirstChild("CurrentRooms")
                 if not rooms then return nil end
-                local character = player.Character
-                local root = character and character:FindFirstChild("HumanoidRootPart")
-                if not root then return nil end
 
-                -- In DOORS, the highest numbered entry in CurrentRooms is the active room.
-                local currentNumber, currentRoom
+                local bestRoom, bestGate, bestDistance
                 for _, room in ipairs(rooms:GetChildren()) do
-                    local number = tonumber(room.Name:match("%d+"))
-                    if number and (not currentNumber or number > currentNumber) then
-                        currentNumber, currentRoom = number, room
+                    -- Gate may be a Model, Folder, MeshPart, or nested under another model.
+                    for _, object in ipairs(room:GetDescendants()) do
+                        if string.lower(object.Name) == "gate" then
+                            local position = objectPosition(object)
+                            if position then
+                                local distance = (root.Position - position).Magnitude
+                                if not bestDistance or distance < bestDistance then
+                                    bestRoom, bestGate, bestDistance = room, object, distance
+                                end
+                            end
+                        end
                     end
                 end
-                return currentRoom
-            end
 
-            local function findNamedGate(room)
-                if not room then return nil end
-                for _, object in ipairs(room:GetDescendants()) do
-                    if string.lower(object.Name) == "gate" then
-                        return object
-                    end
+                -- Only activate when the player has actually reached the gate room,
+                -- not merely because a later room is preloaded ahead.
+                if bestRoom and bestGate and bestDistance and bestDistance <= 140 then
+                    return bestRoom, bestGate, bestDistance
                 end
-                return nil
+                return nil, nil, bestDistance
             end
 
             local function bypassGate(gate)
@@ -1032,9 +1048,7 @@ return function(tab, reloadContent)
                 end
 
                 if gate:IsA("BasePart") then bypassPart(gate) end
-                for _, object in ipairs(gate:GetDescendants()) do
-                    bypassPart(object)
-                end
+                for _, object in ipairs(gate:GetDescendants()) do bypassPart(object) end
                 return changed
             end
 
@@ -1049,7 +1063,7 @@ return function(tab, reloadContent)
                             lastGateRoom = nil
                             setGateStatus("off")
                         else
-                            setGateStatus("looking for current Gate room")
+                            setGateStatus("searching loaded rooms for Gate")
                         end
                     end
                 })
@@ -1058,33 +1072,31 @@ return function(tab, reloadContent)
             task.spawn(function()
                 while true do
                     if env._FairwellSkipGateRoom then
-                        local room = getCurrentRoom()
-                        if room then
-                            local gate = findNamedGate(room)
-                            if gate then
+                        local root = getRoot()
+                        if root then
+                            local room, gate = findGateRoom(root)
+                            if room and gate then
                                 local roomId = room:GetFullName()
                                 if lastGateRoom ~= roomId then
                                     restoreGateParts()
-                                    local count = bypassGate(gate)
                                     lastGateRoom = roomId
-                                    setGateStatus(count > 0 and ("bypassing Gate in " .. room.Name) or "Gate found")
-                                else
-                                    -- Reapply if the game recreates or re-enables gate parts while in the room.
-                                    bypassGate(gate)
                                 end
-                            elseif lastGateRoom ~= room:GetFullName() then
-                                restoreGateParts()
-                                lastGateRoom = room:GetFullName()
-                                setGateStatus("current room has no Gate")
+                                local count = bypassGate(gate)
+                                setGateStatus(count > 0 and ("bypassing Gate in " .. room.Name) or ("Gate found in " .. room.Name))
+                            else
+                                if lastGateRoom then restoreGateParts() end
+                                lastGateRoom = nil
+                                setGateStatus("waiting until you enter a Gate room")
                             end
+                        else
+                            setGateStatus("waiting for character")
                         end
                     end
-                    task.wait(0.35)
+                    task.wait(0.25)
                 end
             end)
         end
     end
-
 
     -- Friendly Entities experiment: client-side diagnostics only.
     -- Noise is an MSDoors entity/feature, independent of Pivot.
