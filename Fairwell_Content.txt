@@ -950,8 +950,8 @@ return function(tab, reloadContent)
     end
 
 
-    -- Skip Gate Room [Useless]: repeatedly teleport to RoomExit while the Gate room is active.
-    -- Stop immediately if a new room appears during the teleporting state.
+    -- Skip Gate Room [Useless]: only activate after the player actually enters a Gate room.
+    -- While active, target RoomExit repeatedly. Stop on a newly spawned room or an opened exit.
     do
         local gateOk, gateBox = pcall(function()
             return closetBox or tab:AddRightGroupbox("Any Floor", "door-open")
@@ -977,29 +977,41 @@ return function(tab, reloadContent)
                 end
                 return object:FindFirstChildWhichIsA("BasePart", true)
             end
-            local function getGateRoom(root)
+            local function getCurrentRoom(root)
                 local rooms = workspace:FindFirstChild("CurrentRooms")
-                if not rooms then return nil end
-                local bestRoom, bestGate, bestDistance
+                if not rooms or not root then return nil end
+                local nearestRoom, nearestDistance
                 for _, room in ipairs(rooms:GetChildren()) do
-                    for _, obj in ipairs(room:GetDescendants()) do
-                        if string.lower(obj.Name) == "gate" then
-                            local part = partFor(obj)
-                            if part then
-                                local distance = (root.Position - part.Position).Magnitude
-                                if not bestDistance or distance < bestDistance then
-                                    bestRoom, bestGate, bestDistance = room, obj, distance
-                                end
-                            end
+                    local roomPart = partFor(room)
+                    if roomPart then
+                        local distance = (root.Position - roomPart.Position).Magnitude
+                        -- Prefer the room model containing the player over distant spawned rooms.
+                        local gate = nil
+                        for _, obj in ipairs(room:GetDescendants()) do
+                            if string.lower(obj.Name) == "gate" then gate = obj break end
+                        end
+                        if gate and distance <= 180 and (not nearestDistance or distance < nearestDistance) then
+                            nearestRoom, nearestDistance = room, distance
                         end
                     end
                 end
-                if bestDistance and bestDistance <= 180 then return bestRoom, bestGate end
-                return nil
+                return nearestRoom
+            end
+            local function playerIsInsideRoom(root, room)
+                if not root or not room then return false end
+                -- Room bounds are not consistent across floors; use the nearest room's parts
+                -- and require the player to be close to that room's geometry.
+                local nearest = math.huge
+                for _, obj in ipairs(room:GetDescendants()) do
+                    if obj:IsA("BasePart") then
+                        local distance = (root.Position - obj.Position).Magnitude
+                        if distance < nearest then nearest = distance end
+                    end
+                end
+                return nearest <= 35
             end
             local function findRoomExit(room)
                 if not room then return nil, nil end
-                -- Explicitly target RoomExit, not the Gate puzzle or a generic Door model.
                 local exit = room:FindFirstChild("RoomExit", true)
                 if not exit then return nil, nil end
                 return exit, partFor(exit)
@@ -1022,8 +1034,11 @@ return function(tab, reloadContent)
             local function teleportToRoomExit(exitPart)
                 local character = player.Character
                 if not character or not exitPart or not exitPart.Parent then return false end
-                local target = exitPart.CFrame * CFrame.new(0, 2.5, -4)
-                return pcall(function() character:PivotTo(CFrame.lookAt(target.Position, exitPart.Position)) end)
+                -- Place the character just in front of RoomExit; do not interact with the door prompt.
+                local targetPosition = exitPart.Position - exitPart.CFrame.LookVector * 4 + Vector3.new(0, 2.5, 0)
+                return pcall(function()
+                    character:PivotTo(CFrame.lookAt(targetPosition, exitPart.Position))
+                end)
             end
 
             pcall(function()
@@ -1032,71 +1047,77 @@ return function(tab, reloadContent)
                     Default = false,
                     Callback = function(enabled)
                         env._FairwellSkipGateRoom = enabled == true
-                        setGateStatus(enabled and "searching for Gate room's RoomExit" or "off")
+                        setGateStatus(enabled and "armed; waiting for you to enter a Gate room" or "off")
                     end
                 })
             end)
 
             task.spawn(function()
+                local previousRoom = nil
+                local teleporting = false
                 while true do
-                    if env._FairwellSkipGateRoom then
-                        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                        local room, gate = root and getGateRoom(root) or nil, nil
-                        -- Preserve both return values from the room detector.
-                        if root then room, gate = getGateRoom(root) end
-                        if not root then
-                            setGateStatus("waiting for character")
-                        elseif not room or not gate then
-                            setGateStatus("waiting until you enter a Gate room")
+                    if not env._FairwellSkipGateRoom then
+                        previousRoom = nil
+                        teleporting = false
+                    else
+                        local character = player.Character
+                        local root = character and character:FindFirstChild("HumanoidRootPart")
+                        local roomsFolder = workspace:FindFirstChild("CurrentRooms")
+                        if not root or not roomsFolder then
+                            setGateStatus("waiting for character/CurrentRooms")
+                            teleporting = false
                         else
-                            local exit, exitPart = findRoomExit(room)
-                            if not exit or not exitPart then
-                                setGateStatus("Gate room found; RoomExit not found")
-                            elseif exitIsOpen(exit) then
-                                setGateStatus("RoomExit is open in " .. room.Name)
-                            else
-                                local roomsFolder = workspace:FindFirstChild("CurrentRooms")
-                                local roomSnapshot = {}
-                                if roomsFolder then
-                                    for _, existingRoom in ipairs(roomsFolder:GetChildren()) do
-                                        roomSnapshot[existingRoom] = true
-                                    end
+                            local room = getCurrentRoom(root)
+                            if not room or not playerIsInsideRoom(root, room) then
+                                previousRoom = nil
+                                teleporting = false
+                                setGateStatus("armed; waiting for you to enter a Gate room")
+                            elseif room ~= previousRoom then
+                                -- Room transition/entry is the trigger. Do not teleport while the player is still in the previous room.
+                                previousRoom = room
+                                local hasGate = false
+                                for _, obj in ipairs(room:GetDescendants()) do
+                                    if string.lower(obj.Name) == "gate" then hasGate = true break end
                                 end
-                                local spawnedRoom = false
-                                local connection
-                                if roomsFolder then
-                                    connection = roomsFolder.ChildAdded:Connect(function(newRoom)
-                                        if not roomSnapshot[newRoom] then
-                                            spawnedRoom = true
-                                        end
-                                    end)
-                                end
-
-                                setGateStatus("teleporting to RoomExit in " .. room.Name)
-                                while env._FairwellSkipGateRoom and not spawnedRoom
-                                    and room.Parent and exit.Parent and not exitIsOpen(exit) do
-                                    local currentRooms = workspace:FindFirstChild("CurrentRooms")
-                                    if currentRooms then
-                                        for _, currentRoom in ipairs(currentRooms:GetChildren()) do
-                                            if not roomSnapshot[currentRoom] then
-                                                spawnedRoom = true
-                                                break
+                                if hasGate then
+                                    local exit, exitPart = findRoomExit(room)
+                                    if not exit or not exitPart then
+                                        setGateStatus("entered Gate room; RoomExit not found")
+                                    elseif exitIsOpen(exit) then
+                                        setGateStatus("entered Gate room; RoomExit already open")
+                                    else
+                                        teleporting = true
+                                        local snapshot = {}
+                                        for _, existingRoom in ipairs(roomsFolder:GetChildren()) do snapshot[existingRoom] = true end
+                                        local spawnedRoom = false
+                                        local connection = roomsFolder.ChildAdded:Connect(function(newRoom)
+                                            if not snapshot[newRoom] then spawnedRoom = true end
+                                        end)
+                                        setGateStatus("entered " .. room.Name .. "; teleporting to RoomExit")
+                                        while env._FairwellSkipGateRoom and teleporting and not spawnedRoom
+                                            and room.Parent and exit.Parent and not exitIsOpen(exit) do
+                                            -- Also poll the room list in case ChildAdded was missed.
+                                            for _, currentRoom in ipairs(roomsFolder:GetChildren()) do
+                                                if not snapshot[currentRoom] then spawnedRoom = true break end
                                             end
+                                            if spawnedRoom then break end
+                                            teleportToRoomExit(exitPart)
+                                            task.wait(0.15)
+                                        end
+                                        connection:Disconnect()
+                                        teleporting = false
+                                        if spawnedRoom then
+                                            setGateStatus("new room spawned; teleportation stopped")
+                                        elseif not env._FairwellSkipGateRoom then
+                                            setGateStatus("off")
+                                        elseif not room.Parent or not exit.Parent then
+                                            setGateStatus("room/RoomExit disappeared; stopped")
+                                        elseif exitIsOpen(exit) then
+                                            setGateStatus("RoomExit opened; stopped")
                                         end
                                     end
-                                    if spawnedRoom then break end
-                                    teleportToRoomExit(exitPart)
-                                    task.wait(0.15)
-                                end
-                                if connection then connection:Disconnect() end
-                                if spawnedRoom then
-                                    setGateStatus("new room spawned; teleportation stopped")
-                                elseif not env._FairwellSkipGateRoom then
-                                    setGateStatus("off")
-                                elseif not room.Parent or not exit.Parent then
-                                    setGateStatus("Gate room/RoomExit disappeared; teleportation stopped")
-                                elseif exitIsOpen(exit) then
-                                    setGateStatus("RoomExit opened; teleportation stopped")
+                                else
+                                    setGateStatus("entered " .. room.Name .. "; no Gate here")
                                 end
                             end
                         end
