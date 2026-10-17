@@ -2040,6 +2040,76 @@ return function(tab, reloadContent, hotelTab)
             handle.Massless = true
             handle.Parent = tool
 
+            -- Recreated Fairwell Communicator body details (no uploaded mesh required).
+            -- All detail parts are welded to Handle so the Tool stays together.
+            local function detailPart(name, size, offset, color, material, shape)
+                local part = Instance.new("Part")
+                part.Name = name
+                part.Size = size
+                part.Color = color
+                part.Material = material or Enum.Material.SmoothPlastic
+                part.CanCollide = false
+                part.CanTouch = false
+                part.CanQuery = false
+                part.Massless = true
+                part.Anchored = false
+                if shape then part.Shape = shape end
+                part.CFrame = handle.CFrame * offset
+                part.Parent = tool
+                local weld = Instance.new("WeldConstraint")
+                weld.Part0 = handle
+                weld.Part1 = part
+                weld.Parent = part
+                return part
+            end
+
+            -- Raised cyan screen, bezel, status lights, and physical buttons.
+            detailPart("ScreenBezel", Vector3.new(0.54, 0.72, 0.035),
+                CFrame.new(0, 0.13, -0.105), Color3.fromRGB(27, 147, 227), Enum.Material.SmoothPlastic)
+            local communicatorScreen = detailPart("Screen", Vector3.new(0.46, 0.63, 0.018),
+                CFrame.new(0, 0.13, -0.132), Color3.fromRGB(35, 185, 255), Enum.Material.Neon)
+            local screenTop = detailPart("ScreenHeader", Vector3.new(0.38, 0.035, 0.012),
+                CFrame.new(0, 0.405, -0.145), Color3.fromRGB(190, 245, 255), Enum.Material.Neon)
+            detailPart("BottomButton", Vector3.new(0.18, 0.07, 0.035),
+                CFrame.new(0, -0.43, -0.115), Color3.fromRGB(27, 147, 227), Enum.Material.Neon)
+            detailPart("LeftButton", Vector3.new(0.055, 0.12, 0.035),
+                CFrame.new(-0.27, -0.39, -0.11), Color3.fromRGB(70, 110, 230), Enum.Material.Neon)
+            detailPart("RightButton", Vector3.new(0.055, 0.12, 0.035),
+                CFrame.new(0.27, -0.39, -0.11), Color3.fromRGB(70, 110, 230), Enum.Material.Neon)
+            local statusLight = detailPart("StatusLight", Vector3.new(0.07, 0.035, 0.025),
+                CFrame.new(0.24, 0.49, -0.11), Color3.fromRGB(110, 255, 180), Enum.Material.Neon)
+            local TweenService = game:GetService("TweenService")
+            local originalGrip = tool.Grip
+            local animationBusy = false
+
+            local function playEquipAnimation()
+                if animationBusy then return end
+                animationBusy = true
+                local tiltedGrip = originalGrip * CFrame.Angles(math.rad(-8), math.rad(5), math.rad(-5))
+                pcall(function()
+                    tool.Grip = tiltedGrip
+                    local tween = TweenService:Create(tool, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Grip = originalGrip})
+                    tween:Play()
+                    tween.Completed:Wait()
+                end)
+                animationBusy = false
+            end
+
+            local function playActivationAnimation()
+                pcall(function()
+                    communicatorScreen.Color = Color3.fromRGB(35, 185, 255)
+                    screenTop.Color = Color3.fromRGB(190, 245, 255)
+                    statusLight.Color = Color3.fromRGB(110, 255, 180)
+                    local bright = TweenService:Create(communicatorScreen, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Color = Color3.fromRGB(170, 245, 255)})
+                    bright:Play()
+                    bright.Completed:Wait()
+                    local dim = TweenService:Create(communicatorScreen, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Color = Color3.fromRGB(35, 185, 255)})
+                    dim:Play()
+                    local blink = TweenService:Create(statusLight, TweenInfo.new(0.18, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 1, true), {Color = Color3.fromRGB(27, 147, 227)})
+                    blink:Play()
+                end)
+            end
+
             local screenGui
             local function cleanup()
                 if screenGui then pcall(function() screenGui:Destroy() end) end
@@ -2190,10 +2260,13 @@ return function(tab, reloadContent, hotelTab)
                 end)
             end
 
-            tool.Activated:Connect(createInterface)
+            tool.Activated:Connect(function()
+                task.spawn(playActivationAnimation)
+                createInterface()
+            end)
             tool.Equipped:Connect(function()
-                -- Keep the handle visible and held naturally when equipped.
                 handle.Transparency = 0
+                task.spawn(playEquipAnimation)
             end)
 
             -- Re-check the Backpack at grant time in case it was replaced.
