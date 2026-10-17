@@ -303,15 +303,24 @@ return function(tab, reloadContent, hotelTab)
                 label.Text = displayText.Text
                 label.Parent = gui
 
-                -- Always start the render loop; CurrentCamera can be nil for a frame during equip.
-                -- Keep the device close to the camera and facing the player so it is clearly visible.
+                -- Float relative to the character's head, not the camera.
+                -- This remains visible in third-person and on mobile camera setups.
                 floatConnection = RunService.RenderStepped:Connect(function()
                     if not equipped or not floatModel or not floatModel.Parent then return end
-                    local currentCamera = workspace.CurrentCamera
-                    if not currentCamera then return end
+                    local characterNow = localPlayer.Character
+                    local head = characterNow and characterNow:FindFirstChild("Head")
+                    local root = characterNow and characterNow:FindFirstChild("HumanoidRootPart")
+                    if not head or not head:IsA("BasePart") then return end
                     local t = os.clock()
-                    local base = currentCamera.CFrame
-                        * CFrame.new(0.72, -0.05 + math.sin(t * 1.8) * 0.025, -1.8)
+                    local forward = head.CFrame.LookVector
+                    local flatForward = Vector3.new(forward.X, 0, forward.Z)
+                    if flatForward.Magnitude < 0.01 and root then
+                        flatForward = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
+                    end
+                    if flatForward.Magnitude < 0.01 then return end
+                    flatForward = flatForward.Unit
+                    local center = head.Position + flatForward * 2.0 + Vector3.new(0, 0.05 + math.sin(t * 1.8) * 0.025, 0)
+                    local base = CFrame.lookAt(center, center - flatForward, Vector3.yAxis)
                     for _, part in ipairs(floatModel:GetChildren()) do
                         if part:IsA("BasePart") then
                             local offset = part:GetAttribute("FloatOffset")
