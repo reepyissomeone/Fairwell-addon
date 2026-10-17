@@ -311,6 +311,19 @@ return function(tab, reloadContent, hotelTab)
                     local head = characterNow and characterNow:FindFirstChild("Head")
                     local root = characterNow and characterNow:FindFirstChild("HumanoidRootPart")
                     if not head or not head:IsA("BasePart") then return end
+                    local camera = workspace.CurrentCamera
+                    local freecam = camera and camera.CameraType == Enum.CameraType.Scriptable
+                    -- The communicator is a character-world prop, so explicitly hide it
+                    -- whenever a freecam/scriptable camera takes control.
+                    for _, visiblePart in ipairs(floatModel:GetChildren()) do
+                        if visiblePart:IsA("BasePart") then
+                            visiblePart.LocalTransparencyModifier = freecam and 1 or 0
+                        end
+                    end
+                    local guiNow = floatModel:FindFirstChildWhichIsA("SurfaceGui", true)
+                    if guiNow then guiNow.Enabled = not freecam end
+                    if freecam then return end
+
                     local t = os.clock()
                     local forward = head.CFrame.LookVector
                     local flatForward = Vector3.new(forward.X, 0, forward.Z)
@@ -382,31 +395,60 @@ return function(tab, reloadContent, hotelTab)
                 }):Play()
             end)
 
-            -- Listen to DOORS' actual inspect-animation signal. This is raised
-            -- after the game's Inspect action, including its mobile button.
+            -- Listen for the game's Inspect signals. CoinRoll's RemoteInspect is
+            -- item-specific, so discover that exact remote as well as DOORS ToolAnimate.
+            -- Keep keyboard R as a fallback for builds that don't emit either signal.
             local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            local UserInputService = game:GetService("UserInputService")
+            local inspectConnections = {}
+            local lastCycleAt = 0
+            local function handleInspectSignal(...)
+                if not equipped then return end
+                local now = os.clock()
+                if now - lastCycleAt < 0.22 then return end
+                local args = {...}
+                local isInspect = false
+                for _, value in ipairs(args) do
+                    if type(value) == "string" and string.lower(value) == "inspect" then
+                        isInspect = true
+                        break
+                    end
+                end
+                -- RemoteInspect itself is the inspect action; ToolAnimate requires
+                -- its payload to identify the Inspect animation.
+                if isInspect then
+                    lastCycleAt = now
+                    cycleMode()
+                end
+            end
+
             local remotesFolder = ReplicatedStorage:FindFirstChild("RemotesFolder")
             local toolAnimateRemote = remotesFolder and remotesFolder:FindFirstChild("ToolAnimate")
-            local inspectRemoteConnection
-            local inspectInputConnection
-
             if toolAnimateRemote and toolAnimateRemote:IsA("RemoteEvent") then
-                inspectRemoteConnection = toolAnimateRemote.OnClientEvent:Connect(function(action)
-                    if not equipped then return end
-                    if action == "Inspect" then
-                        cycleMode()
-                    end
-                end)
-            else
-                -- Fallback for places that do not expose the DOORS animation remote.
-                local UserInputService = game:GetService("UserInputService")
-                inspectInputConnection = UserInputService.InputBegan:Connect(function(input, processed)
-                    if processed or not equipped then return end
-                    if input.KeyCode == Enum.KeyCode.R then
-                        cycleMode()
-                    end
-                end)
+                table.insert(inspectConnections, toolAnimateRemote.OnClientEvent:Connect(handleInspectSignal))
             end
+
+            local coinRoll = workspace:FindFirstChild("FIXROBLOX_015")
+            coinRoll = coinRoll and coinRoll:FindFirstChild("CoinRoll")
+            local remoteInspect = coinRoll and coinRoll:FindFirstChild("RemoteInspect")
+            if remoteInspect and remoteInspect:IsA("RemoteEvent") then
+                table.insert(inspectConnections, remoteInspect.OnClientEvent:Connect(function(...)
+                    if not equipped then return end
+                    lastCycleAt = os.clock()
+                    cycleMode()
+                end))
+            end
+
+            local inspectInputConnection = UserInputService.InputBegan:Connect(function(input, processed)
+                if processed or not equipped then return end
+                if input.KeyCode == Enum.KeyCode.R then
+                    local now = os.clock()
+                    if now - lastCycleAt >= 0.22 then
+                        lastCycleAt = now
+                        cycleMode()
+                    end
+                end
+            end)
 
             tool.Destroying:Connect(function()
                 stopHoldingPose()
@@ -414,7 +456,9 @@ return function(tab, reloadContent, hotelTab)
                 if equipConnection then equipConnection:Disconnect() end
                 if unequipConnection then unequipConnection:Disconnect() end
                 if activateConnection then activateConnection:Disconnect() end
-                if inspectRemoteConnection then inspectRemoteConnection:Disconnect() end
+                for _, connection in ipairs(inspectConnections) do
+                    if connection then connection:Disconnect() end
+                end
                 if inspectInputConnection then inspectInputConnection:Disconnect() end
             end)
 
