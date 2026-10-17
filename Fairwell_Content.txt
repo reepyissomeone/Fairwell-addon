@@ -382,14 +382,31 @@ return function(tab, reloadContent, hotelTab)
                 }):Play()
             end)
 
-            local UserInputService = game:GetService("UserInputService")
+            -- Listen to DOORS' actual inspect-animation signal. This is raised
+            -- after the game's Inspect action, including its mobile button.
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            local remotesFolder = ReplicatedStorage:FindFirstChild("RemotesFolder")
+            local toolAnimateRemote = remotesFolder and remotesFolder:FindFirstChild("ToolAnimate")
+            local inspectRemoteConnection
             local inspectInputConnection
-            inspectInputConnection = UserInputService.InputBegan:Connect(function(input, processed)
-                if processed or not equipped then return end
-                if input.KeyCode == Enum.KeyCode.R then
-                    cycleMode()
-                end
-            end)
+
+            if toolAnimateRemote and toolAnimateRemote:IsA("RemoteEvent") then
+                inspectRemoteConnection = toolAnimateRemote.OnClientEvent:Connect(function(action)
+                    if not equipped then return end
+                    if action == "Inspect" then
+                        cycleMode()
+                    end
+                end)
+            else
+                -- Fallback for places that do not expose the DOORS animation remote.
+                local UserInputService = game:GetService("UserInputService")
+                inspectInputConnection = UserInputService.InputBegan:Connect(function(input, processed)
+                    if processed or not equipped then return end
+                    if input.KeyCode == Enum.KeyCode.R then
+                        cycleMode()
+                    end
+                end)
+            end
 
             tool.Destroying:Connect(function()
                 stopHoldingPose()
@@ -397,6 +414,7 @@ return function(tab, reloadContent, hotelTab)
                 if equipConnection then equipConnection:Disconnect() end
                 if unequipConnection then unequipConnection:Disconnect() end
                 if activateConnection then activateConnection:Disconnect() end
+                if inspectRemoteConnection then inspectRemoteConnection:Disconnect() end
                 if inspectInputConnection then inspectInputConnection:Disconnect() end
             end)
 
