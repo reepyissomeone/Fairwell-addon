@@ -303,26 +303,27 @@ return function(tab, reloadContent, hotelTab)
                 label.Text = displayText.Text
                 label.Parent = gui
 
-                local cam = workspace.CurrentCamera
-                if cam then
-                    floatConnection = RunService.RenderStepped:Connect(function()
-                        if not equipped or not floatModel or not floatModel.Parent then return end
-                        local currentCamera = workspace.CurrentCamera
-                        if not currentCamera then return end
-                        local t = os.clock()
-                        local base = currentCamera.CFrame * CFrame.new(0.85, -0.15 + math.sin(t * 1.8) * 0.025, -2.6)
-                            * CFrame.Angles(0, math.rad(180), 0)
-                        for _, part in ipairs(floatModel:GetChildren()) do
-                            if part:IsA("BasePart") then
-                                local offset = part:GetAttribute("FloatOffset")
-                                if typeof(offset) == "CFrame" then part.CFrame = base * offset end
+                -- Always start the render loop; CurrentCamera can be nil for a frame during equip.
+                -- Keep the device close to the camera and facing the player so it is clearly visible.
+                floatConnection = RunService.RenderStepped:Connect(function()
+                    if not equipped or not floatModel or not floatModel.Parent then return end
+                    local currentCamera = workspace.CurrentCamera
+                    if not currentCamera then return end
+                    local t = os.clock()
+                    local base = currentCamera.CFrame
+                        * CFrame.new(0.72, -0.05 + math.sin(t * 1.8) * 0.025, -1.8)
+                    for _, part in ipairs(floatModel:GetChildren()) do
+                        if part:IsA("BasePart") then
+                            local offset = part:GetAttribute("FloatOffset")
+                            if typeof(offset) == "CFrame" then
+                                part.CFrame = base * offset
                             end
                         end
-                        label.Text = displayText.Text
-                        light.Color = (math.floor(t * 3) % 2 == 0)
-                            and Color3.fromRGB(110, 255, 180) or Color3.fromRGB(27, 147, 227)
-                    end)
-                end
+                    end
+                    label.Text = displayText.Text
+                    light.Color = (math.floor(t * 3) % 2 == 0)
+                        and Color3.fromRGB(110, 255, 180) or Color3.fromRGB(27, 147, 227)
+                end)
             end
 
             equipConnection = tool.Equipped:Connect(function()
