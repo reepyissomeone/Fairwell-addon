@@ -43,8 +43,8 @@ return function(tab, reloadContent, hotelTab)
             tool.RequiresHandle = true
             tool.CanBeDropped = false
             -- Compact grip: keep the communicator aligned with the palm, not out beside the wrist.
-            tool.Grip = CFrame.new(0, -0.06, -0.10)
-                * CFrame.Angles(math.rad(0), math.rad(180), math.rad(90))
+            tool.Grip = CFrame.new(0, 0.10, -0.34)
+                * CFrame.Angles(0, math.rad(180), 0)
 
             local handle = Instance.new("Part")
             handle.Name = "Handle"
@@ -113,10 +113,10 @@ return function(tab, reloadContent, hotelTab)
             displayText.Parent = screenGui
 
             local modes = {
-                {name = "STATUS", reply = "SYSTEM ONLINE"},
-                {name = "PING", reply = "SIGNAL CLEAR"},
-                {name = "HELP", reply = "3 COMMANDS"},
-                {name = "SCAN", reply = "SCANNING..."},
+                {name = "STATUS", reply = "CHECKING STATUS"},
+                {name = "PING", reply = "PINGING NEARBY"},
+                {name = "HELP", reply = "COMMAND GUIDE"},
+                {name = "SCAN", reply = "SCANNING AREA"},
             }
             local modeIndex = 1
             local equipped = false
@@ -133,14 +133,80 @@ return function(tab, reloadContent, hotelTab)
             local animationStartedAt = 0
             local inspectStartedAt = nil
             local inspectDuration = 1.15
-            -- Raise the device and angle its display outward so it is easier to read.
-            local inspectGripOffset = CFrame.new(0, 0.16, -0.18)
-            local inspectPoseOffset = CFrame.Angles(math.rad(-10), math.rad(-2), math.rad(-4))
+            local inspectGripOffset = CFrame.new(0, 0.12, -0.12)
 
-            local function showMode()
+            local function currentRoomLabel()
+                local rooms = workspace:FindFirstChild("CurrentRooms")
+                if rooms then
+                    local latest
+                    for _, room in ipairs(rooms:GetChildren()) do
+                        local number = tonumber(room.Name)
+                        if number and (not latest or number > latest) then latest = number end
+                    end
+                    if latest then return "ROOM " .. tostring(latest) end
+                end
+                return "ROOM UNKNOWN"
+            end
+
+            local function findNearbyEntity()
+                local characterNow = localPlayer.Character
+                local root = characterNow and characterNow:FindFirstChild("HumanoidRootPart")
+                if not root then return nil, nil end
+                local bestName, bestDistance
+                for _, object in ipairs(workspace:GetDescendants()) do
+                    if object:IsA("Model") then
+                        local name = string.lower(object.Name)
+                        local isEntity = string.find(name, "rush", 1, true)
+                            or string.find(name, "ambush", 1, true)
+                            or string.find(name, "screech", 1, true)
+                            or string.find(name, "seek", 1, true)
+                            or string.find(name, "eyes", 1, true)
+                            or string.find(name, "figure", 1, true)
+                            or string.find(name, "giggle", 1, true)
+                            or string.find(name, "grumble", 1, true)
+                        local part = object.PrimaryPart
+                            or object:FindFirstChild("HumanoidRootPart", true)
+                            or object:FindFirstChildWhichIsA("BasePart", true)
+                        if isEntity and part and part:IsDescendantOf(workspace) then
+                            local distance = (part.Position - root.Position).Magnitude
+                            if not bestDistance or distance < bestDistance then
+                                bestName, bestDistance = object.Name, distance
+                            end
+                        end
+                    end
+                end
+                return bestName, bestDistance
+            end
+
+            local function executeMode()
                 local mode = modes[modeIndex]
-                displayText.Text = "FW / " .. mode.name .. "\n" .. mode.reply
-                print("[Fairwell Communicator] " .. mode.name .. ": " .. mode.reply)
+                local characterNow = localPlayer.Character
+                local humanoid = characterNow and characterNow:FindFirstChildOfClass("Humanoid")
+                local reply
+                if mode.name == "STATUS" then
+                    local health = humanoid and math.floor(humanoid.Health + 0.5) or 0
+                    local maxHealth = humanoid and math.floor(humanoid.MaxHealth + 0.5) or 0
+                    reply = currentRoomLabel() .. "\\nHP " .. tostring(health) .. "/" .. tostring(maxHealth)
+                elseif mode.name == "PING" then
+                    local entityName, distance = findNearbyEntity()
+                    if entityName and distance then
+                        reply = entityName .. " / " .. tostring(math.floor(distance + 0.5)) .. " STUDS"
+                    else
+                        reply = "NO ENTITY SIGNAL"
+                    end
+                elseif mode.name == "HELP" then
+                    reply = "STATUS: HP/ROOM\\nPING: NEAREST ENTITY\\nSCAN: AREA CHECK"
+                elseif mode.name == "SCAN" then
+                    local entityName, distance = findNearbyEntity()
+                    if entityName and distance then
+                        reply = "FOUND " .. string.upper(entityName) .. "\\nDIST " .. tostring(math.floor(distance + 0.5)) .. " STUDS"
+                    else
+                        reply = "AREA CLEAR\\nNO KNOWN ENTITY"
+                    end
+                end
+                modes[modeIndex].reply = reply or "COMMAND FAILED"
+                displayText.Text = "FW / " .. mode.name .. "\\n" .. modes[modeIndex].reply
+                print("[Fairwell Communicator] Executed " .. mode.name .. ": " .. modes[modeIndex].reply:gsub("\\n", " | "))
             end
 
             local function findJoint(characterNow, jointName)
@@ -175,23 +241,15 @@ return function(tab, reloadContent, hotelTab)
                 local characterNow = localPlayer.Character
                 rightShoulder = findJoint(characterNow, "RightShoulder")
                 rightElbow = findJoint(characterNow, "RightElbow")
-                if not rightElbow then
-                    -- R6 characters use one shoulder joint; R15 also has an elbow.
-                    rightElbow = nil
-                end
                 if rightShoulder then shoulderBaseTransform = rightShoulder.Transform end
                 if rightElbow then elbowBaseTransform = rightElbow.Transform end
 
-                -- Rotate the communicator into the palm and bring it close to the hand.
-                -- Hold the communicator farther out in front of the palm.
-                -- Lift and extend the communicator forward from the palm.
-                local raisedGrip = CFrame.new(0, 0.12, -0.44)
-                    * CFrame.Angles(math.rad(0), math.rad(180), math.rad(90))
-                tool.Grip = raisedGrip
-                originalGrip = raisedGrip
+                -- Keep the screen upright; the old 90-degree roll turned the whole device sideways.
+                local uprightGrip = CFrame.new(0, 0.10, -0.34)
+                    * CFrame.Angles(0, math.rad(180), 0)
+                tool.Grip = uprightGrip
+                originalGrip = uprightGrip
 
-                -- Restore the captured joint baseline before Roblox evaluates its normal
-                -- character animation, then layer the communicator pose after that evaluation.
                 preAnimationConnection = RunService.PreAnimation:Connect(function()
                     if not equipped then return end
                     if rightShoulder and rightShoulder.Parent and shoulderBaseTransform then
@@ -205,14 +263,13 @@ return function(tab, reloadContent, hotelTab)
                 preSimulationConnection = RunService.PreSimulation:Connect(function()
                     if not equipped or not tool.Parent then return end
                     local elapsed = os.clock() - animationStartedAt
-                    local idle = math.sin(elapsed * 2.0) * math.rad(1.5)
+                    local idle = math.sin(elapsed * 2.0) * math.rad(1.0)
                     local inspectAlpha = 0
                     if inspectStartedAt then
                         local inspectElapsed = os.clock() - inspectStartedAt
                         if inspectElapsed >= inspectDuration then
                             inspectStartedAt = nil
                         else
-                            -- Smoothly raise the device, hold it up briefly, then lower it.
                             local raiseTime, holdTime = 0.28, 0.52
                             if inspectElapsed < raiseTime then
                                 local t = inspectElapsed / raiseTime
@@ -220,33 +277,29 @@ return function(tab, reloadContent, hotelTab)
                             elseif inspectElapsed < raiseTime + holdTime then
                                 inspectAlpha = 1
                             else
-                                local t = (inspectElapsed - raiseTime - holdTime) / (inspectDuration - raiseTime - holdTime)
-                                t = math.clamp(t, 0, 1)
+                                local t = math.clamp((inspectElapsed - raiseTime - holdTime) / (inspectDuration - raiseTime - holdTime), 0, 1)
                                 inspectAlpha = 1 - t * t * (3 - 2 * t)
                             end
                         end
                     end
 
+                    -- Use a neutral, restrained pose instead of forcing extreme rotations that twist the arm.
                     if rightShoulder and rightShoulder.Parent then
-                        -- Reach forward with the upper arm instead of curling it across the torso.
-                        local holdPose = CFrame.Angles(math.rad(62), math.rad(-4), math.rad(-8))
-                        local inspectPose = CFrame.Angles(math.rad(78), math.rad(-2), math.rad(-4))
-                        local idlePose = holdPose * CFrame.Angles(idle * 0.15, 0, idle * 0.35)
-                        rightShoulder.Transform = idlePose:Lerp(inspectPose, inspectAlpha)
+                        local holdPose = CFrame.Angles(math.rad(-35), math.rad(0), math.rad(0))
+                        local inspectPose = CFrame.Angles(math.rad(-48), math.rad(0), math.rad(0))
+                        rightShoulder.Transform = holdPose:Lerp(inspectPose, inspectAlpha)
+                            * CFrame.Angles(idle, 0, 0)
                     end
                     if rightElbow and rightElbow.Parent then
-                        -- Keep the elbow almost straight for a fully extended arm.
-                        local holdElbow = CFrame.Angles(math.rad(-5), math.rad(2), 0)
-                        local inspectElbow = CFrame.Angles(math.rad(-2), math.rad(1), 0)
+                        local holdElbow = CFrame.Angles(math.rad(-8), 0, 0)
+                        local inspectElbow = CFrame.Angles(math.rad(-4), 0, 0)
                         rightElbow.Transform = holdElbow:Lerp(inspectElbow, inspectAlpha)
                     end
-                    -- Move the communicator farther forward during the inspection pose.
                     tool.Grip = originalGrip
-                        * CFrame.new(0, math.sin(elapsed * 2.0) * 0.006, 0)
-                        * CFrame.Angles(math.sin(elapsed * 1.7) * math.rad(0.6), 0, 0)
-                        * (CFrame.new():Lerp(inspectGripOffset, inspectAlpha))
+                        * CFrame.new(0, math.sin(elapsed * 2.0) * 0.003, 0)
+                        * CFrame.new():Lerp(inspectGripOffset, inspectAlpha)
                 end)
-                showMode()
+                executeMode()
             end)
 
             unequipConnection = tool.Unequipped:Connect(function()
@@ -255,17 +308,13 @@ return function(tab, reloadContent, hotelTab)
             end)
 
             activateConnection = tool.Activated:Connect(function()
-                -- Play Fairwell's own inspect animation: raise the communicator,
-                -- hold it up for a moment, then smoothly return to the carry pose.
+                -- Each tap advances to the next command, then runs that command immediately.
                 inspectStartedAt = os.clock()
-
-                -- Also cycle the communicator's own display mode.
                 modeIndex = (modeIndex % #modes) + 1
-                showMode()
-                local bright = TweenService:Create(screen, TweenInfo.new(0.1), {
+                executeMode()
+                TweenService:Create(screen, TweenInfo.new(0.1), {
                     Color = Color3.fromRGB(170, 245, 255)
-                })
-                bright:Play()
+                }):Play()
                 task.delay(0.12, function()
                     if screen and screen.Parent then
                         TweenService:Create(screen, TweenInfo.new(0.22), {
