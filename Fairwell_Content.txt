@@ -229,15 +229,15 @@ return function(tab, reloadContent, hotelTab)
 
                     if rightShoulder and rightShoulder.Parent then
                         -- Reach forward with the upper arm instead of curling it across the torso.
-                        local holdPose = CFrame.Angles(math.rad(-62), math.rad(4), math.rad(8))
-                        local inspectPose = CFrame.Angles(math.rad(-78), math.rad(2), math.rad(4))
+                        local holdPose = CFrame.Angles(math.rad(62), math.rad(-4), math.rad(-8))
+                        local inspectPose = CFrame.Angles(math.rad(78), math.rad(-2), math.rad(-4))
                         local idlePose = holdPose * CFrame.Angles(idle * 0.15, 0, idle * 0.35)
                         rightShoulder.Transform = idlePose:Lerp(inspectPose, inspectAlpha)
                     end
                     if rightElbow and rightElbow.Parent then
                         -- Keep the elbow almost straight for a fully extended arm.
-                        local holdElbow = CFrame.Angles(math.rad(5), math.rad(-2), 0)
-                        local inspectElbow = CFrame.Angles(math.rad(2), math.rad(-1), 0)
+                        local holdElbow = CFrame.Angles(math.rad(-5), math.rad(2), 0)
+                        local inspectElbow = CFrame.Angles(math.rad(-2), math.rad(1), 0)
                         rightElbow.Transform = holdElbow:Lerp(inspectElbow, inspectAlpha)
                     end
                     -- Move the communicator farther forward during the inspection pose.
