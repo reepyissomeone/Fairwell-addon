@@ -131,6 +131,10 @@ return function(tab, reloadContent, hotelTab)
             local shoulderBaseTransform
             local elbowBaseTransform
             local animationStartedAt = 0
+            local inspectStartedAt = nil
+            local inspectDuration = 1.15
+            local inspectGripOffset = CFrame.new(0, 0, -0.10)
+            local inspectPoseOffset = CFrame.Angles(math.rad(-30), math.rad(-5), math.rad(-12))
 
             local function showMode()
                 local mode = modes[modeIndex]
@@ -199,24 +203,44 @@ return function(tab, reloadContent, hotelTab)
                 preSimulationConnection = RunService.PreSimulation:Connect(function()
                     if not equipped or not tool.Parent then return end
                     local elapsed = os.clock() - animationStartedAt
-                    local blend = math.clamp(elapsed / 0.28, 0, 1)
-                    local idle = math.sin(elapsed * 2.0) * math.rad(2)
+                    local idle = math.sin(elapsed * 2.0) * math.rad(1.5)
+                    local inspectAlpha = 0
+                    if inspectStartedAt then
+                        local inspectElapsed = os.clock() - inspectStartedAt
+                        if inspectElapsed >= inspectDuration then
+                            inspectStartedAt = nil
+                        else
+                            -- Smoothly raise the device, hold it up briefly, then lower it.
+                            local raiseTime, holdTime = 0.28, 0.52
+                            if inspectElapsed < raiseTime then
+                                local t = inspectElapsed / raiseTime
+                                inspectAlpha = t * t * (3 - 2 * t)
+                            elseif inspectElapsed < raiseTime + holdTime then
+                                inspectAlpha = 1
+                            else
+                                local t = (inspectElapsed - raiseTime - holdTime) / (inspectDuration - raiseTime - holdTime)
+                                t = math.clamp(t, 0, 1)
+                                inspectAlpha = 1 - t * t * (3 - 2 * t)
+                            end
+                        end
+                    end
+
                     if rightShoulder and rightShoulder.Parent then
-                        -- Reverse the previous arm direction and curl the forearm inward
-                        -- toward the front of the torso to make the device look held.
                         local holdPose = CFrame.Angles(math.rad(42), math.rad(8), math.rad(24))
-                        local breathing = CFrame.Angles(idle * 0.25, 0, idle)
-                        rightShoulder.Transform = holdPose:Lerp(holdPose * breathing, blend)
+                        local inspectPose = holdPose * inspectPoseOffset
+                        local idlePose = holdPose * CFrame.Angles(idle * 0.2, 0, idle)
+                        rightShoulder.Transform = idlePose:Lerp(inspectPose, inspectAlpha)
                     end
                     if rightElbow and rightElbow.Parent then
-                        local elbowPose = CFrame.Angles(math.rad(48), math.rad(-6), math.rad(3))
-                        rightElbow.Transform = elbowPose:Lerp(
-                            elbowPose * CFrame.Angles(math.sin(elapsed * 2) * math.rad(1.5), 0, 0), blend)
+                        local holdElbow = CFrame.Angles(math.rad(48), math.rad(-6), math.rad(3))
+                        local inspectElbow = CFrame.Angles(math.rad(20), math.rad(-4), math.rad(2))
+                        rightElbow.Transform = holdElbow:Lerp(inspectElbow, inspectAlpha)
                     end
-                    -- Small visible device movement while the arm holds it up.
+                    -- Move the communicator farther forward during the inspection pose.
                     tool.Grip = originalGrip
-                        * CFrame.new(0, math.sin(elapsed * 2.0) * 0.008, 0)
-                        * CFrame.Angles(math.sin(elapsed * 1.7) * math.rad(1), 0, 0)
+                        * CFrame.new(0, math.sin(elapsed * 2.0) * 0.006, 0)
+                        * CFrame.Angles(math.sin(elapsed * 1.7) * math.rad(0.6), 0, 0)
+                        * (CFrame.new():Lerp(inspectGripOffset, inspectAlpha))
                 end)
                 showMode()
             end)
@@ -227,15 +251,9 @@ return function(tab, reloadContent, hotelTab)
             end)
 
             activateConnection = tool.Activated:Connect(function()
-                -- Reuse DOORS' local ToolAnimate Inspect signal when the executor exposes firesignal.
-                -- This is a client-side animation signal, not a server RemoteEvent call.
-                local remotesFolder = game:GetService("ReplicatedStorage"):FindFirstChild("RemotesFolder")
-                local toolAnimate = remotesFolder and remotesFolder:FindFirstChild("ToolAnimate")
-                if toolAnimate and toolAnimate:IsA("RemoteEvent") and type(firesignal) == "function" then
-                    pcall(function()
-                        firesignal(toolAnimate.OnClientEvent, tool, "Inspect", false)
-                    end)
-                end
+                -- Play Fairwell's own inspect animation: raise the communicator,
+                -- hold it up for a moment, then smoothly return to the carry pose.
+                inspectStartedAt = os.clock()
 
                 -- Also cycle the communicator's own display mode.
                 modeIndex = (modeIndex % #modes) + 1
