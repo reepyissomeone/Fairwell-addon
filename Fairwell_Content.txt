@@ -307,10 +307,16 @@ return function(tab, reloadContent, hotelTab)
                 tool.Grip = originalGrip
             end)
 
-            activateConnection = tool.Activated:Connect(function()
-                -- Each tap advances to the next command, then runs that command immediately.
-                inspectStartedAt = os.clock()
+            -- Inspect cycles the selected command; it does not execute it.
+            local function cycleMode()
                 modeIndex = (modeIndex % #modes) + 1
+                displayText.Text = "FW / " .. modes[modeIndex].name .. "\\nREADY TO USE"
+                print("[Fairwell Communicator] Selected " .. modes[modeIndex].name)
+            end
+
+            activateConnection = tool.Activated:Connect(function()
+                -- Use runs the currently selected command, like a normal DOORS item.
+                inspectStartedAt = os.clock()
                 executeMode()
                 TweenService:Create(screen, TweenInfo.new(0.1), {
                     Color = Color3.fromRGB(170, 245, 255)
@@ -327,11 +333,21 @@ return function(tab, reloadContent, hotelTab)
                 }):Play()
             end)
 
+            local UserInputService = game:GetService("UserInputService")
+            local inspectInputConnection
+            inspectInputConnection = UserInputService.InputBegan:Connect(function(input, processed)
+                if processed or not equipped then return end
+                if input.KeyCode == Enum.KeyCode.R then
+                    cycleMode()
+                end
+            end)
+
             tool.Destroying:Connect(function()
                 stopHoldingPose()
                 if equipConnection then equipConnection:Disconnect() end
                 if unequipConnection then unequipConnection:Disconnect() end
                 if activateConnection then activateConnection:Disconnect() end
+                if inspectInputConnection then inspectInputConnection:Disconnect() end
             end)
 
             tool.Parent = backpack
