@@ -4,54 +4,46 @@
 return function(tab, reloadContent, hotelTab)
     if not tab then return end
 
-    -- Developer-only Fairwell Communicator grant panel. Kept near the top so
-    -- it still loads even if a later, unrelated feature has an error.
+    -- Fairwell Communicator: automatically grant to the configured developer.
+    -- No addon groupbox or custom ScreenGui is created. Tool activation cycles its
+    -- built-in command modes and updates the physical communicator screen.
     do
         local Players = game:GetService("Players")
         local TweenService = game:GetService("TweenService")
+        local RunService = game:GetService("RunService")
         local localPlayer = Players.LocalPlayer
         local allowedUserId = 11412884109
-        local communicatorBox
-        pcall(function()
-            communicatorBox = tab:AddLeftGroupbox("Fairwell Communicator", "message-circle")
-        end)
-
-        local statusLabel
-        local function setCommunicatorStatus(message)
-            print("[Fairwell Communicator] " .. message)
-            if statusLabel then
-                pcall(function() statusLabel:SetText(message) end)
-            end
-        end
 
         local function grantCommunicator()
-            if not localPlayer then
-                setCommunicatorStatus("Could not find LocalPlayer.")
-                return
-            end
-            if localPlayer.UserId ~= allowedUserId then
-                setCommunicatorStatus("Developer-only: account ID does not match.")
+            if not localPlayer or localPlayer.UserId ~= allowedUserId then
+                if localPlayer then
+                    warn("[Fairwell Communicator] Auto-grant skipped: UserId does not match.")
+                end
                 return
             end
 
-            local backpack = localPlayer:FindFirstChildOfClass("Backpack") or localPlayer:WaitForChild("Backpack", 10)
+            local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+                or localPlayer:WaitForChild("Backpack", 10)
             if not backpack then
-                setCommunicatorStatus("Backpack not found. Try again.")
+                warn("[Fairwell Communicator] Backpack not ready; could not grant item.")
                 return
             end
 
             local character = localPlayer.Character
-            local oldTool = backpack:FindFirstChild("Fairwell Communicator")
-            if oldTool then oldTool:Destroy() end
-            oldTool = character and character:FindFirstChild("Fairwell Communicator")
-            if oldTool then oldTool:Destroy() end
+            local existing = backpack:FindFirstChild("Fairwell Communicator")
+                or (character and character:FindFirstChild("Fairwell Communicator"))
+            if existing then
+                print("[Fairwell Communicator] Already in inventory.")
+                return
+            end
 
             local tool = Instance.new("Tool")
             tool.Name = "Fairwell Communicator"
-            tool.ToolTip = "Equip to open Fairwell's communicator"
+            tool.ToolTip = "Tap/use to inspect and cycle communicator commands"
             tool.RequiresHandle = true
             tool.CanBeDropped = false
-            tool.Grip = CFrame.new(0, -0.1, -0.35) * CFrame.Angles(math.rad(-8), 0, math.rad(-5))
+            tool.Grip = CFrame.new(0, -0.24, -0.62)
+                * CFrame.Angles(math.rad(-90), math.rad(0), math.rad(0))
 
             local handle = Instance.new("Part")
             handle.Name = "Handle"
@@ -60,6 +52,7 @@ return function(tab, reloadContent, hotelTab)
             handle.Material = Enum.Material.SmoothPlastic
             handle.CanCollide = false
             handle.CanTouch = false
+            handle.CanQuery = false
             handle.Massless = true
             handle.Parent = tool
 
@@ -82,151 +75,146 @@ return function(tab, reloadContent, hotelTab)
                 return part
             end
 
-            detail("BlueBezel", Vector3.new(0.55, 0.72, 0.035), CFrame.new(0, 0.12, -0.095), Color3.fromRGB(27, 147, 227), Enum.Material.SmoothPlastic)
-            local screen = detail("CyanScreen", Vector3.new(0.46, 0.62, 0.018), CFrame.new(0, 0.12, -0.122), Color3.fromRGB(35, 185, 255), Enum.Material.Neon)
-            detail("ScreenHeader", Vector3.new(0.36, 0.025, 0.012), CFrame.new(0, 0.39, -0.136), Color3.fromRGB(190, 245, 255), Enum.Material.Neon)
-            detail("BottomButton", Vector3.new(0.18, 0.065, 0.03), CFrame.new(0, -0.43, -0.105), Color3.fromRGB(27, 147, 227), Enum.Material.Neon)
-            detail("LeftButton", Vector3.new(0.055, 0.11, 0.03), CFrame.new(-0.26, -0.39, -0.105), Color3.fromRGB(70, 110, 230), Enum.Material.Neon)
-            detail("RightButton", Vector3.new(0.055, 0.11, 0.03), CFrame.new(0.26, -0.39, -0.105), Color3.fromRGB(70, 110, 230), Enum.Material.Neon)
-            local statusLight = detail("StatusLight", Vector3.new(0.07, 0.035, 0.025), CFrame.new(0.23, 0.48, -0.105), Color3.fromRGB(110, 255, 180), Enum.Material.Neon)
+            detail("BlueBezel", Vector3.new(0.55, 0.72, 0.035),
+                CFrame.new(0, 0.12, -0.095), Color3.fromRGB(27, 147, 227), Enum.Material.SmoothPlastic)
+            local screen = detail("CyanScreen", Vector3.new(0.46, 0.62, 0.018),
+                CFrame.new(0, 0.12, -0.122), Color3.fromRGB(35, 185, 255), Enum.Material.Neon)
+            detail("ScreenHeader", Vector3.new(0.36, 0.025, 0.012),
+                CFrame.new(0, 0.39, -0.136), Color3.fromRGB(190, 245, 255), Enum.Material.Neon)
+            detail("BottomButton", Vector3.new(0.18, 0.065, 0.03),
+                CFrame.new(0, -0.43, -0.105), Color3.fromRGB(27, 147, 227), Enum.Material.Neon)
+            detail("LeftButton", Vector3.new(0.055, 0.11, 0.03),
+                CFrame.new(-0.26, -0.39, -0.105), Color3.fromRGB(70, 110, 230), Enum.Material.Neon)
+            detail("RightButton", Vector3.new(0.055, 0.11, 0.03),
+                CFrame.new(0.26, -0.39, -0.105), Color3.fromRGB(70, 110, 230), Enum.Material.Neon)
+            local statusLight = detail("StatusLight", Vector3.new(0.07, 0.035, 0.025),
+                CFrame.new(0.23, 0.48, -0.105), Color3.fromRGB(110, 255, 180), Enum.Material.Neon)
 
-            local gui
-            local function openCommunicator()
-                if gui and gui.Parent then
-                    gui.Enabled = not gui.Enabled
-                    return
-                end
-                local playerGui = localPlayer:FindFirstChildOfClass("PlayerGui")
-                if not playerGui then return end
-                gui = Instance.new("ScreenGui")
-                gui.Name = "FairwellCommunicatorUI"
-                gui.ResetOnSpawn = false
-                gui.DisplayOrder = 80
-                gui.Parent = playerGui
+            local screenGui = Instance.new("SurfaceGui")
+            screenGui.Name = "CommunicatorDisplay"
+            screenGui.Face = Enum.NormalId.Front
+            screenGui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+            screenGui.PixelsPerStud = 180
+            screenGui.LightInfluence = 0
+            screenGui.Parent = screen
 
-                local panel = Instance.new("Frame")
-                panel.Size = UDim2.new(0.86, 0, 0, 300)
-                panel.Position = UDim2.new(0.07, 0, 0.5, -150)
-                panel.BackgroundColor3 = Color3.fromRGB(6, 4, 43)
-                panel.BorderColor3 = Color3.fromRGB(27, 147, 227)
-                panel.BorderSizePixel = 2
-                panel.Parent = gui
+            local displayText = Instance.new("TextLabel")
+            displayText.Name = "CommandText"
+            displayText.Size = UDim2.fromScale(1, 1)
+            displayText.BackgroundColor3 = Color3.fromRGB(6, 4, 43)
+            displayText.BackgroundTransparency = 0.05
+            displayText.BorderSizePixel = 0
+            displayText.TextColor3 = Color3.fromRGB(220, 250, 255)
+            displayText.TextScaled = true
+            displayText.Font = Enum.Font.GothamBold
+            displayText.TextWrapped = true
+            displayText.Text = "FAIRWELL\nREADY"
+            displayText.Parent = screenGui
 
-                local title = Instance.new("TextLabel")
-                title.Size = UDim2.new(1, -42, 0, 34)
-                title.Position = UDim2.fromOffset(8, 4)
-                title.BackgroundTransparency = 1
-                title.Text = "FAIRWELL COMMUNICATOR"
-                title.TextColor3 = Color3.fromRGB(90, 200, 255)
-                title.Font = Enum.Font.GothamBold
-                title.TextSize = 15
-                title.TextXAlignment = Enum.TextXAlignment.Left
-                title.Parent = panel
+            local modes = {
+                {name = "STATUS", reply = "SYSTEM ONLINE"},
+                {name = "PING", reply = "SIGNAL CLEAR"},
+                {name = "HELP", reply = "3 COMMANDS"},
+                {name = "SCAN", reply = "SCANNING..."},
+            }
+            local modeIndex = 1
+            local equipped = false
+            local swayConnection
+            local equipConnection
+            local unequipConnection
+            local activateConnection
+            local originalGrip = tool.Grip
 
-                local close = Instance.new("TextButton")
-                close.Size = UDim2.fromOffset(30, 28)
-                close.Position = UDim2.new(1, -36, 0, 5)
-                close.BackgroundColor3 = Color3.fromRGB(16, 13, 105)
-                close.BorderColor3 = Color3.fromRGB(27, 147, 227)
-                close.Text = "X"
-                close.TextColor3 = Color3.new(1, 1, 1)
-                close.Font = Enum.Font.GothamBold
-                close.TextSize = 14
-                close.Parent = panel
-                close.Activated:Connect(function() gui.Enabled = false end)
-
-                local transcript = Instance.new("TextLabel")
-                transcript.Position = UDim2.fromOffset(10, 42)
-                transcript.Size = UDim2.new(1, -20, 0, 175)
-                transcript.BackgroundColor3 = Color3.fromRGB(10, 9, 28)
-                transcript.BorderColor3 = Color3.fromRGB(27, 147, 227)
-                transcript.TextColor3 = Color3.fromRGB(225, 235, 255)
-                transcript.Text = "FAIRWELL: Communicator online, developer. 💙\nCommands: /help, /status, /ping"
-                transcript.TextWrapped = true
-                transcript.TextYAlignment = Enum.TextYAlignment.Top
-                transcript.TextXAlignment = Enum.TextXAlignment.Left
-                transcript.Font = Enum.Font.Gotham
-                transcript.TextSize = 13
-                transcript.Parent = panel
-
-                local input = Instance.new("TextBox")
-                input.Position = UDim2.new(0, 10, 1, -42)
-                input.Size = UDim2.new(1, -84, 0, 30)
-                input.BackgroundColor3 = Color3.fromRGB(15, 16, 42)
-                input.BorderColor3 = Color3.fromRGB(27, 147, 227)
-                input.PlaceholderText = "Message Fairwell..."
-                input.Text = ""
-                input.ClearTextOnFocus = false
-                input.TextColor3 = Color3.new(1, 1, 1)
-                input.Font = Enum.Font.Gotham
-                input.TextSize = 13
-                input.Parent = panel
-
-                local send = Instance.new("TextButton")
-                send.Position = UDim2.new(1, -66, 1, -42)
-                send.Size = UDim2.fromOffset(56, 30)
-                send.BackgroundColor3 = Color3.fromRGB(16, 13, 105)
-                send.BorderColor3 = Color3.fromRGB(27, 147, 227)
-                send.Text = "SEND"
-                send.TextColor3 = Color3.new(1, 1, 1)
-                send.Font = Enum.Font.GothamBold
-                send.TextSize = 12
-                send.Parent = panel
-
-                local function submit()
-                    local message = tostring(input.Text or "")
-                    if message == "" then return end
-                    local lower = string.lower(message)
-                    local reply
-                    if lower == "/help" then
-                        reply = "Commands: /help, /status, /ping. This chat does not execute code."
-                    elseif lower == "/status" then
-                        reply = "Online as " .. localPlayer.Name .. "."
-                    elseif lower == "/ping" then
-                        reply = "Loud and clear, developer. 💙"
-                    else
-                        reply = "I heard you, developer: " .. message
-                    end
-                    transcript.Text = transcript.Text .. "\nYOU: " .. message .. "\nFAIRWELL: " .. reply
-                    input.Text = ""
-                end
-                send.Activated:Connect(submit)
-                input.FocusLost:Connect(function(enterPressed) if enterPressed then submit() end end)
+            local function showMode()
+                local mode = modes[modeIndex]
+                displayText.Text = "FW / " .. mode.name .. "\n" .. mode.reply
+                print("[Fairwell Communicator] " .. mode.name .. ": " .. mode.reply)
             end
 
-            local originalGrip = tool.Grip
-            tool.Equipped:Connect(function()
-                local tilted = originalGrip * CFrame.Angles(math.rad(-8), math.rad(4), math.rad(-5))
-                tool.Grip = tilted
-                TweenService:Create(tool, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Grip = originalGrip}):Play()
-            end)
-            tool.Activated:Connect(function()
-                task.spawn(function()
-                    local bright = TweenService:Create(screen, TweenInfo.new(0.12), {Color = Color3.fromRGB(170, 245, 255)})
-                    bright:Play()
-                    bright.Completed:Wait()
-                    TweenService:Create(screen, TweenInfo.new(0.28), {Color = Color3.fromRGB(35, 185, 255)}):Play()
-                    TweenService:Create(statusLight, TweenInfo.new(0.18, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 1, true), {Color = Color3.fromRGB(27, 147, 227)}):Play()
+            equipConnection = tool.Equipped:Connect(function()
+                equipped = true
+                local characterNow = localPlayer.Character
+                local humanoid = characterNow and characterNow:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    -- A short raise-and-settle motion, followed by a subtle idle sway.
+                    local raisedGrip = CFrame.new(0, -0.20, -0.68)
+                        * CFrame.Angles(math.rad(-86), math.rad(3), math.rad(-5))
+                    tool.Grip = originalGrip
+                    TweenService:Create(tool, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        Grip = raisedGrip
+                    }):Play()
+                    task.delay(0.2, function()
+                        if equipped and tool.Parent then
+                            originalGrip = raisedGrip
+                        end
+                    end)
+                end
+                if swayConnection then swayConnection:Disconnect() end
+                local started = os.clock()
+                swayConnection = RunService.RenderStepped:Connect(function()
+                    if not equipped or not tool.Parent then return end
+                    local t = os.clock() - started
+                    tool.Grip = originalGrip
+                        * CFrame.new(0, math.sin(t * 2.2) * 0.012, 0)
+                        * CFrame.Angles(math.sin(t * 1.8) * math.rad(1.2), 0, math.sin(t * 1.5) * math.rad(1.5))
                 end)
-                openCommunicator()
+                showMode()
+            end)
+
+            unequipConnection = tool.Unequipped:Connect(function()
+                equipped = false
+                if swayConnection then
+                    swayConnection:Disconnect()
+                    swayConnection = nil
+                end
+                tool.Grip = originalGrip
+            end)
+
+            activateConnection = tool.Activated:Connect(function()
+                -- The item's use/inspect action cycles commands without opening a GUI.
+                modeIndex = (modeIndex % #modes) + 1
+                showMode()
+                local bright = TweenService:Create(screen, TweenInfo.new(0.1), {
+                    Color = Color3.fromRGB(170, 245, 255)
+                })
+                bright:Play()
+                task.delay(0.12, function()
+                    if screen and screen.Parent then
+                        TweenService:Create(screen, TweenInfo.new(0.22), {
+                            Color = Color3.fromRGB(35, 185, 255)
+                        }):Play()
+                    end
+                end)
+                TweenService:Create(statusLight, TweenInfo.new(0.16, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 1, true), {
+                    Color = Color3.fromRGB(27, 147, 227)
+                }):Play()
+            end)
+
+            tool.Destroying:Connect(function()
+                equipped = false
+                if swayConnection then swayConnection:Disconnect() end
+                if equipConnection then equipConnection:Disconnect() end
+                if unequipConnection then unequipConnection:Disconnect() end
+                if activateConnection then activateConnection:Disconnect() end
             end)
 
             tool.Parent = backpack
-            setCommunicatorStatus("Granted! Check your Backpack / inventory.")
+            print("[Fairwell Communicator] Automatically granted to UserId " .. tostring(allowedUserId) .. ".")
         end
 
-        if communicatorBox then
-            pcall(function()
-                statusLabel = communicatorBox:AddLabel({Text = "Only available to UserId 11412884109", DoesWrap = true})
-            end)
-            pcall(function()
-                communicatorBox:AddButton({
-                    Text = "Give Fairwell Communicator",
-                    Func = grantCommunicator
-                })
-            end)
-        end
-        setCommunicatorStatus("Grant button ready.")
+        task.spawn(function()
+            grantCommunicator()
+            -- Retry once after a short delay if the backpack was not ready on first load.
+            task.wait(2)
+            local backpack = localPlayer and localPlayer:FindFirstChildOfClass("Backpack")
+            local character = localPlayer and localPlayer.Character
+            if localPlayer and localPlayer.UserId == allowedUserId
+                and backpack
+                and not backpack:FindFirstChild("Fairwell Communicator")
+                and not (character and character:FindFirstChild("Fairwell Communicator")) then
+                grantCommunicator()
+            end
+        end)
     end
 
     local stairwellBox
