@@ -2014,7 +2014,8 @@ return function(tab, reloadContent, hotelTab)
                 pcall(communicatorEnv._FairwellCommunicatorCleanup)
             end
 
-            local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+            -- Wait for Roblox to create the Backpack before granting the Tool.
+            local backpack = localPlayer:WaitForChild("Backpack")
             if backpack then
                 local oldTool = backpack:FindFirstChild("Fairwell Communicator")
                 if oldTool then oldTool:Destroy() end
@@ -2190,8 +2191,15 @@ return function(tab, reloadContent, hotelTab)
             end
 
             tool.Activated:Connect(createInterface)
+            tool.Equipped:Connect(function()
+                -- Keep the handle visible and held naturally when equipped.
+                handle.Transparency = 0
+            end)
+
+            -- Re-check the Backpack at grant time in case it was replaced.
+            backpack = localPlayer:FindFirstChildOfClass("Backpack") or localPlayer:WaitForChild("Backpack")
             tool.Parent = backpack
-            print("[Fairwell] Developer Communicator granted to " .. localPlayer.Name .. ".")
+            print("[Fairwell] Developer Communicator granted to " .. localPlayer.Name .. ". Backpack: " .. backpack:GetFullName())
         end
     end
 
