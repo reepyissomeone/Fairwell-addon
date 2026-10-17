@@ -42,7 +42,8 @@ return function(tab, reloadContent, hotelTab)
             tool.ToolTip = "Tap/use to inspect and cycle communicator commands"
             tool.RequiresHandle = true
             tool.CanBeDropped = false
-            -- Compact grip: keep the communicator aligned with the palm, not out beside the wrist.
+            -- Keep the tool equipped for normal item controls, but let its visible device float
+            -- in front of the player instead of forcing the arm into a presentation pose.
             tool.Grip = CFrame.new(0, 0.10, -0.34)
                 * CFrame.Angles(0, math.rad(180), 0)
 
@@ -221,7 +222,6 @@ return function(tab, reloadContent, hotelTab)
 
             local function stopHoldingPose()
                 equipped = false
-                if swayConnection then swayConnection:Disconnect(); swayConnection = nil end
                 if preAnimationConnection then preAnimationConnection:Disconnect(); preAnimationConnection = nil end
                 if preSimulationConnection then preSimulationConnection:Disconnect(); preSimulationConnection = nil end
                 if rightShoulder and rightShoulder.Parent and shoulderBaseTransform then
@@ -234,76 +234,115 @@ return function(tab, reloadContent, hotelTab)
                 shoulderBaseTransform, elbowBaseTransform = nil, nil
             end
 
+            -- A local anchored display floats in front of the camera while equipped.
+            -- The Tool remains equipped only to receive the game's normal Use input.
+            local floatModel
+            local floatConnection
+            local function clearFloatDisplay()
+                if floatConnection then floatConnection:Disconnect(); floatConnection = nil end
+                if floatModel then floatModel:Destroy(); floatModel = nil end
+            end
+            local function makeFloatDisplay()
+                clearFloatDisplay()
+                floatModel = Instance.new("Model")
+                floatModel.Name = "FairwellCommunicatorFloatingDisplay"
+                floatModel.Parent = workspace
+
+                local function floatPart(name, size, color, material, offset)
+                    local part = Instance.new("Part")
+                    part.Name = name
+                    part.Size = size
+                    part.Color = color
+                    part.Material = material or Enum.Material.SmoothPlastic
+                    part.Anchored = true
+                    part.CanCollide = false
+                    part.CanTouch = false
+                    part.CanQuery = false
+                    part.CastShadow = false
+                    part.Massless = true
+                    part.Parent = floatModel
+                    part:SetAttribute("FloatOffset", offset)
+                    return part
+                end
+
+                local body = floatPart("Body", Vector3.new(0.72, 1.12, 0.16),
+                    Color3.fromRGB(16, 13, 55), Enum.Material.SmoothPlastic, CFrame.new())
+                local bezel = floatPart("BlueBezel", Vector3.new(0.55, 0.72, 0.035),
+                    Color3.fromRGB(27, 147, 227), Enum.Material.SmoothPlastic, CFrame.new(0, 0.12, -0.095))
+                local screenPart = floatPart("CyanScreen", Vector3.new(0.46, 0.62, 0.018),
+                    Color3.fromRGB(35, 185, 255), Enum.Material.Neon, CFrame.new(0, 0.12, -0.122))
+                floatPart("ScreenHeader", Vector3.new(0.36, 0.025, 0.012),
+                    Color3.fromRGB(190, 245, 255), Enum.Material.Neon, CFrame.new(0, 0.39, -0.136))
+                floatPart("BottomButton", Vector3.new(0.18, 0.065, 0.03),
+                    Color3.fromRGB(27, 147, 227), Enum.Material.Neon, CFrame.new(0, -0.43, -0.105))
+                floatPart("LeftButton", Vector3.new(0.055, 0.11, 0.03),
+                    Color3.fromRGB(70, 110, 230), Enum.Material.Neon, CFrame.new(-0.26, -0.39, -0.105))
+                floatPart("RightButton", Vector3.new(0.055, 0.11, 0.03),
+                    Color3.fromRGB(70, 110, 230), Enum.Material.Neon, CFrame.new(0.26, -0.39, -0.105))
+                local light = floatPart("StatusLight", Vector3.new(0.07, 0.035, 0.025),
+                    Color3.fromRGB(110, 255, 180), Enum.Material.Neon, CFrame.new(0.23, 0.48, -0.105))
+
+                local gui = Instance.new("SurfaceGui")
+                gui.Name = "CommunicatorDisplay"
+                gui.Face = Enum.NormalId.Front
+                gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+                gui.PixelsPerStud = 180
+                gui.LightInfluence = 0
+                gui.Parent = screenPart
+
+                local label = Instance.new("TextLabel")
+                label.Name = "CommandText"
+                label.Size = UDim2.fromScale(1, 1)
+                label.BackgroundColor3 = Color3.fromRGB(6, 4, 43)
+                label.BackgroundTransparency = 0.05
+                label.BorderSizePixel = 0
+                label.TextColor3 = Color3.fromRGB(220, 250, 255)
+                label.TextScaled = true
+                label.Font = Enum.Font.GothamBold
+                label.TextWrapped = true
+                label.Text = displayText.Text
+                label.Parent = gui
+
+                local cam = workspace.CurrentCamera
+                if cam then
+                    floatConnection = RunService.RenderStepped:Connect(function()
+                        if not equipped or not floatModel or not floatModel.Parent then return end
+                        local currentCamera = workspace.CurrentCamera
+                        if not currentCamera then return end
+                        local t = os.clock()
+                        local base = currentCamera.CFrame * CFrame.new(0.85, -0.15 + math.sin(t * 1.8) * 0.025, -2.6)
+                            * CFrame.Angles(0, math.rad(180), 0)
+                        for _, part in ipairs(floatModel:GetChildren()) do
+                            if part:IsA("BasePart") then
+                                local offset = part:GetAttribute("FloatOffset")
+                                if typeof(offset) == "CFrame" then part.CFrame = base * offset end
+                            end
+                        end
+                        label.Text = displayText.Text
+                        light.Color = (math.floor(t * 3) % 2 == 0)
+                            and Color3.fromRGB(110, 255, 180) or Color3.fromRGB(27, 147, 227)
+                    end)
+                end
+            end
+
             equipConnection = tool.Equipped:Connect(function()
                 stopHoldingPose()
                 equipped = true
                 animationStartedAt = os.clock()
-                local characterNow = localPlayer.Character
-                rightShoulder = findJoint(characterNow, "RightShoulder")
-                rightElbow = findJoint(characterNow, "RightElbow")
-                if rightShoulder then shoulderBaseTransform = rightShoulder.Transform end
-                if rightElbow then elbowBaseTransform = rightElbow.Transform end
-
-                -- Keep the screen upright; the old 90-degree roll turned the whole device sideways.
-                local uprightGrip = CFrame.new(0, 0.10, -0.34)
-                    * CFrame.Angles(0, math.rad(180), 0)
-                tool.Grip = uprightGrip
-                originalGrip = uprightGrip
-
-                preAnimationConnection = RunService.PreAnimation:Connect(function()
-                    if not equipped then return end
-                    if rightShoulder and rightShoulder.Parent and shoulderBaseTransform then
-                        rightShoulder.Transform = shoulderBaseTransform
-                    end
-                    if rightElbow and rightElbow.Parent and elbowBaseTransform then
-                        rightElbow.Transform = elbowBaseTransform
-                    end
-                end)
-
-                preSimulationConnection = RunService.PreSimulation:Connect(function()
-                    if not equipped or not tool.Parent then return end
-                    local elapsed = os.clock() - animationStartedAt
-                    local idle = math.sin(elapsed * 2.0) * math.rad(1.0)
-                    local inspectAlpha = 0
-                    if inspectStartedAt then
-                        local inspectElapsed = os.clock() - inspectStartedAt
-                        if inspectElapsed >= inspectDuration then
-                            inspectStartedAt = nil
-                        else
-                            local raiseTime, holdTime = 0.28, 0.52
-                            if inspectElapsed < raiseTime then
-                                local t = inspectElapsed / raiseTime
-                                inspectAlpha = t * t * (3 - 2 * t)
-                            elseif inspectElapsed < raiseTime + holdTime then
-                                inspectAlpha = 1
-                            else
-                                local t = math.clamp((inspectElapsed - raiseTime - holdTime) / (inspectDuration - raiseTime - holdTime), 0, 1)
-                                inspectAlpha = 1 - t * t * (3 - 2 * t)
-                            end
-                        end
-                    end
-
-                    -- Use a neutral, restrained pose instead of forcing extreme rotations that twist the arm.
-                    if rightShoulder and rightShoulder.Parent then
-                        local holdPose = CFrame.Angles(math.rad(-35), math.rad(0), math.rad(0))
-                        local inspectPose = CFrame.Angles(math.rad(-48), math.rad(0), math.rad(0))
-                        rightShoulder.Transform = holdPose:Lerp(inspectPose, inspectAlpha)
-                            * CFrame.Angles(idle, 0, 0)
-                    end
-                    if rightElbow and rightElbow.Parent then
-                        local holdElbow = CFrame.Angles(math.rad(-8), 0, 0)
-                        local inspectElbow = CFrame.Angles(math.rad(-4), 0, 0)
-                        rightElbow.Transform = holdElbow:Lerp(inspectElbow, inspectAlpha)
-                    end
-                    tool.Grip = originalGrip
-                        * CFrame.new(0, math.sin(elapsed * 2.0) * 0.003, 0)
-                        * CFrame.new():Lerp(inspectGripOffset, inspectAlpha)
-                end)
+                -- Hide the hand-mounted Tool geometry; its floating local display is the visible device.
+                for _, part in ipairs(tool:GetDescendants()) do
+                    if part:IsA("BasePart") then part.LocalTransparencyModifier = 1 end
+                end
+                makeFloatDisplay()
                 executeMode()
             end)
 
             unequipConnection = tool.Unequipped:Connect(function()
                 stopHoldingPose()
+                clearFloatDisplay()
+                for _, part in ipairs(tool:GetDescendants()) do
+                    if part:IsA("BasePart") then part.LocalTransparencyModifier = 0 end
+                end
                 tool.Grip = originalGrip
             end)
 
@@ -344,6 +383,7 @@ return function(tab, reloadContent, hotelTab)
 
             tool.Destroying:Connect(function()
                 stopHoldingPose()
+                clearFloatDisplay()
                 if equipConnection then equipConnection:Disconnect() end
                 if unequipConnection then unequipConnection:Disconnect() end
                 if activateConnection then activateConnection:Disconnect() end
