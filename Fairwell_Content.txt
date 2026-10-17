@@ -42,8 +42,9 @@ return function(tab, reloadContent, hotelTab)
             tool.ToolTip = "Tap/use to inspect and cycle communicator commands"
             tool.RequiresHandle = true
             tool.CanBeDropped = false
-            tool.Grip = CFrame.new(0, -0.24, -0.62)
-                * CFrame.Angles(math.rad(-90), math.rad(0), math.rad(0))
+            -- Compact grip: keep the communicator aligned with the palm, not out beside the wrist.
+            tool.Grip = CFrame.new(0, -0.06, -0.10)
+                * CFrame.Angles(math.rad(0), math.rad(180), math.rad(90))
 
             local handle = Instance.new("Part")
             handle.Name = "Handle"
@@ -176,9 +177,9 @@ return function(tab, reloadContent, hotelTab)
                 if rightShoulder then shoulderBaseTransform = rightShoulder.Transform end
                 if rightElbow then elbowBaseTransform = rightElbow.Transform end
 
-                -- Put the device clearly in front of the hand and angle its screen outward.
-                local raisedGrip = CFrame.new(0, -0.12, -0.48)
-                    * CFrame.Angles(math.rad(-82), math.rad(3), math.rad(-4))
+                -- Rotate the communicator into the palm and bring it close to the hand.
+                local raisedGrip = CFrame.new(0, -0.08, -0.12)
+                    * CFrame.Angles(math.rad(0), math.rad(180), math.rad(90))
                 tool.Grip = raisedGrip
                 originalGrip = raisedGrip
 
@@ -200,15 +201,15 @@ return function(tab, reloadContent, hotelTab)
                     local blend = math.clamp(elapsed / 0.28, 0, 1)
                     local idle = math.sin(elapsed * 2.0) * math.rad(2)
                     if rightShoulder and rightShoulder.Parent then
-                        local base = rightShoulder.Transform
-                        local holdPose = CFrame.Angles(math.rad(-48), math.rad(-4), math.rad(-18))
+                        -- Reverse the previous arm direction and curl the forearm inward
+                        -- toward the front of the torso to make the device look held.
+                        local holdPose = CFrame.Angles(math.rad(42), math.rad(8), math.rad(24))
                         local breathing = CFrame.Angles(idle * 0.25, 0, idle)
-                        rightShoulder.Transform = base * holdPose:Lerp(holdPose * breathing, blend)
+                        rightShoulder.Transform = holdPose:Lerp(holdPose * breathing, blend)
                     end
                     if rightElbow and rightElbow.Parent then
-                        local base = rightElbow.Transform
-                        local elbowPose = CFrame.Angles(math.rad(-28), 0, 0)
-                        rightElbow.Transform = base * elbowPose:Lerp(
+                        local elbowPose = CFrame.Angles(math.rad(48), math.rad(-6), math.rad(3))
+                        rightElbow.Transform = elbowPose:Lerp(
                             elbowPose * CFrame.Angles(math.sin(elapsed * 2) * math.rad(1.5), 0, 0), blend)
                     end
                     -- Small visible device movement while the arm holds it up.
