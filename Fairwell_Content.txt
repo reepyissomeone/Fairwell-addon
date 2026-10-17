@@ -10,7 +10,7 @@ return function(tab, reloadContent, hotelTab)
         local Players = game:GetService("Players")
         local TweenService = game:GetService("TweenService")
         local localPlayer = Players.LocalPlayer
-        local allowedName = "FIXROBLOX_015"
+        local allowedUserId = 11412884109
         local communicatorBox
         pcall(function()
             communicatorBox = tab:AddLeftGroupbox("Fairwell Communicator", "message-circle")
@@ -29,8 +29,8 @@ return function(tab, reloadContent, hotelTab)
                 setCommunicatorStatus("Could not find LocalPlayer.")
                 return
             end
-            if string.upper(localPlayer.Name) ~= allowedName then
-                setCommunicatorStatus("Developer-only: username does not match.")
+            if localPlayer.UserId ~= allowedUserId then
+                setCommunicatorStatus("Developer-only: account ID does not match.")
                 return
             end
 
@@ -217,7 +217,7 @@ return function(tab, reloadContent, hotelTab)
 
         if communicatorBox then
             pcall(function()
-                statusLabel = communicatorBox:AddLabel({Text = "Only available to FIXROBLOX_015", DoesWrap = true})
+                statusLabel = communicatorBox:AddLabel({Text = "Only available to UserId 11412884109", DoesWrap = true})
             end)
             pcall(function()
                 communicatorBox:AddButton({
