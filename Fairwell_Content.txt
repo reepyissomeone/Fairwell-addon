@@ -2002,4 +2002,198 @@ return function(tab, reloadContent, hotelTab)
     end
 
 
+
+    -- Fairwell Communicator: developer-only usable inventory Tool.
+    -- Username matching is a lightweight client-side gate, not server-grade security.
+    do
+        local Players = game:GetService("Players")
+        local localPlayer = Players.LocalPlayer
+        if localPlayer and localPlayer.Name == "Fixroblox_015" then
+            local communicatorEnv = (getgenv and getgenv()) or _G
+            if communicatorEnv._FairwellCommunicatorCleanup then
+                pcall(communicatorEnv._FairwellCommunicatorCleanup)
+            end
+
+            local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+            if backpack then
+                local oldTool = backpack:FindFirstChild("Fairwell Communicator")
+                if oldTool then oldTool:Destroy() end
+            end
+            local character = localPlayer.Character
+            local oldEquipped = character and character:FindFirstChild("Fairwell Communicator")
+            if oldEquipped then oldEquipped:Destroy() end
+
+            local tool = Instance.new("Tool")
+            tool.Name = "Fairwell Communicator"
+            tool.ToolTip = "Open Fairwell chat and developer tools"
+            tool.RequiresHandle = true
+            tool.CanBeDropped = false
+            tool.TextureId = ""
+
+            local handle = Instance.new("Part")
+            handle.Name = "Handle"
+            handle.Size = Vector3.new(0.7, 1.1, 0.18)
+            handle.Color = Color3.fromRGB(16, 13, 105)
+            handle.Material = Enum.Material.Neon
+            handle.CanCollide = false
+            handle.Massless = true
+            handle.Parent = tool
+
+            local screenGui
+            local function cleanup()
+                if screenGui then pcall(function() screenGui:Destroy() end) end
+                screenGui = nil
+                if tool then pcall(function() tool:Destroy() end) end
+            end
+            communicatorEnv._FairwellCommunicatorCleanup = cleanup
+
+            local function createInterface()
+                if screenGui and screenGui.Parent then
+                    screenGui.Enabled = not screenGui.Enabled
+                    return
+                end
+                local playerGui = localPlayer:FindFirstChildOfClass("PlayerGui")
+                local parent = playerGui or game:GetService("CoreGui")
+                screenGui = Instance.new("ScreenGui")
+                screenGui.Name = "FairwellCommunicatorUI"
+                screenGui.ResetOnSpawn = false
+                screenGui.DisplayOrder = 80
+                screenGui.Parent = parent
+
+                local panel = Instance.new("Frame")
+                panel.Name = "Panel"
+                panel.Size = UDim2.fromOffset(320, 350)
+                panel.Position = UDim2.new(0.5, -160, 0.5, -175)
+                panel.BackgroundColor3 = Color3.fromRGB(6, 4, 43)
+                panel.BorderColor3 = Color3.fromRGB(27, 147, 227)
+                panel.BorderSizePixel = 2
+                panel.Parent = screenGui
+
+                local title = Instance.new("TextLabel")
+                title.Size = UDim2.new(1, -42, 0, 34)
+                title.Position = UDim2.fromOffset(8, 4)
+                title.BackgroundTransparency = 1
+                title.Text = "FAIRWELL COMMUNICATOR"
+                title.TextColor3 = Color3.fromRGB(90, 200, 255)
+                title.TextSize = 16
+                title.Font = Enum.Font.GothamBold
+                title.TextXAlignment = Enum.TextXAlignment.Left
+                title.Parent = panel
+
+                local close = Instance.new("TextButton")
+                close.Size = UDim2.fromOffset(30, 28)
+                close.Position = UDim2.new(1, -36, 0, 5)
+                close.BackgroundColor3 = Color3.fromRGB(16, 13, 105)
+                close.BorderColor3 = Color3.fromRGB(27, 147, 227)
+                close.Text = "X"
+                close.TextColor3 = Color3.new(1, 1, 1)
+                close.Font = Enum.Font.GothamBold
+                close.TextSize = 14
+                close.Parent = panel
+                close.Activated:Connect(function() screenGui.Enabled = false end)
+
+                local transcript = Instance.new("ScrollingFrame")
+                transcript.Name = "Transcript"
+                transcript.Position = UDim2.fromOffset(8, 42)
+                transcript.Size = UDim2.new(1, -16, 0, 218)
+                transcript.BackgroundColor3 = Color3.fromRGB(10, 9, 28)
+                transcript.BorderColor3 = Color3.fromRGB(27, 147, 227)
+                transcript.ScrollBarThickness = 5
+                transcript.CanvasSize = UDim2.new(0, 0, 0, 0)
+                transcript.AutomaticCanvasSize = Enum.AutomaticSize.Y
+                transcript.Parent = panel
+                local layout = Instance.new("UIListLayout")
+                layout.Padding = UDim.new(0, 4)
+                layout.SortOrder = Enum.SortOrder.LayoutOrder
+                layout.Parent = transcript
+                local pad = Instance.new("UIPadding")
+                pad.PaddingLeft = UDim.new(0, 6)
+                pad.PaddingRight = UDim.new(0, 6)
+                pad.PaddingTop = UDim.new(0, 5)
+                pad.PaddingBottom = UDim.new(0, 5)
+                pad.Parent = transcript
+
+                local function line(prefix, message, color)
+                    local label = Instance.new("TextLabel")
+                    label.BackgroundTransparency = 1
+                    label.Size = UDim2.new(1, -4, 0, 0)
+                    label.AutomaticSize = Enum.AutomaticSize.Y
+                    label.TextWrapped = true
+                    label.TextXAlignment = Enum.TextXAlignment.Left
+                    label.TextYAlignment = Enum.TextYAlignment.Top
+                    label.Font = Enum.Font.Gotham
+                    label.TextSize = 13
+                    label.TextColor3 = color or Color3.fromRGB(225, 235, 255)
+                    label.Text = prefix .. message
+                    label.Parent = transcript
+                    task.defer(function()
+                        transcript.CanvasPosition = Vector2.new(0, math.max(0, layout.AbsoluteContentSize.Y))
+                    end)
+                end
+
+                line("FAIRWELL: ", "Oh! You got the communicator working. I'm listening.", Color3.fromRGB(90, 200, 255))
+                line("DEV: ", "Commands: /help, /status, /ping, /clear", Color3.fromRGB(190, 160, 255))
+
+                local input = Instance.new("TextBox")
+                input.Position = UDim2.new(0, 8, 1, -78)
+                input.Size = UDim2.new(1, -82, 0, 32)
+                input.BackgroundColor3 = Color3.fromRGB(15, 16, 42)
+                input.BorderColor3 = Color3.fromRGB(27, 147, 227)
+                input.PlaceholderText = "Message Fairwell or type /help..."
+                input.Text = ""
+                input.ClearTextOnFocus = false
+                input.TextColor3 = Color3.new(1, 1, 1)
+                input.PlaceholderColor3 = Color3.fromRGB(150, 160, 190)
+                input.Font = Enum.Font.Gotham
+                input.TextSize = 13
+                input.Parent = panel
+
+                local send = Instance.new("TextButton")
+                send.Position = UDim2.new(1, -66, 1, -78)
+                send.Size = UDim2.fromOffset(58, 32)
+                send.BackgroundColor3 = Color3.fromRGB(16, 13, 105)
+                send.BorderColor3 = Color3.fromRGB(27, 147, 227)
+                send.Text = "SEND"
+                send.TextColor3 = Color3.new(1, 1, 1)
+                send.Font = Enum.Font.GothamBold
+                send.TextSize = 12
+                send.Parent = panel
+
+                local function submit()
+                    local message = tostring(input.Text or "")
+                    if message == "" then return end
+                    input.Text = ""
+                    line("YOU: ", message, Color3.fromRGB(225, 235, 255))
+                    local command = string.lower(message)
+                    if command == "/help" then
+                        line("DEV: ", "Available: /help, /status, /ping, /clear. Arbitrary code execution is intentionally not supported.", Color3.fromRGB(190, 160, 255))
+                    elseif command == "/status" then
+                        local room = workspace:FindFirstChild("CurrentRooms")
+                        line("DEV: ", "Communicator online. Player: " .. localPlayer.Name .. ". CurrentRooms: " .. (room and "found" or "not found") .. ".", Color3.fromRGB(190, 160, 255))
+                    elseif command == "/ping" then
+                        line("FAIRWELL: ", "Loud and clear, developer. 💙", Color3.fromRGB(90, 200, 255))
+                    elseif command == "/clear" then
+                        for _, child in ipairs(transcript:GetChildren()) do
+                            if child:IsA("TextLabel") then child:Destroy() end
+                        end
+                        line("FAIRWELL: ", "Transcript cleared.", Color3.fromRGB(90, 200, 255))
+                    elseif string.sub(message, 1, 1) == "/" then
+                        line("DEV: ", "Unknown command. Type /help.", Color3.fromRGB(255, 180, 100))
+                    else
+                        line("FAIRWELL: ", "I heard you, developer. Full dialogue and game integrations can be added next.", Color3.fromRGB(90, 200, 255))
+                    end
+                end
+                send.Activated:Connect(submit)
+                input.FocusLost:Connect(function(enterPressed)
+                    if enterPressed then submit() end
+                end)
+            end
+
+            tool.Activated:Connect(createInterface)
+            tool.Parent = backpack
+            print("[Fairwell] Developer Communicator granted to " .. localPlayer.Name .. ".")
+        end
+    end
+
+
 end
