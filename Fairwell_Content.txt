@@ -133,8 +133,9 @@ return function(tab, reloadContent, hotelTab)
             local animationStartedAt = 0
             local inspectStartedAt = nil
             local inspectDuration = 1.15
-            local inspectGripOffset = CFrame.new(0, 0, -0.10)
-            local inspectPoseOffset = CFrame.Angles(math.rad(-30), math.rad(-5), math.rad(-12))
+            -- Raise the device and angle its display outward so it is easier to read.
+            local inspectGripOffset = CFrame.new(0, 0.16, -0.18)
+            local inspectPoseOffset = CFrame.Angles(math.rad(-10), math.rad(-2), math.rad(-4))
 
             local function showMode()
                 local mode = modes[modeIndex]
@@ -183,7 +184,8 @@ return function(tab, reloadContent, hotelTab)
 
                 -- Rotate the communicator into the palm and bring it close to the hand.
                 -- Hold the communicator farther out in front of the palm.
-                local raisedGrip = CFrame.new(0, -0.02, -0.30)
+                -- Lift and extend the communicator forward from the palm.
+                local raisedGrip = CFrame.new(0, 0.12, -0.44)
                     * CFrame.Angles(math.rad(0), math.rad(180), math.rad(90))
                 tool.Grip = raisedGrip
                 originalGrip = raisedGrip
@@ -226,14 +228,16 @@ return function(tab, reloadContent, hotelTab)
                     end
 
                     if rightShoulder and rightShoulder.Parent then
-                        local holdPose = CFrame.Angles(math.rad(42), math.rad(8), math.rad(24))
-                        local inspectPose = holdPose * inspectPoseOffset
-                        local idlePose = holdPose * CFrame.Angles(idle * 0.2, 0, idle)
+                        -- Reach forward with the upper arm instead of curling it across the torso.
+                        local holdPose = CFrame.Angles(math.rad(-62), math.rad(4), math.rad(8))
+                        local inspectPose = CFrame.Angles(math.rad(-78), math.rad(2), math.rad(4))
+                        local idlePose = holdPose * CFrame.Angles(idle * 0.15, 0, idle * 0.35)
                         rightShoulder.Transform = idlePose:Lerp(inspectPose, inspectAlpha)
                     end
                     if rightElbow and rightElbow.Parent then
-                        local holdElbow = CFrame.Angles(math.rad(48), math.rad(-6), math.rad(3))
-                        local inspectElbow = CFrame.Angles(math.rad(20), math.rad(-4), math.rad(2))
+                        -- Keep the elbow almost straight for a fully extended arm.
+                        local holdElbow = CFrame.Angles(math.rad(5), math.rad(-2), 0)
+                        local inspectElbow = CFrame.Angles(math.rad(2), math.rad(-1), 0)
                         rightElbow.Transform = holdElbow:Lerp(inspectElbow, inspectAlpha)
                     end
                     -- Move the communicator farther forward during the inspection pose.
