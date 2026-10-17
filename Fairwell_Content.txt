@@ -2008,7 +2008,7 @@ return function(tab, reloadContent, hotelTab)
     do
         local Players = game:GetService("Players")
         local localPlayer = Players.LocalPlayer
-        if localPlayer and localPlayer.Name == "Fixroblox_015" then
+        if localPlayer and string.upper(localPlayer.Name) == "FIXROBLOX_015" then
             local communicatorEnv = (getgenv and getgenv()) or _G
             if communicatorEnv._FairwellCommunicatorCleanup then
                 pcall(communicatorEnv._FairwellCommunicatorCleanup)
