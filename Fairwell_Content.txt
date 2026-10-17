@@ -178,7 +178,8 @@ return function(tab, reloadContent, hotelTab)
                 if rightElbow then elbowBaseTransform = rightElbow.Transform end
 
                 -- Rotate the communicator into the palm and bring it close to the hand.
-                local raisedGrip = CFrame.new(0, -0.08, -0.12)
+                -- Hold the communicator farther out in front of the palm.
+                local raisedGrip = CFrame.new(0, -0.02, -0.30)
                     * CFrame.Angles(math.rad(0), math.rad(180), math.rad(90))
                 tool.Grip = raisedGrip
                 originalGrip = raisedGrip
@@ -226,7 +227,17 @@ return function(tab, reloadContent, hotelTab)
             end)
 
             activateConnection = tool.Activated:Connect(function()
-                -- The item's use/inspect action cycles commands without opening a GUI.
+                -- Reuse DOORS' local ToolAnimate Inspect signal when the executor exposes firesignal.
+                -- This is a client-side animation signal, not a server RemoteEvent call.
+                local remotesFolder = game:GetService("ReplicatedStorage"):FindFirstChild("RemotesFolder")
+                local toolAnimate = remotesFolder and remotesFolder:FindFirstChild("ToolAnimate")
+                if toolAnimate and toolAnimate:IsA("RemoteEvent") and type(firesignal) == "function" then
+                    pcall(function()
+                        firesignal(toolAnimate.OnClientEvent, tool, "Inspect", false)
+                    end)
+                end
+
+                -- Also cycle the communicator's own display mode.
                 modeIndex = (modeIndex % #modes) + 1
                 showMode()
                 local bright = TweenService:Create(screen, TweenInfo.new(0.1), {
