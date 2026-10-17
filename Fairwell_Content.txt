@@ -120,53 +120,108 @@ return function(tab, reloadContent, hotelTab)
             local modeIndex = 1
             local equipped = false
             local swayConnection
+            local preAnimationConnection
+            local preSimulationConnection
             local equipConnection
             local unequipConnection
             local activateConnection
             local originalGrip = tool.Grip
+            local rightShoulder
+            local rightElbow
+            local shoulderBaseTransform
+            local elbowBaseTransform
+            local animationStartedAt = 0
 
             local function showMode()
                 local mode = modes[modeIndex]
-                displayText.Text = "FW / " .. mode.name .. "\n" .. mode.reply
+                displayText.Text = "FW / " .. mode.name .. "\\n" .. mode.reply
                 print("[Fairwell Communicator] " .. mode.name .. ": " .. mode.reply)
             end
 
-            equipConnection = tool.Equipped:Connect(function()
-                equipped = true
-                local characterNow = localPlayer.Character
-                local humanoid = characterNow and characterNow:FindFirstChildOfClass("Humanoid")
-                if humanoid then
-                    -- A short raise-and-settle motion, followed by a subtle idle sway.
-                    local raisedGrip = CFrame.new(0, -0.20, -0.68)
-                        * CFrame.Angles(math.rad(-86), math.rad(3), math.rad(-5))
-                    tool.Grip = originalGrip
-                    TweenService:Create(tool, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                        Grip = raisedGrip
-                    }):Play()
-                    task.delay(0.2, function()
-                        if equipped and tool.Parent then
-                            originalGrip = raisedGrip
-                        end
-                    end)
+            local function findJoint(characterNow, jointName)
+                if not characterNow then return nil end
+                for _, object in ipairs(characterNow:GetDescendants()) do
+                    if object:IsA("Motor6D") and object.Name == jointName then
+                        return object
+                    end
                 end
-                if swayConnection then swayConnection:Disconnect() end
-                local started = os.clock()
-                swayConnection = RunService.RenderStepped:Connect(function()
+                return nil
+            end
+
+            local function stopHoldingPose()
+                equipped = false
+                if swayConnection then swayConnection:Disconnect(); swayConnection = nil end
+                if preAnimationConnection then preAnimationConnection:Disconnect(); preAnimationConnection = nil end
+                if preSimulationConnection then preSimulationConnection:Disconnect(); preSimulationConnection = nil end
+                if rightShoulder and rightShoulder.Parent and shoulderBaseTransform then
+                    rightShoulder.Transform = shoulderBaseTransform
+                end
+                if rightElbow and rightElbow.Parent and elbowBaseTransform then
+                    rightElbow.Transform = elbowBaseTransform
+                end
+                rightShoulder, rightElbow = nil, nil
+                shoulderBaseTransform, elbowBaseTransform = nil, nil
+            end
+
+            equipConnection = tool.Equipped:Connect(function()
+                stopHoldingPose()
+                equipped = true
+                animationStartedAt = os.clock()
+                local characterNow = localPlayer.Character
+                rightShoulder = findJoint(characterNow, "RightShoulder")
+                rightElbow = findJoint(characterNow, "RightElbow")
+                if not rightElbow then
+                    -- R6 characters use one shoulder joint; R15 also has an elbow.
+                    rightElbow = nil
+                end
+                if rightShoulder then shoulderBaseTransform = rightShoulder.Transform end
+                if rightElbow then elbowBaseTransform = rightElbow.Transform end
+
+                -- Put the device clearly in front of the hand and angle its screen outward.
+                local raisedGrip = CFrame.new(0, -0.12, -0.48)
+                    * CFrame.Angles(math.rad(-82), math.rad(3), math.rad(-4))
+                tool.Grip = raisedGrip
+                originalGrip = raisedGrip
+
+                -- Restore the captured joint baseline before Roblox evaluates its normal
+                -- character animation, then layer the communicator pose after that evaluation.
+                preAnimationConnection = RunService.PreAnimation:Connect(function()
+                    if not equipped then return end
+                    if rightShoulder and rightShoulder.Parent and shoulderBaseTransform then
+                        rightShoulder.Transform = shoulderBaseTransform
+                    end
+                    if rightElbow and rightElbow.Parent and elbowBaseTransform then
+                        rightElbow.Transform = elbowBaseTransform
+                    end
+                end)
+
+                preSimulationConnection = RunService.PreSimulation:Connect(function()
                     if not equipped or not tool.Parent then return end
-                    local t = os.clock() - started
+                    local elapsed = os.clock() - animationStartedAt
+                    local blend = math.clamp(elapsed / 0.28, 0, 1)
+                    local idle = math.sin(elapsed * 2.0) * math.rad(2)
+                    if rightShoulder and rightShoulder.Parent then
+                        local base = rightShoulder.Transform
+                        local holdPose = CFrame.Angles(math.rad(-48), math.rad(-4), math.rad(-18))
+                        local breathing = CFrame.Angles(idle * 0.25, 0, idle)
+                        rightShoulder.Transform = base * holdPose:Lerp(holdPose * breathing, blend)
+                    end
+                    if rightElbow and rightElbow.Parent then
+                        local base = rightElbow.Transform
+                        local elbowPose = CFrame.Angles(math.rad(-28), 0, 0)
+                        rightElbow.Transform = base * elbowPose:Lerp(
+                            elbowPose * CFrame.Angles(math.sin(elapsed * 2) * math.rad(1.5), 0, 0), blend)
+                    end
+                    -- Small visible device movement while the arm holds it up.
                     tool.Grip = originalGrip
-                        * CFrame.new(0, math.sin(t * 2.2) * 0.012, 0)
-                        * CFrame.Angles(math.sin(t * 1.8) * math.rad(1.2), 0, math.sin(t * 1.5) * math.rad(1.5))
+                        * CFrame.new(0, math.sin(elapsed * 2.0) * 0.008, 0)
+                        * CFrame.Angles(math.sin(elapsed * 1.7) * math.rad(1), 0, 0)
                 end)
                 showMode()
             end)
 
             unequipConnection = tool.Unequipped:Connect(function()
-                equipped = false
-                if swayConnection then
-                    swayConnection:Disconnect()
-                    swayConnection = nil
-                end
+                stopHoldingPose()
                 tool.Grip = originalGrip
             end)
 
@@ -191,8 +246,7 @@ return function(tab, reloadContent, hotelTab)
             end)
 
             tool.Destroying:Connect(function()
-                equipped = false
-                if swayConnection then swayConnection:Disconnect() end
+                stopHoldingPose()
                 if equipConnection then equipConnection:Disconnect() end
                 if unequipConnection then unequipConnection:Disconnect() end
                 if activateConnection then activateConnection:Disconnect() end
