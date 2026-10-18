@@ -224,6 +224,34 @@
                 return nil
             end
 
+            -- Some MSDoors builds do not attach a ProximityPrompt to KeyObtain:
+            -- the pickup is handled by touch or a ClickDetector instead.
+            local function tryPickupWithoutPrompt(keyModel, keyPart, root)
+                local attempted = false
+                if keyModel then
+                    for _, object in ipairs(keyModel:GetDescendants()) do
+                        if object:IsA("ClickDetector") then
+                            local click = (type(fireclickdetector) == "function" and fireclickdetector)
+                                or env.fireclickdetector
+                            if type(click) == "function" then
+                                attempted = true
+                                pcall(click, object)
+                            end
+                        end
+                    end
+                end
+
+                local touch = (type(firetouchinterest) == "function" and firetouchinterest)
+                    or env.firetouchinterest
+                if keyPart and root and type(touch) == "function" then
+                    attempted = true
+                    pcall(touch, root, keyPart, 0)
+                    task.wait(0.1)
+                    pcall(touch, root, keyPart, 1)
+                end
+                return attempted
+            end
+
             local function activatePrompt(prompt)
                 local ok = false
                 local firePrompt = (type(fireproximityprompt) == "function" and fireproximityprompt)
@@ -272,6 +300,17 @@
                                 keyModel = model
                                 if moved then
                                     bestPrompt = findKeyPickupPrompt(keyModel)
+                                    if not bestPrompt then
+                                        local _, _, keyPart = bringKeyToPlayer(root)
+                                        local attemptedTouch = tryPickupWithoutPrompt(keyModel, keyPart, root)
+                                        task.wait(0.6)
+                                        local nowHasKey = hasUnlockTool(character)
+                                        if nowHasKey then
+                                            setStatus("key picked up successfully via touch/click")
+                                        elseif attemptedTouch then
+                                            setStatus("tried touch/click pickup; key was not added to inventory")
+                                        end
+                                    end
                                     if bestPrompt then
                                         local part = promptPart(bestPrompt)
                                         if part then
@@ -325,7 +364,7 @@
                                 end
                             elseif pickingKey then
                                 if keyModel then
-                                    setStatus("brought Key to you locally; no supported pickup prompt found on KeyObtain")
+                                    setStatus("brought Key to you locally; no prompt found, tried touch/click pickup but inventory did not change")
                                 else
                                     setStatus("enabled; could not find a KeyObtain object in this room")
                                 end
