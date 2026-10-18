@@ -20,6 +20,43 @@ return function(tab, context)
     local searchBusy = false
     local searchRevision = 0
     local MAX_RESULTS = 8
+    local searchButtons = {}
+
+    -- Remove only controls created for the previous search. Different Obsidian
+    -- builds expose control cleanup differently, so try their supported cleanup
+    -- methods and then the common backing-instance fields.
+    local function clearSearchResults()
+        for _, control in ipairs(searchButtons) do
+            if control then
+                local removed = false
+                for _, methodName in ipairs({"Remove", "Destroy", "Dispose"}) do
+                    if not removed then
+                        local okRemove = pcall(function()
+                            local method = control[methodName]
+                            if type(method) == "function" then
+                                method(control)
+                                removed = true
+                            end
+                        end)
+                    end
+                end
+
+                if not removed then
+                    for _, fieldName in ipairs({"Instance", "instance", "Container", "container", "Frame", "frame", "Holder", "holder"}) do
+                        pcall(function()
+                            local instance = control[fieldName]
+                            if typeof(instance) == "Instance" and instance.Parent then
+                                instance:Destroy()
+                                removed = true
+                            end
+                        end)
+                        if removed then break end
+                    end
+                end
+            end
+        end
+        table.clear(searchButtons)
+    end
 
     local statusLabel
     pcall(function()
@@ -130,14 +167,17 @@ return function(tab, context)
         local shortTitle = displayTitle
         if #shortTitle > 72 then shortTitle = string.sub(shortTitle, 1, 69) .. "..." end
 
-        local buttonOk = pcall(function()
-            musicBox:AddButton({
+        local buttonOk, control = pcall(function()
+            return musicBox:AddButton({
                 Text = "Play: " .. shortTitle .. " [ID " .. tostring(id) .. "]",
                 Func = function()
                     playAsset(id, displayTitle)
                 end
             })
         end)
+        if buttonOk and control then
+            table.insert(searchButtons, control)
+        end
         return buttonOk
     end
 
@@ -150,6 +190,7 @@ return function(tab, context)
         end
 
         searchBusy = true
+        clearSearchResults()
         setStatus("Searching Roblox audio for: " .. query)
         task.spawn(function()
             local searchOk, pages = pcall(function()
@@ -220,7 +261,8 @@ return function(tab, context)
                 local thisRevision = searchRevision
                 local trimmed = queryText:match("^%s*(.-)%s*$")
                 if trimmed == "" then
-                    setStatus("Type a song, artist, or keyword. Search starts automatically as you enter text.")
+                    clearSearchResults()
+                    setStatus("Type a song, artist, or keyword. Previous search results cleared.")
                     return
                 end
                 -- Auto-search after a short pause in typing, so each keystroke does not
