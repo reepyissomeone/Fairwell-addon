@@ -1,0 +1,176 @@
+-- Fairwell Heaven - native MSDoors addon-template entry
+-- Install this file as: msdoors/addons/Fairwell.txt
+-- All Fairwell controls are translated into the standard Addon Elements list.
+-- Gameplay logic remains in Fairwell_Content.txt so updates can be made centrally.
+
+local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=native-addon-20261018"
+local elements = {}
+local usedNames = {}
+local buildFailed = nil
+
+local function safeName(value, fallback)
+    local name = tostring(value or fallback or "FairwellControl")
+    name = name:gsub("[^%w_]", "")
+    if name == "" then name = fallback or "FairwellControl" end
+    if not name:match("^[%a_]") then name = "F" .. name end
+    local base = name
+    local suffix = 2
+    while usedNames[name] do
+        name = base .. suffix
+        suffix += 1
+    end
+    usedNames[name] = true
+    return name
+end
+
+local function addElement(element)
+    table.insert(elements, element)
+    return element
+end
+
+local function makeControl(groupName, kind, id, args)
+    args = type(args) == "table" and args or {}
+    local elementArgs = {}
+    for key, value in pairs(args) do
+        elementArgs[key] = value
+    end
+
+    local originalCallback = args.Callback or args.Changed
+    if kind == "Button" then
+        originalCallback = args.Callback or args.Func
+        elementArgs.Callback = function()
+            if type(originalCallback) == "function" then
+                local ok, err = pcall(originalCallback)
+                if not ok then warn("[Fairwell] Button callback failed:", err) end
+            end
+        end
+        elementArgs.Func = nil
+    else
+        local defaultValue = args.Default
+        local proxy = { Value = defaultValue }
+        function proxy:SetValue(value)
+            self.Value = value
+            if type(originalCallback) == "function" then
+                local ok, err = pcall(originalCallback, value)
+                if not ok then warn("[Fairwell] Control callback failed:", err) end
+            end
+        end
+        function proxy:SetText(value)
+            elementArgs.Text = tostring(value or "")
+        end
+        elementArgs.Callback = function(value)
+            proxy.Value = value
+            if type(originalCallback) == "function" then
+                local ok, err = pcall(originalCallback, value)
+                if not ok then warn("[Fairwell] Control callback failed:", err) end
+            end
+        end
+        elementArgs.Func = nil
+        elementArgs.Changed = nil
+        elementArgs.Name = nil
+        local elementName
+        if kind ~= "Label" and kind ~= "Divider" and kind ~= "Button" then
+            elementName = safeName(id, groupName .. kind)
+        end
+        local item = {
+            Type = kind,
+            Arguments = elementArgs
+        }
+        if elementName then item.Name = elementName end
+        addElement(item)
+        return proxy
+    end
+
+    local item = { Type = kind, Arguments = elementArgs }
+    addElement(item)
+    return {
+        Value = args.Default,
+        SetText = function(_, value) elementArgs.Text = tostring(value or "") end,
+        SetValue = function(_, value)
+            if type(originalCallback) == "function" then pcall(originalCallback, value) end
+        end
+    }
+end
+
+local function makeGroupbox(title)
+    local groupName = tostring(title or "Fairwell")
+    addElement({
+        Type = "Divider",
+        Arguments = { Text = groupName }
+    })
+
+    local group = {}
+    function group:AddToggle(id, args) return makeControl(groupName, "Toggle", id, args) end
+    function group:AddDropdown(id, args) return makeControl(groupName, "Dropdown", id, args) end
+    function group:AddSlider(id, args) return makeControl(groupName, "Slider", id, args) end
+    function group:AddInput(id, args) return makeControl(groupName, "Input", id, args) end
+    function group:AddButton(args) return makeControl(groupName, "Button", nil, args) end
+    function group:AddLabel(args) return makeControl(groupName, "Label", nil, args) end
+    function group:AddDivider(args)
+        args = type(args) == "table" and args or {}
+        return addElement({ Type = "Divider", Arguments = { Text = args.Text or "" } })
+    end
+    return group
+end
+
+local fakeTab = {}
+function fakeTab:AddLeftGroupbox(title) return makeGroupbox(title) end
+function fakeTab:AddRightGroupbox(title) return makeGroupbox(title) end
+
+local ok, source = pcall(function()
+    return game:HttpGet(CONTENT_URL)
+end)
+if not ok or type(source) ~= "string" or source == "" then
+    buildFailed = "Could not download Fairwell feature code."
+else
+    local compileOk, chunk = pcall(loadstring, source)
+    if not compileOk or type(chunk) ~= "function" then
+        buildFailed = "Fairwell feature code could not be compiled."
+    else
+        local runOk, builder = pcall(chunk)
+        if not runOk or type(builder) ~= "function" then
+            buildFailed = "Fairwell feature code did not return a builder."
+        else
+            local buildOk, err = pcall(builder, fakeTab, function() end, nil)
+            if not buildOk then
+                buildFailed = "Fairwell controls failed to initialize: " .. tostring(err)
+            end
+        end
+    end
+end
+
+if buildFailed then
+    warn("[Fairwell] " .. buildFailed)
+    return {
+        Name = "Fairwell",
+        Title = "Fairwell Heaven",
+        Description = "Fairwell features in the native MSDoors addon menu.",
+        Author = "Fairwell",
+        Version = "2.0",
+        Side = "Left",
+        Elements = {
+            { Type = "Label", Arguments = { Text = buildFailed, DoesWrap = true } },
+            { Type = "Button", Arguments = { Text = "Retry loading features", Callback = function()
+                warn("[Fairwell] Please reload the addon after checking the connection.")
+            end } }
+        }
+    }
+end
+
+table.insert(elements, 1, {
+    Type = "Label",
+    Arguments = {
+        Text = "Fairwell Heaven features. Settings are displayed directly in this addon. If a feature does not initialize, check the MSDoors console.",
+        DoesWrap = true
+    }
+})
+
+return {
+    Name = "Fairwell",
+    Title = "Fairwell Heaven",
+    Description = "Fairwell's gameplay features, settings, and notifications in one native addon.",
+    Author = "Fairwell",
+    Version = "2.0",
+    Side = "Left",
+    Elements = elements
+}
