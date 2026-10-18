@@ -10,8 +10,22 @@
         local state = {running = true, enabled = false}
         env._FairwellAutoOpenLockedDoorsState = state
 
-        -- Reuse the existing Hotel groupbox created by the Delete Gate feature.
+        -- Reuse the Hotel groupbox created by Delete Gate. If the shared
+        -- reference is missing for any reason, create the groupbox on this same
+        -- Fairwell tab rather than silently hiding this feature.
         local box = env._FairwellHotelGroupbox
+        if not box then
+            local created, result = pcall(function()
+                return tab:AddLeftGroupbox("Hotel", "building-2")
+            end)
+            if created and result then
+                box = result
+                env._FairwellHotelGroupbox = box
+                warn("[Fairwell] Auto Open Locked Doors created a fallback Hotel groupbox.")
+            else
+                warn("[Fairwell] Auto Open Locked Doors could not create/find the Hotel groupbox:", result)
+            end
+        end
 
         if box then
             local statusLabel
