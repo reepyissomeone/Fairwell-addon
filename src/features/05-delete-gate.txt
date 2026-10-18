@@ -1,0 +1,299 @@
+    -- Auto Closet: detect Rush/Ambush models and use hiding ProximityPrompts.
+    local closetOk, closetBox = pcall(function()
+        return tab:AddRightGroupbox("Any Floor", "door-open")
+    end)
+
+    if closetOk and closetBox then
+        local Players = game:GetService("Players")
+        local player = Players.LocalPlayer
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local env = (getgenv and getgenv()) or _G
+        env._FairwellAutoCloset = false
+        local getOutEvent
+        pcall(function()
+            local remotes = ReplicatedStorage:FindFirstChild("RemotesFolder")
+            local event = remotes and remotes:FindFirstChild("GetOutOfHiding")
+            if event and event:IsA("RemoteEvent") then getOutEvent = event end
+        end)
+        local statusLabel
+        local function closetStatus(message)
+            if statusLabel then
+                pcall(function() statusLabel:SetText("Status: " .. message) end)
+            end
+        end
+        pcall(function()
+            statusLabel = closetBox:AddLabel({Text = "Status: off", DoesWrap = true})
+        end)
+
+        local function getCharacter()
+            local character = player.Character
+            return character, character and character:FindFirstChild("HumanoidRootPart"),
+                character and character:FindFirstChildOfClass("Humanoid")
+        end
+
+        local function threatKind(name)
+            local lower = string.lower(name or "")
+            -- Rush-style threats that can be survived by entering a hiding spot.
+            -- Ambush, Blitz, and A-120 may rebound, so their monitor waits for them to disappear.
+            if string.find(lower, "ambush", 1, true) then return "Ambush" end
+            if string.find(lower, "blitz", 1, true) then return "Blitz" end
+            -- Archives threats: Scribbles is handled conservatively like a lingering/rebound threat.
+            if string.find(lower, "scribble", 1, true) then return "Scribble" end
+            if string.find(lower, "bash", 1, true) then return "Bash" end
+            if string.find(lower, "a%-?120", 1) or string.find(lower, "a120", 1, true) then return "A-120" end
+            if string.find(lower, "a%-?60", 1) or string.find(lower, "a60", 1, true) then return "A-60" end
+            if string.find(lower, "rush", 1, true) then return "Rush" end
+            if string.find(lower, "surge", 1, true) then return "Surge" end
+            return nil
+        end
+
+        local function findThreat(root)
+            local best, bestDistance, bestKind
+            local seen = {}
+            for _, item in ipairs(workspace:GetDescendants()) do
+                if item:IsA("Model") or item:IsA("BasePart") then
+                    local kind = threatKind(item.Name)
+                    -- Avoid counting every named part inside the same entity as a separate threat.
+                    local model = item:IsA("Model") and item or item:FindFirstAncestorOfClass("Model")
+                    if kind and (not model or not seen[model]) then
+                        local target = model or item
+                        local targetKind = threatKind(target.Name) or kind
+                        local part = target:IsA("BasePart") and target or target.PrimaryPart
+                            or target:FindFirstChildWhichIsA("BasePart", true)
+                        if part then
+                            local distance = (root.Position - part.Position).Magnitude
+                            if model then seen[model] = true end
+                            if distance <= 220 and (not bestDistance or distance < bestDistance) then
+                                best, bestDistance, bestKind = target, distance, targetKind
+                            end
+                        end
+                    end
+                end
+            end
+            return best, bestDistance, bestKind
+        end
+
+        local function promptPosition(prompt)
+            local node = prompt.Parent
+            while node and node ~= workspace do
+                if node:IsA("BasePart") then return node.Position, node end
+                if node:IsA("Model") then
+                    local part = node.PrimaryPart or node:FindFirstChildWhichIsA("BasePart", true)
+                    if part then return part.Position, part end
+                end
+                node = node.Parent
+            end
+            return nil, nil
+        end
+
+        local function isHidingPrompt(prompt)
+            local words = string.lower(tostring(prompt.Name) .. " "
+                .. tostring(prompt.ActionText) .. " " .. tostring(prompt.ObjectText))
+            if string.find(words, "hide", 1, true)
+                or string.find(words, "closet", 1, true)
+                or string.find(words, "wardrobe", 1, true)
+                or string.find(words, "locker", 1, true) then
+                return true
+            end
+            local node = prompt.Parent
+            for _ = 1, 8 do
+                if not node then break end
+                local name = string.lower(node.Name)
+                if string.find(name, "closet", 1, true)
+                    or string.find(name, "wardrobe", 1, true)
+                    or string.find(name, "locker", 1, true)
+                    or string.find(name, "hiding", 1, true) then
+                    return true
+                end
+                node = node.Parent
+            end
+            return false
+        end
+
+        local function findClosestCloset(root)
+            local bestPrompt, bestPosition, bestDistance
+            for _, prompt in ipairs(workspace:GetDescendants()) do
+                if prompt:IsA("ProximityPrompt") and prompt.Enabled and isHidingPrompt(prompt) then
+                    local position = promptPosition(prompt)
+                    if position then
+                        local distance = (root.Position - position).Magnitude
+                        if distance <= 125 and (not bestDistance or distance < bestDistance) then
+                            bestPrompt, bestPosition, bestDistance = prompt, position, distance
+                        end
+                    end
+                end
+            end
+            return bestPrompt, bestPosition, bestDistance
+        end
+
+        local function triggerGetOutOfHiding()
+            -- Fire the local GetOutOfHiding listeners if the executor exposes firesignal.
+            if not getOutEvent then return false end
+            local ok = pcall(function()
+                if type(firesignal) ~= "function" then error("firesignal unavailable") end
+                firesignal(getOutEvent.OnClientEvent)
+            end)
+            return ok
+        end
+
+        local busy = false
+        local lastAction = 0
+        local function tryHide()
+            if busy or not env._FairwellAutoCloset or os.clock() - lastAction < 1.5 then return end
+            busy = true
+            lastAction = os.clock()
+
+            local character, root, humanoid = getCharacter()
+            if not character or not root or not humanoid or humanoid.Health <= 0 then
+                closetStatus("waiting for character")
+                busy = false
+                return
+            end
+
+            local threat, threatDistance, kind = findThreat(root)
+            if not threat then
+                closetStatus("searching for rush-style threats")
+                busy = false
+                return
+            end
+
+            local prompt, position, distance = findClosestCloset(root)
+            if not prompt then
+                closetStatus(kind .. " detected; no hiding ProximityPrompt found")
+                busy = false
+                return
+            end
+
+            closetStatus(kind .. " detected; approaching hiding prompt")
+            if distance > math.max(prompt.MaxActivationDistance - 1, 4) then
+                humanoid:MoveTo(position)
+                local deadline = os.clock() + math.min(6, distance / math.max(humanoid.WalkSpeed, 8) + 1.5)
+                repeat
+                    task.wait(0.12)
+                    character, root, humanoid = getCharacter()
+                    if not env._FairwellAutoCloset or not root or not humanoid or humanoid.Health <= 0 then break end
+                    if not prompt.Parent or not prompt.Enabled then break end
+                    position = promptPosition(prompt)
+                    if not position then break end
+                    distance = (root.Position - position).Magnitude
+                until distance <= math.max(prompt.MaxActivationDistance - 1, 4) or os.clock() >= deadline
+            end
+
+            if env._FairwellAutoCloset and prompt.Parent and prompt.Enabled then
+                local ok = pcall(function()
+                    prompt:InputHoldBegin()
+                    task.wait(math.max(prompt.HoldDuration, 0.05) + 0.08)
+                    prompt:InputHoldEnd()
+                end)
+                if ok then
+                    closetStatus("used hiding ProximityPrompt")
+                    task.spawn(function()
+                        local started = os.clock()
+                        local lastSeen = os.clock()
+                        local exited = false
+                        local finished = false
+                        local maxDuration = (kind == "Ambush" or kind == "Blitz" or kind == "A-120" or kind == "Scribble") and 180 or 60
+                        local previousDistance
+                        local increasingSamples = 0
+                        local closestDistance = math.huge
+                        local isReboundThreat = kind == "Ambush" or kind == "Blitz" or kind == "A-120" or kind == "Scribble"
+
+                        while env._FairwellAutoCloset and (os.clock() - started) < maxDuration do
+                            task.wait(0.2)
+
+                            local currentCharacter = player.Character
+                            local currentRoot = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
+                            local currentHumanoid = currentCharacter and currentCharacter:FindFirstChildOfClass("Humanoid")
+                            if not currentRoot or not currentHumanoid or currentHumanoid.Health <= 0 then
+                                break
+                            end
+
+                            local liveThreat, liveDistance, liveKind = findThreat(currentRoot)
+                            if liveThreat and liveKind == kind then
+                                lastSeen = os.clock()
+                                if liveDistance then
+                                    closestDistance = math.min(closestDistance, liveDistance)
+                                    if previousDistance and liveDistance > previousDistance + 2 then
+                                        increasingSamples = increasingSamples + 1
+                                    else
+                                        increasingSamples = 0
+                                    end
+                                    previousDistance = liveDistance
+                                end
+
+                                if isReboundThreat then
+                                    -- Never exit just because the entity is far away: it may rebound.
+                                    closetStatus(kind .. " active; staying hidden until it disappears")
+                                elseif not exited and liveDistance and closestDistance <= 28
+                                    and liveDistance >= 38 and increasingSamples >= 3 then
+                                    -- Confirm it passed: it got close, then moved away across multiple samples.
+                                    if triggerGetOutOfHiding() then
+                                        exited = true
+                                        closetStatus(kind .. " passed; leaving hiding spot")
+                                    else
+                                        closetStatus(kind .. " passed; exit signal unavailable")
+                                    end
+                                elseif exited then
+                                    closetStatus(kind .. " passed; encounter monitored")
+                                else
+                                    closetStatus(kind .. " approaching/passing; staying hidden")
+                                end
+                            else
+                                local missingFor = os.clock() - lastSeen
+                                local grace = (kind == "Ambush" or kind == "Blitz" or kind == "A-120" or kind == "Scribble") and 5 or 1.2
+                                if missingFor >= grace then
+                                    if not exited then
+                                        triggerGetOutOfHiding()
+                                    end
+                                    closetStatus(kind .. " despawned; encounter monitor stopped")
+                                    finished = true
+                                    break
+                                else
+                                    closetStatus(kind .. " temporarily absent; monitoring")
+                                end
+                            end
+                        end
+
+                        if not finished and env._FairwellAutoCloset then
+                            closetStatus(kind .. " monitoring ended; toggle Auto Closet off/on to retry")
+                        end
+                    end)
+                else
+                    closetStatus("prompt interaction failed")
+                end
+            end
+            busy = false
+        end
+
+        pcall(function()
+            closetBox:AddToggle("FairwellAutoClosetToggle", {
+                Text = "Auto Closet",
+                Default = false,
+                Callback = function(enabled)
+                    env._FairwellAutoCloset = enabled == true
+                    closetStatus(enabled and "searching for rush-style threats" or "off")
+                end
+            })
+        end)
+
+        task.spawn(function()
+            while true do
+                if env._FairwellAutoCloset then
+                    local _, root, humanoid = getCharacter()
+                    if root and humanoid and humanoid.Health > 0 then
+                        local threat, distance, kind = findThreat(root)
+                        if threat and distance then
+                            tryHide()
+                        else
+                            closetStatus("searching for rush-style threats")
+                        end
+                    else
+                        closetStatus("waiting for character")
+                    end
+                end
+                task.wait(0.3)
+            end
+        end)
+    end
+
+
