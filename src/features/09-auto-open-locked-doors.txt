@@ -1,5 +1,4 @@
-    -- Auto Open Locked Doors: bring the KeyObtain object to the player, pick it up,
-    -- then use nearby door-unlock prompts. Interaction still goes through game prompts.
+    -- Auto Open Locked Doors v2: room-scoped targeting, bounded scans, honest verification.
     do
         local Players = game:GetService("Players")
         local localPlayer = Players.LocalPlayer
@@ -10,231 +9,101 @@
         local state = {running = true, enabled = false}
         env._FairwellAutoOpenLockedDoorsState = state
 
-        -- Reuse the Hotel groupbox created by Delete Gate. If the shared
-        -- reference is missing for any reason, create the groupbox on this same
-        -- Fairwell tab rather than silently hiding this feature.
         local box = env._FairwellHotelGroupbox
         if not box then
-            local created, result = pcall(function()
+            local ok, result = pcall(function()
                 return tab:AddLeftGroupbox("Hotel", "building-2")
             end)
-            if created and result then
-                box = result
-                env._FairwellHotelGroupbox = box
-                warn("[Fairwell] Auto Open Locked Doors created a fallback Hotel groupbox.")
-            else
-                warn("[Fairwell] Auto Open Locked Doors could not create/find the Hotel groupbox:", result)
-            end
+            if ok then box = result; env._FairwellHotelGroupbox = result end
         end
 
         if box then
             local statusLabel
             local lastStatus = ""
-            local lastAttempt = setmetatable({}, {__mode = "k"})
-            local function setStatus(message)
+            local lastActionAt = 0
+            local function status(message)
                 if message == lastStatus then return end
                 lastStatus = message
-                if statusLabel then
-                    pcall(function() statusLabel:SetText("Status: " .. message) end)
-                end
+                if statusLabel then pcall(function() statusLabel:SetText("Status: " .. message) end) end
             end
-
             pcall(function()
-                statusLabel = box:AddLabel({
-                    Text = "Status: off",
-                    DoesWrap = true
-                })
+                statusLabel = box:AddLabel({Text = "Status: off", DoesWrap = true})
                 box:AddLabel({
-                    Text = "When you do not have a Key, moves your character to the real KeyObtain pickup area and attempts pickup. The key itself is not moved locally.",
+                    Text = "Targets the locked door in your current room. Teleport and prompt interactions are best-effort client actions; the server must accept the unlock.",
                     DoesWrap = true
                 })
             end)
 
-            local function normalize(value)
+            local function norm(value)
                 return string.lower(tostring(value or "")):gsub("[%s%p_%-]", "")
             end
 
-            local function hasUnlockTool(character)
+            local function getCharacter()
+                local character = localPlayer.Character
+                local root = character and character:FindFirstChild("HumanoidRootPart")
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                if root and humanoid and humanoid.Health > 0 then return character, root end
+                return character, nil
+            end
+
+            local function inventory()
+                local character = localPlayer.Character
                 local backpack = localPlayer:FindFirstChildOfClass("Backpack")
-                local containers = {character, backpack}
-                local foundKey, foundLockpick = false, false
-                for _, container in ipairs(containers) do
+                local key, lockpick = false, false
+                for _, container in ipairs({character, backpack}) do
                     if container then
                         for _, item in ipairs(container:GetChildren()) do
                             if item:IsA("Tool") then
-                                local name = normalize(item.Name)
-                                if name == "key" or name == "hotelkey" or name == "ironkey"
-                                    or name == "backdoorkey" or name == "retrokey"
-                                    or name == "courtyardkey" or name == "roomskey"
-                                    or name:match("key$") then
-                                    foundKey = true
-                                elseif name == "lockpick" or name == "lockpicks" then
-                                    foundLockpick = true
-                                end
+                                local name = norm(item.Name)
+                                if name:find("key", 1, true) then key = true end
+                                if name:find("lockpick", 1, true) then lockpick = true end
                             end
                         end
                     end
                 end
-                return foundKey, foundLockpick
+                return key, lockpick
             end
 
-            local function isDoorUnlockPrompt(prompt, keyAvailable, lockpickAvailable)
-                if not prompt or not prompt:IsA("ProximityPrompt") or not prompt.Enabled then
-                    return false
+            local function nearestRoom(root)
+                local rooms = workspace:FindFirstChild("CurrentRooms")
+                if not rooms or not root then return nil end
+                local roomNumber = tonumber(root:GetAttribute("CurrentRoom"))
+                if roomNumber then
+                    local exact = rooms:FindFirstChild(tostring(roomNumber))
+                    if exact then return exact end
                 end
-                local action = normalize(prompt.ActionText)
-                local object = normalize(prompt.ObjectText)
-                local context = ""
-                local node = prompt.Parent
-                local hasDoor, hasLock = false, false
-                for _ = 1, 8 do
-                    if not node then break end
-                    local name = normalize(node.Name)
-                    context = context .. " " .. name
-                    if name:find("door", 1, true) or name:find("gate", 1, true) then
-                        hasDoor = true
-                    end
-                    if name:find("lock", 1, true) or name:find("padlock", 1, true) then
-                        hasLock = true
-                    end
-                    node = node.Parent
-                end
-
-                local actionSaysUnlock = action:find("unlock", 1, true)
-                    or action:find("lockpick", 1, true)
-                    or action:find("usekey", 1, true)
-                    or action:find("usekeycard", 1, true)
-                local textSaysLocked = object:find("locked", 1, true)
-                    or object:find("lock", 1, true)
-                    or context:find("lockeddoor", 1, true)
-                    or context:find("doorlock", 1, true)
-                    or context:find("padlock", 1, true)
-                    or hasLock
-                local explicitlyDoor = action:find("door", 1, true)
-                    or object:find("door", 1, true)
-                    or object:find("gate", 1, true)
-                    or hasDoor
-
-                -- Many versions label the prompt only "Unlock" and put the
-                -- lock in a child/parent model; others have no useful ObjectText.
-                -- Accept those common variants, but don't fire arbitrary prompts.
-                local targetLooksLocked = (actionSaysUnlock and (explicitlyDoor or textSaysLocked))
-                    or (explicitlyDoor and textSaysLocked)
-                if not targetLooksLocked then return false end
-                if action:find("lockpick", 1, true) then return lockpickAvailable end
-                return keyAvailable or lockpickAvailable
-            end
-
-            local function isKeyPickupPrompt(prompt)
-                if not prompt or not prompt:IsA("ProximityPrompt") or not prompt.Enabled then return false end
-                local action = normalize(prompt.ActionText)
-                local object = normalize(prompt.ObjectText)
-                local node = prompt.Parent
-                local context = ""
-                for _ = 1, 6 do
-                    if not node then break end
-                    context = context .. " " .. normalize(node.Name)
-                    node = node.Parent
-                end
-                local keyPickup = object:find("key", 1, true)
-                    or context:find("keypickup", 1, true)
-                    or context:find("hotelkey", 1, true)
-                    or context:find("ironkey", 1, true)
-                    or context:find("backdoorkey", 1, true)
-                    or context:find("retrokey", 1, true)
-                local pickupAction = action == "pickup" or action == "pick" or action == "take"
-                    or action == "grab" or action == "get" or action:find("pickup", 1, true)
-                return keyPickup ~= nil and pickupAction ~= nil
-            end
-
-            local function findKeyObject()
-                local keyModel, keyPart
-                for _, object in ipairs(workspace:GetDescendants()) do
-                    if object:IsA("Model") and normalize(object.Name) == "keyobtain" then
-                        keyModel = object
-                        for _, child in ipairs(object:GetDescendants()) do
-                            if child:IsA("BasePart") then
-                                local name = normalize(child.Name)
-                                if name == "keyhitbox" then
-                                    keyPart = child
-                                    break
-                                elseif name == "hitbox" and not keyPart then
-                                    keyPart = child
-                                elseif not keyPart then
-                                    keyPart = child
-                                end
-                            end
-                        end
-                        if keyPart then break end
-                    end
-                end
-
-                -- Some builds expose the hitbox but use a differently named model.
-                if not keyModel then
-                    for _, object in ipairs(workspace:GetDescendants()) do
-                        if object:IsA("BasePart") and normalize(object.Name) == "keyhitbox" then
-                            local node = object.Parent
-                            while node and not node:IsA("Model") do
-                                node = node.Parent
-                            end
-                            if node then
-                                keyModel, keyPart = node, object
-                                break
+                -- Prefer a room whose bounding box contains the player.
+                for _, room in ipairs(rooms:GetChildren()) do
+                    if room:IsA("Model") then
+                        local ok, cf, size = pcall(function() return room:GetBoundingBox() end)
+                        if ok and cf and size then
+                            local p = cf:PointToObjectSpace(root.Position)
+                            if math.abs(p.X) <= size.X / 2 + 8
+                                and math.abs(p.Y) <= size.Y / 2 + 12
+                                and math.abs(p.Z) <= size.Z / 2 + 8 then
+                                return room
                             end
                         end
                     end
                 end
-                return keyModel, keyPart
-            end
-
-            local function bringKeyToPlayer(root)
-                -- Keep KeyObtain at its real position. Moving the key locally can
-                -- move only its visuals while the server pickup trigger stays put.
-                -- Instead, bring the local character to the actual pickup area.
-                local keyModel, keyPart = findKeyObject()
-                if not keyModel or not keyPart or not root then return false end
-
-                local destination = keyPart.Position + Vector3.new(0, 1.5, 0)
-                local offset = destination - root.Position
-                if offset.Magnitude > 2 then
-                    local character = root.Parent
-                    local ok = pcall(function()
-                        character:PivotTo(CFrame.new(destination, destination + root.CFrame.LookVector))
-                    end)
-                    if not ok then
-                        ok = pcall(function()
-                            root.CFrame = CFrame.new(destination, destination + root.CFrame.LookVector)
-                        end)
-                    end
-                    if not ok then return false end
-                end
-                return true, keyModel, keyPart
-            end
-
-            local function findKeyPickupPrompt(keyModel)
-                if not keyModel then return nil end
-                -- Prefer prompts parented under the actual key object. Do not rely only
-                -- on ObjectText: some MSDoors builds leave it blank.
-                for _, object in ipairs(keyModel:GetDescendants()) do
-                    if object:IsA("ProximityPrompt") and object.Enabled then
-                        local action = normalize(object.ActionText)
-                        local objectText = normalize(object.ObjectText)
-                        if action == "pickup" or action == "pick" or action == "take"
-                            or action == "grab" or action == "get"
-                            or action:find("pickup", 1, true)
-                            or objectText:find("key", 1, true) then
-                            return object
+                -- Fallback: nearest room part, but only within a small radius.
+                local best, bestDistance
+                for _, room in ipairs(rooms:GetChildren()) do
+                    local distance
+                    for _, item in ipairs(room:GetDescendants()) do
+                        if item:IsA("BasePart") then
+                            local d = (root.Position - item.Position).Magnitude
+                            if not distance or d < distance then distance = d end
                         end
                     end
+                    if distance and distance <= 65 and (not bestDistance or distance < bestDistance) then
+                        best, bestDistance = room, distance
+                    end
                 end
-                -- Fallback to the broader world search used by the original feature.
-                for _, object in ipairs(workspace:GetDescendants()) do
-                    if isKeyPickupPrompt(object) then return object end
-                end
-                return nil
+                return best
             end
 
-            local function promptPart(prompt)
+            local function getPromptPart(prompt)
                 local node = prompt and prompt.Parent
                 while node do
                     if node:IsA("BasePart") then return node end
@@ -243,265 +112,129 @@
                 return nil
             end
 
-            local function getCurrentRoom(root)
-                local rooms = workspace:FindFirstChild("CurrentRooms")
-                if not rooms or not root then return nil end
-
-                -- Room models are the authoritative scope. Pick the closest room
-                -- with a nearby part; never search/teleport to a locked door in a
-                -- different room elsewhere in the map.
-                local bestRoom, bestDistance
-                for _, room in ipairs(rooms:GetChildren()) do
-                    local nearestPartDistance
-                    for _, object in ipairs(room:GetDescendants()) do
-                        if object:IsA("BasePart") then
-                            local distance = (root.Position - object.Position).Magnitude
-                            if not nearestPartDistance or distance < nearestPartDistance then
-                                nearestPartDistance = distance
-                            end
-                        end
-                    end
-                    if nearestPartDistance and nearestPartDistance <= 120
-                        and (not bestDistance or nearestPartDistance < bestDistance) then
-                        bestRoom, bestDistance = room, nearestPartDistance
-                    end
+            local function isLockedDoorPrompt(prompt, hasKey, hasLockpick)
+                if not prompt:IsA("ProximityPrompt") or not prompt.Enabled then return false end
+                local action, objectText = norm(prompt.ActionText), norm(prompt.ObjectText)
+                local context, node = "", prompt.Parent
+                local door, locked = false, false
+                for _ = 1, 8 do
+                    if not node then break end
+                    local name = norm(node.Name)
+                    context = context .. " " .. name
+                    if name:find("door", 1, true) or name:find("gate", 1, true) then door = true end
+                    if name:find("lock", 1, true) or name:find("padlock", 1, true) then locked = true end
+                    node = node.Parent
                 end
-                return bestRoom, bestDistance
+                local unlockAction = action:find("unlock", 1, true)
+                    or action:find("lockpick", 1, true)
+                    or action:find("usekey", 1, true)
+                local lockText = objectText:find("lock", 1, true)
+                    or context:find("lockeddoor", 1, true)
+                    or context:find("doorlock", 1, true)
+                    or locked
+                if not ((unlockAction and (door or lockText)) or (door and lockText)) then return false end
+                if action:find("lockpick", 1, true) then return hasLockpick end
+                return hasKey or hasLockpick
             end
 
-            local function teleportToDoor(root, prompt)
-                local part = promptPart(prompt)
-                if not root or not part then return false end
-                local destination = part.Position + (part.CFrame.LookVector * -3) + Vector3.new(0, 1.5, 0)
+            local function teleportToPrompt(root, prompt)
+                local part = getPromptPart(prompt)
+                if not part then return false end
                 local character = root.Parent
+                -- Approach from both sides based on the player's current position;
+                -- avoids assuming LookVector always points toward the usable side.
+                local forward = part.CFrame.LookVector
+                local a = part.Position + forward * 3 + Vector3.new(0, 1.5, 0)
+                local b = part.Position - forward * 3 + Vector3.new(0, 1.5, 0)
+                local destination = ((root.Position - a).Magnitude <= (root.Position - b).Magnitude) and a or b
                 local ok = pcall(function()
                     character:PivotTo(CFrame.new(destination, part.Position))
                 end)
                 if not ok then
-                    ok = pcall(function()
-                        root.CFrame = CFrame.new(destination, part.Position)
-                    end)
+                    ok = pcall(function() root.CFrame = CFrame.new(destination, part.Position) end)
                 end
                 return ok
             end
 
-            -- Some MSDoors builds do not attach a ProximityPrompt to KeyObtain:
-            -- the pickup is handled by touch or a ClickDetector instead.
-            local function tryPickupWithoutPrompt(keyModel, keyPart, root)
-                local attempted = false
-                if keyModel then
-                    for _, object in ipairs(keyModel:GetDescendants()) do
-                        if object:IsA("ClickDetector") then
-                            local click = (type(fireclickdetector) == "function" and fireclickdetector)
-                                or env.fireclickdetector
-                            if type(click) == "function" then
-                                attempted = true
-                                pcall(click, object)
-                            end
-                        end
-                    end
-                end
-
-                local touch = (type(firetouchinterest) == "function" and firetouchinterest)
-                    or env.firetouchinterest
-                if keyModel and root and type(touch) == "function" then
-                    -- The pickup trigger can be a small, specifically named hitbox,
-                    -- not the visible key mesh. Prefer hitbox-like parts, then try
-                    -- every remaining key part with real character body parts.
-                    local keyParts, bodyParts = {}, {}
-                    for _, object in ipairs(keyModel:GetDescendants()) do
-                        if object:IsA("BasePart") then
-                            table.insert(keyParts, object)
-                        end
-                    end
-                    table.sort(keyParts, function(a, b)
-                        local an, bn = normalize(a.Name), normalize(b.Name)
-                        local function priority(name)
-                            if name:find("hitbox", 1, true) or name:find("touch", 1, true)
-                                or name:find("pickup", 1, true) or name:find("trigger", 1, true) then
-                                return 0
-                            end
-                            if name:find("handle", 1, true) or name:find("key", 1, true) then
-                                return 1
-                            end
-                            return 2
-                        end
-                        return priority(an) < priority(bn)
-                    end)
-                    for _, object in ipairs(root.Parent:GetDescendants()) do
-                        if object:IsA("BasePart") and not object:IsDescendantOf(keyModel) then
-                            table.insert(bodyParts, object)
-                        end
-                    end
-                    -- HumanoidRootPart is a fallback, but limb/body contacts are
-                    -- often what the game's Touched handler listens for.
-                    table.sort(bodyParts, function(a, b)
-                        local an, bn = normalize(a.Name), normalize(b.Name)
-                        local function priority(name)
-                            if name == "humanoidrootpart" then return 2 end
-                            if name == "head" or name:find("torso", 1, true) then return 0 end
-                            return 1
-                        end
-                        return priority(an) < priority(bn)
-                    end)
-                    local attempts = 0
-                    for _, targetPart in ipairs(keyParts) do
-                        for _, bodyPart in ipairs(bodyParts) do
-                            if (targetPart.Position - bodyPart.Position).Magnitude <= 10 then
-                                attempts += 1
-                                attempted = true
-                                pcall(touch, bodyPart, targetPart, 0)
-                                task.wait(0.03)
-                                pcall(touch, bodyPart, targetPart, 1)
-                                if attempts >= 24 then break end
-                            end
-                        end
-                        if attempts >= 24 then break end
-                    end
-                end
-                return attempted
-            end
-
-            local function activatePrompt(prompt)
-                local ok = false
-                local firePrompt = (type(fireproximityprompt) == "function" and fireproximityprompt)
+            local function activate(prompt)
+                local fire = (type(fireproximityprompt) == "function" and fireproximityprompt)
                     or env.fireproximityprompt
-                if type(firePrompt) == "function" then
-                    ok = pcall(firePrompt, prompt)
-                else
-                    ok = pcall(function()
-                        prompt:InputHoldBegin()
-                        task.wait(math.clamp(prompt.HoldDuration, 0.05, 1.5))
-                        prompt:InputHoldEnd()
-                    end)
+                if type(fire) == "function" then
+                    local ok = pcall(fire, prompt)
+                    if ok then return true end
                 end
-                return ok
+                return pcall(function()
+                    prompt:InputHoldBegin()
+                    task.wait(math.clamp(prompt.HoldDuration, 0.1, 1.5))
+                    prompt:InputHoldEnd()
+                end)
             end
 
             pcall(function()
                 box:AddToggle("FairwellAutoOpenLockedDoors", {
                     Text = "Auto Open Locked Doors",
-                    Tooltip = "Moves your character to the real KeyObtain pickup area, attempts pickup, then uses locked-door prompts.",
+                    Tooltip = "Finds the locked door in your current room, approaches it, and attempts the unlock interaction.",
                     Default = false,
-                    Callback = function(enabled)
-                        state.enabled = enabled == true
-                        lastAttempt = setmetatable({}, {__mode = "k"})
-                        setStatus(state.enabled and "enabled; looking for a nearby locked door" or "off")
+                    Callback = function(value)
+                        state.enabled = value == true
+                        lastActionAt = 0
+                        status(state.enabled and "enabled; detecting your room" or "off")
                     end
                 })
             end)
 
             task.spawn(function()
                 while state.running do
-                    task.wait(0.3)
+                    task.wait(0.35)
                     if state.enabled then
-                        local character = localPlayer.Character
-                        local root = character and character:FindFirstChild("HumanoidRootPart")
-                        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-                        if not root or not humanoid or humanoid.Health <= 0 then
-                            setStatus("waiting for a living character")
+                        local character, root = getCharacter()
+                        if not root then
+                            status("waiting for your character")
                         else
-                            local hasKey, hasLockpick = hasUnlockTool(character)
-                            local bestPrompt, bestDistance
-                            local pickingKey = not hasKey
-                            local keyModel
-                            if pickingKey then
-                                local moved, model = bringKeyToPlayer(root)
-                                keyModel = model
-                                if moved then
-                                    bestPrompt = findKeyPickupPrompt(keyModel)
-                                    if not bestPrompt then
-                                        local _, _, keyPart = bringKeyToPlayer(root)
-                                        local attemptedTouch = tryPickupWithoutPrompt(keyModel, keyPart, root)
-                                        task.wait(0.6)
-                                        local nowHasKey = hasUnlockTool(character)
-                                        if nowHasKey then
-                                            setStatus("key picked up successfully via touch/click")
-                                        elseif attemptedTouch then
-                                            setStatus("tried touch/click pickup; key was not added to inventory")
-                                        end
-                                    end
-                                    if bestPrompt then
-                                        local part = promptPart(bestPrompt)
-                                        if part then
-                                            bestDistance = (part.Position - root.Position).Magnitude
-                                            local range = math.max(bestPrompt.MaxActivationDistance, 8)
-                                            if bestDistance > range then
-                                                setStatus("key is nearby but pickup prompt is out of range")
-                                                bestPrompt = nil
-                                            end
-                                        else
-                                            setStatus("found key prompt but could not locate its interaction part")
-                                            bestPrompt = nil
-                                        end
-                                    end
-                                end
+                            local room = nearestRoom(root)
+                            if not room then
+                                status("could not confidently detect your current room")
                             else
-                                local currentRoom, roomDistance = getCurrentRoom(root)
-                                if currentRoom then
-                                    for _, object in ipairs(currentRoom:GetDescendants()) do
-                                        if object:IsA("ProximityPrompt")
-                                            and isDoorUnlockPrompt(object, hasKey, hasLockpick) then
-                                            local part = promptPart(object)
+                                local hasKey, hasLockpick = inventory()
+                                if not hasKey and not hasLockpick then
+                                    status("in room " .. room.Name .. "; need a key or lockpick before unlocking")
+                                else
+                                    local target, targetDistance
+                                    for _, item in ipairs(room:GetDescendants()) do
+                                        if item:IsA("ProximityPrompt") and isLockedDoorPrompt(item, hasKey, hasLockpick) then
+                                            local part = getPromptPart(item)
                                             if part then
                                                 local distance = (part.Position - root.Position).Magnitude
-                                                if not bestDistance or distance < bestDistance then
-                                                    bestPrompt, bestDistance = object, distance
+                                                if not targetDistance or distance < targetDistance then
+                                                    target, targetDistance = item, distance
                                                 end
                                             end
                                         end
                                     end
-                                    if not bestPrompt then
-                                        setStatus("in room " .. tostring(currentRoom.Name) .. "; no supported locked-door prompt")
-                                    end
-                                else
-                                    setStatus("detecting current room; no nearby CurrentRooms room found")
-                                end
-                            end
-
-                            if bestPrompt then
-                                local now = os.clock()
-                                if now - (lastAttempt[bestPrompt] or 0) >= 2.5 then
-                                    lastAttempt[bestPrompt] = now
-                                    local inRoom = getCurrentRoom(root)
-                                    if not pickingKey then
-                                        setStatus("detected room " .. tostring(inRoom and inRoom.Name or "unknown") .. "; teleporting to locked door")
-                                        if teleportToDoor(root, bestPrompt) then
-                                            task.wait(0.2)
-                                        else
-                                            setStatus("found locked door, but teleport failed")
-                                        end
-                                    end
-                                    local activated = activatePrompt(bestPrompt)
-                                    if activated then
-                                        if pickingKey then
-                                            task.wait(0.6)
-                                            local nowHasKey = hasUnlockTool(character)
-                                            if nowHasKey then
-                                                setStatus("key picked up successfully")
-                                            else
-                                                setStatus("pickup prompt activated, but key is not in inventory; server pickup may be required")
+                                    if not target then
+                                        status("in room " .. room.Name .. "; no matching locked-door prompt found")
+                                    elseif os.clock() - lastActionAt >= 3 then
+                                        lastActionAt = os.clock()
+                                        status("room " .. room.Name .. "; approaching locked door")
+                                        if teleportToPrompt(root, target) then
+                                            task.wait(0.25)
+                                            if target.Parent and target.Enabled then
+                                                status("at door in room " .. room.Name .. "; attempting unlock")
+                                                activate(target)
+                                                task.wait(0.65)
+                                            end
+                                            if not target.Parent or not target.Enabled then
+                                                status("door prompt changed after interaction; checking next scan")
+                                            elseif target.Parent and target.Enabled then
+                                                status("interaction sent, but door still appears locked")
                                             end
                                         else
-                                            task.wait(0.35)
-                                            if not bestPrompt.Parent or not bestPrompt.Enabled then
-                                                setStatus("room " .. tostring(inRoom and inRoom.Name or "unknown") .. "; door prompt disabled after unlock")
-                                            else
-                                                setStatus("teleported to door in " .. tostring(inRoom and inRoom.Name or "unknown") .. "; sent unlock interaction, prompt remains enabled")
-                                            end
+                                            status("found door, but could not approach its prompt")
                                         end
                                     else
-                                        setStatus("could not activate the nearby prompt")
+                                        status("room " .. room.Name .. "; locked door identified")
                                     end
                                 end
-                            elseif pickingKey then
-                                if keyModel then
-                                    setStatus("at the KeyObtain pickup area; no prompt found, tried touch/click but inventory did not change")
-                                else
-                                    setStatus("enabled; could not find a KeyObtain object in this room")
-                                end
-                            else
-                                setStatus("enabled; no nearby supported locked-door prompt")
                             end
                         end
                     end
@@ -509,4 +242,3 @@
             end)
         end
     end
-
