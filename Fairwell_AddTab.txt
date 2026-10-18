@@ -3,6 +3,8 @@
 -- No global theme/color changes are applied to MSDoors.
 -- Remote content lives in Fairwell_Content.txt so it can be updated independently.
 
+local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=config-manager-20261018"
+
 local function findMSDoorsWindow()
     local env = (getgenv and getgenv()) or _G
     local Library = env.Library or env.Obsidian or env.UI_Library
