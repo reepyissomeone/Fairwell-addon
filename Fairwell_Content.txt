@@ -35,7 +35,11 @@ local compile = (type(loadstring) == "function" and loadstring) or env.loadstrin
 if type(compile) ~= "function" then
     error("[Fairwell] No loadstring compiler is available in this executor.")
 end
-local compileOk, chunk, compileError = pcall(compile, combinedSource)
+-- Call the executor compiler through a closure so wrappers with custom call
+-- conventions receive the source as an explicit first argument.
+local compileOk, chunk, compileError = pcall(function()
+    return compile(tostring(combinedSource))
+end)
 if not compileOk or type(chunk) ~= "function" then
     error("[Fairwell] Combined feature source failed to compile: "
         .. tostring(compileError or chunk or "unknown compiler error"))
