@@ -1,596 +1,216 @@
-    -- All Floors item notifications: detect newly appearing recognizable pickups.
-    local itemNotifyEnv = (getgenv and getgenv()) or _G
-    if itemNotifyEnv._FairwellItemNotifyState then itemNotifyEnv._FairwellItemNotifyState.running = false end
-    local itemNotifyState = {running = true, enabled = false}
-    itemNotifyEnv._FairwellItemNotifyState = itemNotifyState
-    -- Give Item Notifications its own groupbox so it remains visible even if
-    -- the Auto Closet / Any Floor groupbox fails to initialize.
-    local itemNotifyBox
-    local itemNotifyBoxOk, itemNotifyBoxResult = pcall(function()
-        return tab:AddRightGroupbox("Item Notifications", "bell")
-    end)
-    if itemNotifyBoxOk then itemNotifyBox = itemNotifyBoxResult end
+    -- Auto Giggle Glowstick: equips and throws a real Glowstick toward a nearby Giggle.
+    -- This uses the normal Tool activation path; it does not fire arbitrary remotes.
+    local gigglePlayers = game:GetService("Players")
+    local giggleRunService = game:GetService("RunService")
+    local gigglePlayer = gigglePlayers.LocalPlayer
+    local giggleEnv = (getgenv and getgenv()) or _G
+    if giggleEnv._FairwellAutoGiggleGlowstickState then
+        giggleEnv._FairwellAutoGiggleGlowstickState.running = false
+    end
+    local giggleState = {running = true, enabled = false}
+    giggleEnv._FairwellAutoGiggleGlowstickState = giggleState
 
-    -- Dedicated groupbox for popup appearance and timing customization.
-    local notifyCustomizeBox
+    local giggleBox
     pcall(function()
-        notifyCustomizeBox = tab:AddLeftGroupbox("Notification Customization", "sliders-horizontal")
+        giggleBox = tab:AddRightGroupbox("The Mines", "target")
     end)
 
-    if itemNotifyBox then
-        local statusLabel
-        local seen = {}
-        local startedAt = os.clock()
-        -- Current and floor-specific DOORS item names, plus notable vision/event items.
-        -- Detection is name-based; add actual MSDoors model aliases here if they differ.
-        local known = {
-            alarmclock=true, aloe=true, bandage=true, bandages=true, bandagepack=true,
-            batteries=true, batterypack=true, battery=true,
-            batterypickup=true, batteryitem=true, batterymodel=true,
-            batteriespickup=true, batteriesmodel=true, batterypackpickup=true,
-            batterypackitem=true, batterypackmodel=true, batterytool=true,
-            book=true, breakerpole=true,
-            bulklight=true, candle=true, candy=true, cheese=true, compass=true,
-            crucifix=true, donut=true, electricalroomkey=true, flashlight=true,
-            fuse=true, glitchfragment=true, glowstick=true, glowsticks=true, gold=true,
-            greenherb=true, gweensoda=true, ironkey=true, key=true, hotelkey=true,
-            backdoorkey=true, lockpick=true, lighter=true, lotus=true, lotuspetal=true,
-            moonlightcandle=true, moonlightfloat=true, multitool=true, nvcs3000=true,
-            paper=true, puzzlepainting=true, rift=true, riftjar=true, shakelight=true,
-            skeletonkey=true, shears=true, starlightbottle=true, starlightjug=true,
-            starlightvial=true, straplight=true, smoothie=true, vitamins=true,
-            laserpointer=true, lantern=true, goldblaster=true, holyhandgrenade=true,
-            minishield=true, shieldpotion=true, potion=true, bigbomb=true,
-            throwableprop=true, bombbox=true, boxinggloves=true, knockbomb=true,
-            nanner=true, nannerpeel=true, hidingbox=true, a90stopsign=true,
-            candybag=true, candybags=true, buddy=true, tipjar=true, bread=true,
-            scanner=true, solutionpaper=true, librarybook=true,
-            lever=true, fusebox=true, breaker=true, stardust=true, riftjar=true,
-            glowstick=true, vitamins=true, keycard=true,
-            cupofcoffee=true, drone=true, glitchbandage=true, holyegggrenade=true,
-            potions=true, rushjar=true, waitingticket=true, birdseeds=true,
-            pizza=true, retrokey=true, generator=true, breakerpole=true,
-            starlightbottle=true, starlightjug=true, starlightvial=true,
-            bandagepack=true, candybag=true, candypack=true, shakelight=true,
-            shieldpotion=true, throwableprop=true, rift=true, tipjar=true,
-            nannerpeel=true, bread=true, keycard=true, generatorfuse=true
-        }
-        local itemChoices = {
-            -- Obtainable pickups/resources only. Decorative paintings and unavailable/admin-only items are excluded.
-            "Alarm Clock", "Aloe", "Backdoor Key", "Bandage", "Bandage Pack", "Bandages",
-            "Batteries", "Battery", "Battery Pack", "Bread", "Bulklight", "Candy", "Candy Bag",
-            "Candy Bags", "Candle", "Cheese", "Compass", "Crucifix", "Cup of Coffee",
-            "Donut", "Drone", "Electrical Room Key", "Flashlight", "Fuse", "Fuse Box",
-            "Glitch Bandage", "Glitch Fragment", "Glowstick", "Gold", "Green Herb", "Gween Soda",
-            "Holy Egg Grenade", "Holy Hand Grenade", "Hotel Key", "Iron Key", "Key", "Lantern",
-            "Laser Pointer", "Lighter", "Lockpick", "Lotus", "Lotus Petal",
-            "Moonlight Candle", "Moonlight Float", "Multitool", "Nanner", "Nanner Peel",
-            "Paper", "Potion", "Potions", "Rift", "Rift Jar", "Rush Jar", "Shears",
-            "Shakelight", "Shield Potion", "Skeleton Key", "Smoothie", "Solution Paper",
-            "Stardust", "Starlight Bottle", "Starlight Jug", "Starlight Vial", "Straplight",
-            "Tip Jar", "Throwable Prop", "Vitamins", "Waiting Ticket", "Birdseeds", "Pizza",
-            "Retro Key", "Keycard", "Breaker", "Breaker Pole", "Lever", "Generator"
-        }
-        local importantItems = {
-            key=true, hotelkey=true, backdoorkey=true, ironkey=true, retrokey=true,
-            electricalroomkey=true, keycard=true,
-            fuse=true, fusebox=true, breaker=true, breakerpole=true,
-            book=true, librarybook=true, solutionpaper=true, paper=true, lever=true,
-            generator=true, generatorfuse=true, breakerlever=true, courtyardkey=true,
-            roomskey=true, rift=true, riftjar=true, holyhandgrenade=true
-        }
+    if giggleBox then
+        local giggleStatus
+        local lastGiggleThrow = 0
+        local busy = false
+        local statusText = ""
 
-        -- Customizable item notification popup and timing controls.
-        local settingsBox = notifyCustomizeBox or itemNotifyBox
-        local TweenService = game:GetService("TweenService")
-        local popupParent = (gethui and gethui()) or game:GetService("CoreGui")
-        local oldPopup = popupParent:FindFirstChild("FairwellItemPopupGui")
-        if oldPopup then pcall(function() oldPopup:Destroy() end) end
-        local popupGui = Instance.new("ScreenGui")
-        popupGui.Name = "FairwellItemPopupGui"
-        popupGui.ResetOnSpawn = false
-        popupGui.IgnoreGuiInset = true
-        popupGui.DisplayOrder = 9999
-        popupGui.Parent = popupParent
-        itemNotifyState.popupGui = popupGui
-
-        local popupSettings = {
-            theme = "Fairwell Blue", animation = "Slide from right",
-            duration = 3.5, size = "Standard", icons = "Category icons",
-            sound = "Off", heading = "ITEM DETECTED", customHeading = "FAIRWELL ALERT",
-            delay = 1, animSpeed = 0.30, scale = 1
-        }
-        local function addSettingDropdown(id, label, values, defaultValue, callback)
-            pcall(function()
-                settingsBox:AddDropdown(id, {
-                    Text = label, Values = values, Default = defaultValue,
-                    Callback = callback
-                })
-            end)
+        local function setGiggleStatus(message)
+            if message == statusText then return end
+            statusText = message
+            if giggleStatus then pcall(function() giggleStatus:SetText("Status: " .. message) end) end
         end
-        local showItemPopup
+
         pcall(function()
-            settingsBox:AddButton({
-                Text = "Test Item Notification",
-                Func = function()
-                    if type(showItemPopup) == "function" then
-                        showItemPopup("Test Item")
-                    else
-                        warn("[Fairwell] Notification preview is not ready yet.")
+            giggleStatus = giggleBox:AddLabel({Text = "Status: off", DoesWrap = true})
+        end)
+        pcall(function()
+            giggleBox:AddLabel({
+                Text = "Locks the camera onto a nearby Giggle and rapidly throws Glowsticks. Stops when inventory is empty, target disappears, or the safety limit is reached.",
+                DoesWrap = true
+            })
+        end)
+
+        local function isGiggleModel(model)
+            if not model or not model:IsA("Model") then return false end
+            local name = string.lower(model.Name)
+            return string.find(name, "giggle", 1, true) ~= nil
+                and string.find(name, "dead", 1, true) == nil
+                and string.find(name, "corpse", 1, true) == nil
+        end
+
+        local function modelAimPart(model)
+            if not model then return nil end
+            return model.PrimaryPart
+                or model:FindFirstChild("Head", true)
+                or model:FindFirstChild("HumanoidRootPart", true)
+                or model:FindFirstChildWhichIsA("BasePart", true)
+        end
+
+        local function findNearestGiggle(root)
+            local bestModel, bestPart, bestDistance
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if isGiggleModel(obj) then
+                    local part = modelAimPart(obj)
+                    if part and part:IsDescendantOf(workspace) then
+                        local distance = (part.Position - root.Position).Magnitude
+                        if distance <= 65 and (not bestDistance or distance < bestDistance) then
+                            bestModel, bestPart, bestDistance = obj, part, distance
+                        end
                     end
-                end,
-                Tooltip = "Preview the notification with your current customization settings"
-            })
-        end)
-        addSettingDropdown("FairwellNotifyTheme", "Notification theme",
-            {"Fairwell Blue", "Starlight", "Moonlight", "Minimal"}, popupSettings.theme,
-            function(v) if type(v) == "string" then popupSettings.theme = v end end)
-        addSettingDropdown("FairwellNotifyAnimation", "Animation",
-            {"Slide from right", "Fade", "Pop", "None"}, popupSettings.animation,
-            function(v) if type(v) == "string" then popupSettings.animation = v end end)
-        pcall(function()
-            settingsBox:AddSlider("FairwellNotifyDurationSlider", {
-                Text = "Notification display time (seconds)", Default = 3.5, Min = 1, Max = 10,
-                Rounding = 1, Compact = false,
-                Callback = function(v) popupSettings.duration = math.clamp(tonumber(v) or 3.5, 1, 10) end
-            })
-        end)
-        addSettingDropdown("FairwellNotifySize", "Popup size",
-            {"Compact", "Standard", "Large"}, popupSettings.size,
-            function(v) if type(v) == "string" then popupSettings.size = v end end)
-        addSettingDropdown("FairwellNotifyIcons", "Icons",
-            {"Category icons", "Larger icons", "No icons"}, popupSettings.icons,
-            function(v) if type(v) == "string" then popupSettings.icons = v end end)
-        addSettingDropdown("FairwellNotifySound", "Notification sound",
-            {"Off", "Soft", "DOORS-style"}, popupSettings.sound,
-            function(v) if type(v) == "string" then popupSettings.sound = v end end)
-        addSettingDropdown("FairwellNotifyHeading", "Popup heading",
-            {"ITEM DETECTED", "ITEM FOUND", "FAIRWELL ALERT", "Custom"}, popupSettings.heading,
-            function(v) if type(v) == "string" then popupSettings.heading = v end end)
-        pcall(function()
-            settingsBox:AddInput("FairwellNotifyCustomHeading", {
-                Text = "Custom heading text", Default = "FAIRWELL ALERT",
-                Placeholder = "Enter heading",
-                Callback = function(v)
-                    if type(v) == "string" and v ~= "" then popupSettings.customHeading = string.sub(v, 1, 32) end
                 end
-            })
-        end)
-        -- Sliders are easier to adjust on touch screens than typing numeric values.
-        pcall(function()
-            settingsBox:AddSlider("FairwellNotifyScanIntervalSlider", {
-                Text = "Notification delay (seconds)", Default = 1, Min = 0, Max = 10,
-                Rounding = 1, Compact = false,
-                Callback = function(v) popupSettings.delay = math.clamp(tonumber(v) or 1, 0, 10) end
-            })
-        end)
-        pcall(function()
-            settingsBox:AddSlider("FairwellNotifySpeedSlider", {
-                Text = "Animation speed", Default = 3, Min = 1, Max = 10,
-                Rounding = 0, Compact = false,
-                Callback = function(v) popupSettings.animSpeed = math.clamp((tonumber(v) or 3) / 10, 0.1, 1) end
-            })
-        end)
-        pcall(function()
-            settingsBox:AddSlider("FairwellNotifyScaleSlider", {
-                Text = "Popup scale (%)", Default = 100, Min = 70, Max = 130,
-                Rounding = 0, Compact = false,
-                Callback = function(v) popupSettings.scale = math.clamp((tonumber(v) or 100) / 100, 0.7, 1.3) end
-            })
-        end)
-        pcall(function()
-            settingsBox:AddLabel({Text = "Notification delay controls how long Fairwell waits before showing a detected-item popup. Display time controls how long it stays visible; background scanning remains separate.", DoesWrap = true})
-        end)
+            end
+            return bestModel, bestPart, bestDistance
+        end
 
-        -- Custom animation studio removed at user request.
+        local function findGlowstick(character, humanoid)
+            local backpack = gigglePlayer:FindFirstChildOfClass("Backpack")
+            if character then
+                for _, item in ipairs(character:GetChildren()) do
+                    if item:IsA("Tool") and string.find(string.lower(item.Name), "glowstick", 1, true) then
+                        return item
+                    end
+                end
+            end
+            if backpack then
+                for _, item in ipairs(backpack:GetChildren()) do
+                    if item:IsA("Tool") and string.find(string.lower(item.Name), "glowstick", 1, true) then
+                        return item
+                    end
+                end
+            end
+            return nil
+        end
 
-        local popupSerial = 0
-        showItemPopup = function(itemName)
-            if not popupGui or not popupGui.Parent then return end
-            popupSerial += 1
+        local function countGlowsticks(character)
+            local count = 0
+            local backpack = gigglePlayer:FindFirstChildOfClass("Backpack")
+            for _, container in ipairs({character, backpack}) do
+                if container then
+                    for _, item in ipairs(container:GetChildren()) do
+                        if item:IsA("Tool") and string.find(string.lower(item.Name), "glowstick", 1, true) then count += 1 end
+                    end
+                end
+            end
+            return count
+        end
+
+        local function throwAtGiggle(tool, character, humanoid, targetPart)
+            if busy or not tool or not targetPart or not targetPart.Parent then return false end
+            busy = true
             local camera = workspace.CurrentCamera
-            local viewport = camera and camera.ViewportSize or Vector2.new(800, 600)
-            local touchOnly = game:GetService("UserInputService").TouchEnabled and not game:GetService("UserInputService").KeyboardEnabled
-            local baseWidth, baseHeight = 300, 60
-            if popupSettings.size == "Compact" then baseWidth, baseHeight = 250, 48
-            elseif popupSettings.size == "Large" then baseWidth, baseHeight = 340, 76 end
-            local width = math.floor(math.min(baseWidth * popupSettings.scale, math.max(180, viewport.X - 24)))
-            local height = math.floor(baseHeight * popupSettings.scale)
-            if touchOnly then height = math.min(height, 68) end
-            local safeTop = game:GetService("GuiService"):GetGuiInset().Y
-            local y = safeTop + 12 + ((popupSerial - 1) % 4) * (height + 10)
-            local offscreenX = width + 30
-            local finalX = -12
-            local animTime = popupSettings.animSpeed
-            local card = Instance.new("Frame")
-            card.Name = "ItemDetectedPopup"
-            card.AnchorPoint = Vector2.new(1, 0)
-            card.Position = UDim2.new(1, popupSettings.animation == "Slide from right" and offscreenX or finalX, 0, y)
-            card.Size = UDim2.fromOffset(width, height)
-            card.BackgroundColor3 = popupSettings.theme == "Starlight" and Color3.fromRGB(35, 24, 65)
-                or popupSettings.theme == "Moonlight" and Color3.fromRGB(25, 34, 62)
-                or popupSettings.theme == "Minimal" and Color3.fromRGB(25, 25, 29)
-                or Color3.fromRGB(16, 13, 45)
-            card.BackgroundTransparency = popupSettings.theme == "Minimal" and 0.12 or 0
-            card.BorderSizePixel = 0
-            card.Parent = popupGui
-            local stroke = Instance.new("UIStroke")
-            stroke.Color = popupSettings.theme == "Starlight" and Color3.fromRGB(190, 145, 255)
-                or popupSettings.theme == "Moonlight" and Color3.fromRGB(145, 195, 255)
-                or popupSettings.theme == "Minimal" and Color3.fromRGB(115, 115, 125)
-                or Color3.fromRGB(27, 147, 227)
-            stroke.Thickness = 2
-            stroke.Parent = card
-            local heading = Instance.new("TextLabel")
-            heading.BackgroundTransparency = 1
-            heading.Position = UDim2.fromOffset(12, 4)
-            heading.Size = UDim2.new(1, -24, 0, math.max(18, height * 0.34))
-            heading.Font = Enum.Font.GothamBold
-            heading.Text = popupSettings.heading == "Custom" and popupSettings.customHeading or popupSettings.heading
-            heading.TextColor3 = stroke.Color
-            heading.TextSize = popupSettings.size == "Compact" and 12 or 14
-            heading.TextXAlignment = Enum.TextXAlignment.Left
-            heading.TextTruncate = Enum.TextTruncate.AtEnd
-            heading.Parent = card
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            local oldCameraCFrame = camera and camera.CFrame
+            local oldCameraType = camera and camera.CameraType
+            local oldAutoRotate = humanoid and humanoid.AutoRotate
+            local lockConnection
+            local ok, err = pcall(function()
+                if tool.Parent ~= character then humanoid:EquipTool(tool) end
+                task.wait(0.12)
+                if tool.Parent ~= character then error("Glowstick did not equip") end
+                local folder = character:FindFirstChild("Glowsticks")
+                local remote = folder and folder:FindFirstChild("Remote")
+                if not (remote and remote:IsA("RemoteEvent")) then remote = tool:FindFirstChild("Remote", true) end
+                if not (remote and remote:IsA("RemoteEvent")) then error("Glowsticks Remote not found") end
+                if not root or not root:IsA("BasePart") then error("HumanoidRootPart not found") end
 
-            local lowerItemName = string.lower(tostring(itemName))
-            local iconAsset
-            if string.find(lowerItemName, "starlight", 1, true) then
-                iconAsset = "126024358190295"
-            elseif string.find(lowerItemName, "moonlight", 1, true) or string.find(lowerItemName, "crucifix", 1, true) then
-                iconAsset = "114411758858046"
-            elseif string.find(lowerItemName, "heal", 1, true) or string.find(lowerItemName, "bandage", 1, true) or string.find(lowerItemName, "medkit", 1, true) or string.find(lowerItemName, "smoothie", 1, true) or string.find(lowerItemName, "herb", 1, true) or string.find(lowerItemName, "aloe", 1, true) then
-                iconAsset = "13629907226"
-            elseif string.find(lowerItemName, "lockpick", 1, true) or string.find(lowerItemName, "key", 1, true) or string.find(lowerItemName, "tool", 1, true) or string.find(lowerItemName, "shears", 1, true) or string.find(lowerItemName, "fuse", 1, true) or string.find(lowerItemName, "breaker", 1, true) then
-                iconAsset = "96878074199117"
-            elseif string.find(lowerItemName, "flashlight", 1, true) or string.find(lowerItemName, "lighter", 1, true) or string.find(lowerItemName, "laser pointer", 1, true) or string.find(lowerItemName, "laserpointer", 1, true) or string.find(lowerItemName, "glowstick", 1, true) or string.find(lowerItemName, "candle", 1, true) or string.find(lowerItemName, "lantern", 1, true) then
-                iconAsset = "103531352052753"
-            end
-            if popupSettings.icons == "No icons" then iconAsset = nil end
-            if iconAsset then
-                local itemIcon = Instance.new("ImageLabel")
-                itemIcon.Name = "ItemIcon"
-                itemIcon.BackgroundTransparency = 1
-                itemIcon.AnchorPoint = Vector2.new(1, 0.5)
-                itemIcon.Position = UDim2.new(1, -10, 0.5, 4)
-                itemIcon.Size = popupSettings.icons == "Larger icons" and UDim2.fromOffset(48, 48) or UDim2.fromOffset(34, 34)
-                itemIcon.ScaleType = Enum.ScaleType.Fit
-                itemIcon.Image = "rbxassetid://" .. iconAsset
-                itemIcon.Parent = card
-            end
-            local detail = Instance.new("TextLabel")
-            detail.BackgroundTransparency = 1
-            detail.Position = UDim2.fromOffset(12, math.max(22, height * 0.42))
-            detail.Size = UDim2.new(1, iconAsset and (popupSettings.icons == "Larger icons" and -72 or -62) or -24, 0, math.max(20, height * 0.45))
-            detail.Font = Enum.Font.Gotham
-            detail.Text = tostring(itemName)
-            detail.TextColor3 = Color3.new(1, 1, 1)
-            detail.TextSize = popupSettings.size == "Compact" and 12 or (popupSettings.size == "Large" and 17 or 15)
-            detail.TextWrapped = true
-            detail.TextXAlignment = Enum.TextXAlignment.Left
-            detail.Parent = card
+                -- Face the target with the complete character pivot before sending the normal
+                -- Glowsticks request. This is the strongest client-side rotation attempt, but
+                -- the game server may still override it if character rotation is server-owned.
+                humanoid.AutoRotate = false
+                local lastFacing = nil
+                local function faceTarget()
+                    if not targetPart.Parent or not root.Parent or not character.Parent then return end
+                    local pos = root.Position
+                    local target = targetPart.Position
+                    local flatTarget = Vector3.new(target.X, pos.Y, target.Z)
+                    local delta = flatTarget - pos
+                    if delta.Magnitude > 0.05 then
+                        local facing = CFrame.lookAt(pos, flatTarget)
+                        local currentPivot = character:GetPivot()
+                        local rootToPivot = root.CFrame:ToObjectSpace(currentPivot)
+                        character:PivotTo(facing * rootToPivot)
+                        lastFacing = facing
+                    end
+                    if camera then
+                        camera.CameraType = Enum.CameraType.Scriptable
+                        local lookFrom = root.Position - root.CFrame.LookVector * 8 + Vector3.new(0, 3.5, 0)
+                        camera.CFrame = CFrame.lookAt(lookFrom, target)
+                    end
+                end
+                faceTarget()
+                lockConnection = giggleRunService.RenderStepped:Connect(faceTarget)
 
-            if popupSettings.sound ~= "Off" then
+                -- Let the rotation replicate for a brief moment before using the game's normal throw.
+                task.wait(0.18)
+                local started, throws = os.clock(), 0
+                while giggleState.enabled and targetPart.Parent and countGlowsticks(character) > 0
+                    and throws < 40 and os.clock() - started < 5 do
+                    faceTarget()
+                    remote:FireServer()
+                    throws += 1
+                    task.wait(0.09)
+                end
+                setGiggleStatus("faced target locally; sent " .. throws .. " throw requests. Server-visible facing depends on DOORS replication.")
+            end)
+            if lockConnection then pcall(function() lockConnection:Disconnect() end) end
+            if humanoid and humanoid.Parent and oldAutoRotate ~= nil then
+                pcall(function() humanoid.AutoRotate = oldAutoRotate end)
+            end
+            if camera and oldCameraCFrame and camera.Parent then
                 pcall(function()
-                    local sound = Instance.new("Sound")
-                    sound.Name = "FairwellItemNotificationSound"
-                    sound.SoundId = popupSettings.sound == "Soft" and "rbxassetid://9118823101" or "rbxassetid://6026984224"
-                    sound.Volume = popupSettings.sound == "Soft" and 0.25 or 0.45
-                    sound.Parent = popupGui
-                    sound:Play()
-                    task.delay(3, function() pcall(function() sound:Destroy() end) end)
+                    if oldCameraType then camera.CameraType = oldCameraType end
+                    camera.CFrame = oldCameraCFrame
                 end)
             end
-
-            -- Keep popup rendering independent of the removed custom animation editor.
-
-            if popupSettings.animation == "Fade" then
-                local targetTransparency = popupSettings.theme == "Minimal" and 0.12 or 0
-                card.BackgroundTransparency = 1
-                stroke.Transparency = 1
-                heading.TextTransparency = 1
-                detail.TextTransparency = 1
-                local fadeInInfo = TweenInfo.new(animTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-                TweenService:Create(card, fadeInInfo, {BackgroundTransparency = targetTransparency}):Play()
-                TweenService:Create(stroke, fadeInInfo, {Transparency = 0}):Play()
-                TweenService:Create(heading, fadeInInfo, {TextTransparency = 0}):Play()
-                TweenService:Create(detail, fadeInInfo, {TextTransparency = 0}):Play()
-                if card:FindFirstChild("ItemIcon") then
-                    card.ItemIcon.ImageTransparency = 1
-                    TweenService:Create(card.ItemIcon, fadeInInfo, {ImageTransparency = 0}):Play()
-                end
-            elseif popupSettings.animation == "Pop" then
-                card.Size = UDim2.fromOffset(0, 0)
-                TweenService:Create(card, TweenInfo.new(animTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(width, height)}):Play()
-            elseif popupSettings.animation == "Slide from right" then
-                TweenService:Create(card, TweenInfo.new(animTime, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    Position = UDim2.new(1, finalX, 0, y)
-                }):Play()
-            end
-
-            if popupSettings.duration > 0 then
-                task.delay(popupSettings.duration, function()
-                    if not card or not card.Parent then return end
-                    if popupSettings.animation == "Fade" then
-                        local fadeInfo = TweenInfo.new(math.max(0.2, animTime), Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-                        local fade = TweenService:Create(card, fadeInfo, {BackgroundTransparency = 1})
-                        TweenService:Create(stroke, fadeInfo, {Transparency = 1}):Play()
-                        TweenService:Create(heading, fadeInfo, {TextTransparency = 1}):Play()
-                        TweenService:Create(detail, fadeInfo, {TextTransparency = 1}):Play()
-                        if card:FindFirstChild("ItemIcon") then
-                            TweenService:Create(card.ItemIcon, fadeInfo, {ImageTransparency = 1}):Play()
-                        end
-                        fade:Play()
-                        fade.Completed:Once(function() pcall(function() card:Destroy() end) end)
-                    elseif popupSettings.animation == "None" then
-                        pcall(function() card:Destroy() end)
-                    else
-                        local out = TweenService:Create(card, TweenInfo.new(animTime, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
-                            Position = UDim2.new(1, offscreenX, 0, y)
-                        })
-                        out:Play()
-                        out.Completed:Once(function() pcall(function() card:Destroy() end) end)
-                    end
-                end)
-            end
+            busy = false
+            if not ok then setGiggleStatus("throw attempt failed: " .. tostring(err)); return false end
+            lastGiggleThrow = os.clock()
+            return true
         end
 
-        -- Start with the important items selected; the user can add any other item in the dropdown.
-        local selectedItemNames = {}
-        for _, choice in ipairs(itemChoices) do
-            if importantItems[norm(choice)] then selectedItemNames[choice] = true end
-        end
-
-        -- Detect current floor/subfloor using active workspace names and room structure.
-        -- Order matters: more specific subfloors must win over generic room folders.
-        local function currentFloorInfo()
-            local allNames = {}
-            local function addName(obj)
-                if obj then allNames[string.lower(obj.Name)] = true end
-            end
-            for _, obj in ipairs(workspace:GetChildren()) do addName(obj) end
-
-            -- Inspect only names, not arbitrary text or item descriptions.
-            -- Include nested room containers because some MSDoors versions place
-            -- the active floor marker below Workspace rather than at its root.
-            local activeRooms = workspace:FindFirstChild("CurrentRooms")
-                or workspace:FindFirstChild("Rooms")
-            local activeRoomNumber, activeRoom
-            if activeRooms then
-                for _, room in ipairs(activeRooms:GetChildren()) do
-                    local number = tonumber(room.Name:match("%d+"))
-                    if number and (not activeRoomNumber or number > activeRoomNumber) then
-                        activeRoomNumber, activeRoom = number, room
-                    end
-                end
-            end
-
-            local roomNames = {}
-            if activeRoom then
-                table.insert(roomNames, string.lower(activeRoom.Name))
-                for _, obj in ipairs(activeRoom:GetDescendants()) do
-                    table.insert(roomNames, string.lower(obj.Name))
-                end
-            end
-
-            local function anyNameContains(needles, includeRoomNames)
-                for name in pairs(allNames) do
-                    for _, needle in ipairs(needles) do
-                        if string.find(name, needle, 1, true) then return true end
-                    end
-                end
-                if includeRoomNames then
-                    for _, name in ipairs(roomNames) do
-                        for _, needle in ipairs(needles) do
-                            if string.find(name, needle, 1, true) then return true end
-                        end
-                    end
-                end
-                return false
-            end
-
-            local floor, subfloor = "Unknown", "Unknown"
-            local roomLabel = activeRoomNumber and string.format("Room %03d", activeRoomNumber) or nil
-
-            if anyNameContains({"stairwell", "stairwellrooms"}, false) then
-                floor, subfloor = "The Stairwell", "The Stairwell"
-            elseif anyNameContains({"archives", "sectora", "sectorz", "a-000", "a000"}, true) then
-                floor, subfloor = "The Archives", "The Archives"
-            elseif anyNameContains({"backdoor", "backdoors"}, false) then
-                floor, subfloor = "The Backdoor", "The Backdoor"
-            elseif anyNameContains({"outdoors", "groundskeeper", "bramble", "eyestalk"}, false) then
-                floor, subfloor = "The Outdoors", "The Outdoors"
-            elseif anyNameContains({"mines", "minecart", "the nest", "nestroom", "damroom"}, false) then
-                floor, subfloor = "The Mines", "The Mines"
-            elseif anyNameContains({"hotel-", "hotelminus", "hotelminusvision"}, false) then
-                floor, subfloor = "Hotel-", "Hotel- Vision"
-            elseif anyNameContains({"lobby", "lobbyfloor", "lobbyroom", "lobbyrooms"}, false) then
-                -- Lobby markers must be checked before the generic CurrentRooms fallback;
-                -- MSDoors can keep a CurrentRooms folder present while the player is in the lobby.
-                floor, subfloor = "Lobby", "Lobby"
-            elseif anyNameContains({"hotel-", "hotelminus", "hotelminusvision"}, false) then
-                floor, subfloor = "Hotel-", "Hotel- Vision"
-            elseif anyNameContains({"hotel"}, false) then
-                floor, subfloor = "The Hotel", "The Hotel"
-            elseif anyNameContains({"rooms", "a-000", "a000"}, false) then
-                floor, subfloor = "The Rooms", "The Rooms Vision"
-            elseif activeRooms then
-                floor, subfloor = "The Hotel", "The Hotel"
-            end
-
-            -- The Mines contains named regions; only label a subfloor when an
-            -- actual region marker is found in the active room's descendants.
-            if floor == "The Mines" then
-                if anyNameContains({"stairwell"}, true) then
-                    subfloor = "The Stairwell"
-                elseif anyNameContains({"nest", "grumble"}, true) then
-                    subfloor = "The Mines — The Nest"
-                elseif anyNameContains({"dam"}, true) then
-                    subfloor = "The Mines — The Dam"
-                end
-            end
-
-            -- Report the active room number when the current folder uses numeric names.
-            return floor, subfloor, roomLabel
-        end
-
-        local function currentFloor()
-            local floor = currentFloorInfo()
-            return floor
-        end
-
-        local itemFloor = {
-            ["Backdoor Key"] = "Backdoor", ["Starlight Vial"] = "Backdoor",
-            ["Starlight Bottle"] = "Backdoor", ["Starlight Jug"] = "The Rooms",
-            ["Shakelight"] = "The Rooms", ["Glowstick"] = "Mines",
-            ["Straplight"] = "Mines", ["Bulklight"] = "Mines",
-            ["Battery Pack"] = "Mines", ["Bandage Pack"] = "Mines",
-            ["Laser Pointer"] = "Mines", ["Shears"] = "Mines",
-            ["Gween Soda"] = "Mines", ["Bread"] = "Mines", ["Cheese"] = "Mines",
-            ["Lotus"] = "Outdoors", ["Lotus Petal"] = "Outdoors",
-            ["Iron Key"] = "Outdoors", ["Compass"] = "Outdoors", ["Lantern"] = "Outdoors"
-        }
         pcall(function()
-            statusLabel = settingsBox:AddLabel({Text="Item Notifications: off", DoesWrap=true})
-            settingsBox:AddLabel({Text="Choose which pickups trigger alerts, then enable Item Notifications. Floor-specific items only alert on their matching floor.", DoesWrap=true})
-        end)
-        local function setStatus(s)
-            if statusLabel then pcall(function() statusLabel:SetText("Status: " .. s) end) end
-        end
-        local function norm(s) return string.lower(tostring(s or "")):gsub("[%s%p_%-]", "") end
-        -- Normalize common MSDoors/DOORS pickup model aliases to the selectable item name.
-        local itemAliases = {
-            batterypickup="Battery", batteryitem="Battery", batterymodel="Battery",
-            batteriespickup="Batteries", batteriesmodel="Batteries", batterytool="Battery",
-            batterypackpickup="Battery Pack", batterypackitem="Battery Pack", batterypackmodel="Battery Pack",
-            laserpointerpickup="Laser Pointer", laserpointeritem="Laser Pointer", laserpointermodel="Laser Pointer",
-            keypickup="Key", keymodel="Key", hotelkeypickup="Hotel Key",
-            backdoorkeypickup="Backdoor Key", ironkeypickup="Iron Key", retrokeypickup="Retro Key",
-            fusepickup="Fuse", fusemodel="Fuse", fuseboxpickup="Fuse Box",
-            breakerpickup="Breaker", breakermodel="Breaker", breakerpolepickup="Breaker Pole",
-            bandagepickup="Bandage", bandagemodel="Bandage",
-            flashlightpickup="Flashlight", flashlightmodel="Flashlight",
-            lighterpickup="Lighter", lightermodel="Lighter",
-            candlepickup="Candle", candleitem="Candle", candlemodel="Candle",
-            crucifixpickup="Crucifix", crucifixmodel="Crucifix",
-            lockpickpickup="Lockpick", lockpickmodel="Lockpick",
-            vitaminspickup="Vitamins", vitaminsmodel="Vitamins",
-            glowstickpickup="Glowstick", glowstickmodel="Glowstick"
-        }
-        local function candidate(obj)
-            if not obj or not obj.Parent then return false end
-
-            -- Reject room mechanisms and scenery even if a nested child happens to
-            -- share an item name (e.g. TimeLever/Lever, Candle Medium, Ripped Wall).
-            local node = obj
-            for _ = 1, 8 do
-                if not node then break end
-                local ancestorName = norm(node.Name)
-                if string.find(ancestorName, "timelever", 1, true)
-                    or string.find(ancestorName, "candlemedium", 1, true)
-                    or string.find(ancestorName, "rippedwall", 1, true) then
-                    return false
-                end
-                node = node.Parent
-            end
-
-            -- Exact names only. Prefix/suffix matching and generic "item"/"pickup"
-            -- prompt heuristics caused scenery and room mechanisms to trigger alerts.
-            local n = norm(obj.Name)
-            if not known[n] and not itemAliases[n] then return false end
-            return obj:IsA("Model") or obj:IsA("Tool")
-        end
-        pcall(function()
-            settingsBox:AddDropdown("FairwellItemNotificationChoices", {
-                Text = "Notify for these items",
-                Values = itemChoices,
-                Default = (function()
-                    local defaults = {}
-                    for _, choice in ipairs(itemChoices) do
-                        if importantItems[norm(choice)] then table.insert(defaults, choice) end
-                    end
-                    return defaults
-                end)(),
-                Multi = true,
-                AllowNull = true,
-                Callback = function(values)
-                    selectedItemNames = {}
-                    if type(values) == "table" then
-                        for key, value in pairs(values) do
-                            if type(key) == "number" and type(value) == "string" then
-                                selectedItemNames[value] = true
-                            elseif type(key) == "string" and value == true then
-                                selectedItemNames[key] = true
-                            end
-                        end
-                    end
-                    setStatus("selection updated: " .. tostring((function()
-                        local n = 0
-                        for _ in pairs(selectedItemNames) do n += 1 end
-                        return n
-                    end)()) .. " item types")
+            giggleBox:AddToggle("FairwellAutoGiggleGlowstick", {
+                Text = "Auto-throw Glowsticks at Giggles",
+                Default = false,
+                Callback = function(enabled)
+                    giggleState.enabled = enabled == true
+                    setGiggleStatus(giggleState.enabled and "searching for Giggle" or "off")
                 end
             })
         end)
-        pcall(function()
-            settingsBox:AddToggle("FairwellAllFloorItemNotifications", {
-                Text="Item Notifications", Default=false,
-                Callback=function(enabled)
-                    itemNotifyState.enabled = enabled == true
-                    seen = {}
-                    startedAt = os.clock()
-                    setStatus(itemNotifyState.enabled and "scanning all floors" or "off")
-                end
-            })
-        end)
+
         task.spawn(function()
-            while itemNotifyState.running do
-                if itemNotifyState.enabled then
-                    local count = 0
-                    for _, obj in ipairs(workspace:GetDescendants()) do
-                        if not itemNotifyState.enabled then break end
-                        if (obj:IsA("Model") or obj:IsA("Tool")) and candidate(obj) then
-                            count += 1
-                            local key = obj:GetFullName()
-                            if not seen[key] then
-                                seen[key] = true
-                                local rawDetectedName = obj.Name:gsub("_", " ")
-                                local detectedName = itemAliases[norm(rawDetectedName)] or rawDetectedName
-                                local detectedNorm = norm(detectedName)
-                                local wantsNotification = false
-                                for choice in pairs(selectedItemNames) do
-                                    local choiceNorm = norm(choice)
-                                    if detectedNorm == choiceNorm then
-                                        wantsNotification = true
-                                        break
-                                    end
-                                end
-                                local floor = currentFloor()
-                                local requiredFloor
-                                for choice, onlyFloor in pairs(itemFloor) do
-                                    if norm(choice) == detectedNorm then requiredFloor = onlyFloor break end
-                                end
-                                local correctFloor = not requiredFloor or floor == requiredFloor
-                                local isImportant = importantItems[detectedNorm] == true
-                                if wantsNotification and correctFloor and os.clock() - startedAt > 2 then
-                                    local detectedObject = obj
-                                    local waitBeforePopup = popupSettings.delay
-                                    task.delay(waitBeforePopup, function()
-                                        if itemNotifyState.running and itemNotifyState.enabled
-                                            and detectedObject and detectedObject.Parent
-                                            and type(showItemPopup) == "function" then
-                                            showItemPopup(detectedName)
-                                        end
-                                    end)
-                                end
+            while giggleState.running do
+                task.wait(0.25)
+                if giggleState.enabled and not busy then
+                    local character = gigglePlayer.Character
+                    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                    local root = character and character:FindFirstChild("HumanoidRootPart")
+                    if not character or not humanoid or humanoid.Health <= 0 or not root then
+                        setGiggleStatus("waiting for living character")
+                    elseif os.clock() - lastGiggleThrow < 1.8 then
+                        -- Prevent repeated activation while the throw animation/item state settles.
+                    else
+                        local model, part, distance = findNearestGiggle(root)
+                        if not model or not part then
+                            setGiggleStatus("enabled; no Giggle detected within 65 studs")
+                        else
+                            local tool = findGlowstick(character, humanoid)
+                            if not tool then
+                                setGiggleStatus(string.format("Giggle %.0f studs away; no Glowstick in inventory", distance))
+                            else
+                                throwAtGiggle(tool, character, humanoid, part)
                             end
                         end
                     end
-                    local floor, subfloor, roomLabel = currentFloorInfo()
-                    setStatus("active: " .. floor .. " / " .. subfloor .. (roomLabel and (" / " .. roomLabel) or "") .. "; " .. tostring(count) .. " item candidates")
                 end
-                -- Keep scanning responsive without tying the scan loop to popup delay.
-                task.wait(0.5)
             end
         end)
     end
