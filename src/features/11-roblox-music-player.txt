@@ -14,12 +14,10 @@ return function(tab, context)
 
     local AssetService = game:GetService("AssetService")
     local SoundService = game:GetService("SoundService")
-    local HttpService = game:GetService("HttpService")
-
     local queryText = ""
+    local musicVolume = 0.35
     local activeSound = nil
     local searchBusy = false
-    local resultButtons = {}
     local MAX_RESULTS = 8
 
     local statusLabel
@@ -71,7 +69,7 @@ return function(tab, context)
         local sound = Instance.new("Sound")
         sound.Name = "FairwellRobloxMusic"
         sound.SoundId = "rbxassetid://" .. tostring(math.floor(assetId))
-        sound.Volume = 0.35
+        sound.Volume = musicVolume
         sound.Looped = false
         sound.Parent = SoundService
         activeSound = sound
@@ -117,11 +115,6 @@ return function(tab, context)
                 setStatus("Could not play this audio: " .. tostring(playError))
             end
         end)
-    end
-
-    local function clearResultButtons()
-        -- Obsidian does not expose a consistent cross-version remove-element API.
-        -- Keep previous results functional; the next result set is clearly separated by labels.
     end
 
     local function addSearchResult(result, index)
@@ -268,8 +261,9 @@ return function(tab, context)
             Rounding = 0,
             Suffix = "%",
             Callback = function(value)
+                musicVolume = math.clamp((tonumber(value) or 35) / 100, 0, 1)
                 if activeSound then
-                    pcall(function() activeSound.Volume = math.clamp(tonumber(value) or 35, 0, 100) / 100 end)
+                    pcall(function() activeSound.Volume = musicVolume end)
                 end
             end
         })
