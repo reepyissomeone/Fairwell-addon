@@ -5,16 +5,54 @@
 
 local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=restore-fairwell-tab-20261018-4"
 
+local function isObsidianWindow(candidate)
+    if type(candidate) ~= "table" then return false end
+    local ok, valid = pcall(function()
+        return type(candidate.AddTab) == "function" and candidate.MainFrame ~= nil
+    end)
+    return ok and valid
+end
+
 local function findMSDoorsWindow()
     local env = (getgenv and getgenv()) or _G
     local Library = env.Library or env.Obsidian or env.UI_Library
         or _G.Library or _G.Obsidian or _G.UI_Library
     local Window = env.Window or env.MainWindow or env.MSDoorsWindow
         or _G.Window or _G.MainWindow or _G.MSDoorsWindow
-    if not Window and Library then
-        -- Obsidian assigns the created window back to Library.Window.
-        Window = Library.Window
+
+    if not isObsidianWindow(Window) and type(Library) == "table" then
+        local ok, candidate = pcall(function() return Library.Window end)
+        if ok and isObsidianWindow(candidate) then Window = candidate end
     end
+
+    -- MSDoors may keep Obsidian's Library/Window local instead of publishing globals.
+    -- Executor getgc can still find the existing window; never create a second one.
+    if not isObsidianWindow(Window) and type(getgc) == "function" then
+        local ok, objects = pcall(getgc, true)
+        if ok and type(objects) == "table" then
+            local fallbackWindow, fallbackLibrary
+            for _, object in ipairs(objects) do
+                if type(object) == "table" then
+                    local foundLibraryWindow
+                    local libraryOk, candidate = pcall(function() return object.Window end)
+                    if libraryOk and isObsidianWindow(candidate) then
+                        foundLibraryWindow = candidate
+                        fallbackLibrary = object
+                    end
+                    if foundLibraryWindow then
+                        Window, Library = foundLibraryWindow, fallbackLibrary
+                        break
+                    elseif isObsidianWindow(object) and not fallbackWindow then
+                        fallbackWindow = object
+                    end
+                end
+            end
+            if not isObsidianWindow(Window) and fallbackWindow then
+                Window = fallbackWindow
+            end
+        end
+    end
+    if not isObsidianWindow(Window) then return nil, Library end
     return Window, Library
 end
 
@@ -38,9 +76,9 @@ if not Window or type(Window.AddTab) ~= "function" then
     return
 end
 
--- Do not create duplicate Fairwell tabs if the launch button is clicked again.
-local existingTabs = (Library and Library.Tabs) or Window.Tabs
-if type(existingTabs) == "table" and existingTabs.Fairwell then
+-- Obsidian keeps its tab registry private in some builds, so remember our own tab.
+local env = (getgenv and getgenv()) or _G
+if env._FairwellTabWindow == Window and env._FairwellTab then
     warn("[Fairwell] The Fairwell tab is already loaded.")
     return
 end
@@ -53,7 +91,8 @@ if not ok or not tab then
     warn("[Fairwell] Could not add tab:", tab)
     return
 end
-
+env._FairwellTabWindow = Window
+env._FairwellTab = tab
 
 local function loadRemoteContent()
     local fetched, source = pcall(function() return game:HttpGet(CONTENT_URL) end)
