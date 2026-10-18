@@ -1,0 +1,54 @@
+-- Fairwell Feature Connector
+-- This fragment runs inside the existing Fairwell tab builder.
+-- New features live in separate files and are registered below.
+-- Each registered feature file must return: function(tab, context) ... end
+-- It never creates a tab/window; it only adds controls to the existing Fairwell tab.
+
+do
+    local FEATURE_MODULE_URLS = {
+        -- Add new feature modules here, one URL per line:
+        -- "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/new-features/example-feature.txt?v=1",
+    }
+
+    local env = (getgenv and getgenv()) or _G
+    local compile = (type(loadstring) == "function" and loadstring) or env.loadstring
+    local context = {
+        Tab = tab,
+        Reload = reloadContent,
+        HotelTab = hotelTab,
+        Environment = env,
+    }
+
+    for index, url in ipairs(FEATURE_MODULE_URLS) do
+        local fetched, source = pcall(function()
+            return game:HttpGet(url)
+        end)
+
+        if not fetched or type(source) ~= "string" or source == "" then
+            warn("[Fairwell Connector] Feature " .. tostring(index) .. " download failed: " .. tostring(source))
+        elseif type(compile) ~= "function" then
+            warn("[Fairwell Connector] Cannot compile feature " .. tostring(index) .. ": loadstring unavailable.")
+            break
+        else
+            local compiled, chunk, compileError = pcall(compile, source)
+            if not compiled or type(chunk) ~= "function" then
+                warn("[Fairwell Connector] Feature " .. tostring(index) .. " compile failed: "
+                    .. tostring(compileError or chunk or "unknown compiler error"))
+            else
+                local ran, feature = pcall(chunk)
+                if not ran or type(feature) ~= "function" then
+                    warn("[Fairwell Connector] Feature " .. tostring(index)
+                        .. " must return a function(tab, context): " .. tostring(feature))
+                else
+                    local initialized, initError = pcall(feature, tab, context)
+                    if not initialized then
+                        warn("[Fairwell Connector] Feature " .. tostring(index) .. " initialization failed: "
+                            .. tostring(initError))
+                    else
+                        print("[Fairwell Connector] Connected feature " .. tostring(index))
+                    end
+                end
+            end
+        end
+    end
+end
