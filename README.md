@@ -15,6 +15,7 @@ Fairwell is packaged as a native MSDoors addon. The installed entry point stays 
   - `06-friendly-entities.txt`
   - `07-item-notifications-and-floor-detection.txt`
   - `08-auto-giggle-glowstick.txt`
+  - `09-auto-open-locked-doors.txt`
 - `src/config/config-manager.txt` — config save/load/override and auto-load behavior.
 
 ## Why the source files are fragments
