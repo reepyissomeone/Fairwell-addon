@@ -18,6 +18,7 @@ return function(tab, context)
     local musicVolume = 0.35
     local activeSound = nil
     local searchBusy = false
+    local searchRevision = 0
     local MAX_RESULTS = 8
 
     local statusLabel
@@ -154,7 +155,9 @@ return function(tab, context)
             local searchOk, pages = pcall(function()
                 local params = Instance.new("AudioSearchParams")
                 params.SearchKeyword = query
-                pcall(function() params.AudioSubType = Enum.AudioSubType.Music end)
+                -- Require the Music subtype. If the client cannot apply this filter,
+                -- fail closed rather than returning a mixed list that may contain SFX.
+                params.AudioSubType = Enum.AudioSubType.Music
                 return AssetService:SearchAudioAsync(params)
             end)
 
@@ -182,8 +185,18 @@ return function(tab, context)
             local added = 0
             for index, result in ipairs(results) do
                 if added >= MAX_RESULTS then break end
-                if type(result) == "table" and addSearchResult(result, index) then
-                    added = added + 1
+                if type(result) == "table" then
+                    -- Double-check any subtype metadata returned by Roblox. The API query
+                    -- is already Music-filtered; explicitly reject results marked as SFX.
+                    local subtype = result.AudioSubType or result.audioSubType or result.SubType or result.subType
+                    local subtypeText = subtype ~= nil and string.lower(tostring(subtype)) or ""
+                    local explicitlySfx = subtypeText ~= "" and (string.find(subtypeText, "sfx", 1, true) ~= nil
+                        or string.find(subtypeText, "soundeffect", 1, true) ~= nil
+                        or string.find(subtypeText, "sound effect", 1, true) ~= nil)
+                    local explicitlyMusic = subtypeText == "" or string.find(subtypeText, "music", 1, true) ~= nil
+                    if not explicitlySfx and explicitlyMusic and addSearchResult(result, index) then
+                        added = added + 1
+                    end
                 end
             end
 
@@ -203,14 +216,22 @@ return function(tab, context)
             Placeholder = "Song, artist, or keyword",
             Callback = function(value)
                 queryText = tostring(value or "")
+                searchRevision = searchRevision + 1
+                local thisRevision = searchRevision
+                local trimmed = queryText:match("^%s*(.-)%s*$")
+                if trimmed == "" then
+                    setStatus("Type a song, artist, or keyword. Search starts automatically as you enter text.")
+                    return
+                end
+                -- Auto-search after a short pause in typing, so each keystroke does not
+                -- fire a separate Roblox query. No manual Search button is required.
+                task.spawn(function()
+                    task.wait(0.8)
+                    if thisRevision == searchRevision then
+                        searchMusic()
+                    end
+                end)
             end
-        })
-    end)
-
-    pcall(function()
-        musicBox:AddButton({
-            Text = "Search Roblox Music",
-            Func = searchMusic
         })
     end)
 
@@ -269,5 +290,5 @@ return function(tab, context)
         })
     end)
 
-    setStatus("Ready. Search results are added below; some audio IDs may be restricted by Roblox.")
+    setStatus("Ready. Enter a song or artist; Music-only search starts automatically after you pause typing. SFX are filtered out.")
 end
