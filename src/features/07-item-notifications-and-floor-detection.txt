@@ -335,6 +335,12 @@
             end
         end
 
+        -- Normalize names before building the default selection list.
+        -- This must be declared before the first norm(choice) call below.
+        local function norm(s)
+            return string.lower(tostring(s or "")):gsub("[%s%p_%-]", "")
+        end
+
         -- Start with the important items selected; the user can add any other item in the dropdown.
         local selectedItemNames = {}
         for _, choice in ipairs(itemChoices) do
