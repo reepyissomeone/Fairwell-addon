@@ -28,9 +28,15 @@ for index, url in ipairs(MODULE_URLS) do
 end
 
 local combinedSource = table.concat(pieces, "")
-local compileOk, chunk = pcall(loadstring, combinedSource)
+local env = (getgenv and getgenv()) or _G
+local compile = (type(loadstring) == "function" and loadstring) or env.loadstring
+if type(compile) ~= "function" then
+    error("[Fairwell] No loadstring compiler is available in this executor.")
+end
+local compileOk, chunk, compileError = pcall(compile, combinedSource)
 if not compileOk or type(chunk) ~= "function" then
-    error("[Fairwell] Combined feature source failed to compile: " .. tostring(chunk))
+    error("[Fairwell] Combined feature source failed to compile: "
+        .. tostring(compileError or chunk or "unknown compiler error"))
 end
 
 local runOk, builder = pcall(chunk)
