@@ -97,6 +97,15 @@
                 return keyAvailable or lockpickAvailable
             end
 
+            local function promptPart(prompt)
+                local node = prompt and prompt.Parent
+                while node do
+                    if node:IsA("BasePart") then return node end
+                    node = node.Parent
+                end
+                return nil
+            end
+
             local function activatePrompt(prompt)
                 local ok = false
                 local firePrompt = (type(fireproximityprompt) == "function" and fireproximityprompt)
@@ -144,9 +153,7 @@
                                 for _, object in ipairs(workspace:GetDescendants()) do
                                     if object:IsA("ProximityPrompt")
                                         and isDoorUnlockPrompt(object, hasKey, hasLockpick) then
-                                        local parent = object.Parent
-                                        local part = parent and (parent:IsA("BasePart") and parent
-                                            or parent:FindFirstChildWhichIsA("BasePart", true))
+                                        local part = promptPart(object)
                                         if part then
                                             local distance = (part.Position - root.Position).Magnitude
                                             local maxDistance = math.max(object.MaxActivationDistance, 8)
