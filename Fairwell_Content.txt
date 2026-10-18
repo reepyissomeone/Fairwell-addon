@@ -26,7 +26,7 @@ for index, url in ipairs(MODULE_URLS) do
     pieces[index] = source
 end
 
-local combinedSource = table.concat(pieces, "\n")
+local combinedSource = table.concat(pieces, "")
 local compileOk, chunk = pcall(loadstring, combinedSource)
 if not compileOk or type(chunk) ~= "function" then
     error("[Fairwell] Combined feature source failed to compile: " .. tostring(chunk))
