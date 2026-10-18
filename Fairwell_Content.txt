@@ -8,11 +8,11 @@ local MODULE_URLS = {
     "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/02-anti-creak.txt?v=20261018",
     "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/03-anti-groundskeeper.txt?v=20261018",
     "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/04-auto-closet.txt?v=20261018",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/05-delete-gate.txt?v=20261018",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/05-delete-gate.txt?v=20261018-2",
     "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/06-friendly-entities.txt?v=20261018",
     "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/07-item-notifications-and-floor-detection.txt?v=20261018",
     "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/08-auto-giggle-glowstick.txt?v=20261018",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/09-auto-open-locked-doors.txt?v=20261018-4",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/09-auto-open-locked-doors.txt?v=20261018-5",
     "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/config/config-manager.txt?v=20261018",
 }
 
