@@ -12,15 +12,16 @@ local function findMSDoorsWindow()
     local Window = env.Window or env.MainWindow or env.MSDoorsWindow
         or _G.Window or _G.MainWindow or _G.MSDoorsWindow
     if not Window and Library then
+        -- Obsidian assigns the created window back to Library.Window.
         Window = Library.Window
     end
-    return Window
+    return Window, Library
 end
 
 -- MSDoors may finish creating its UI shortly after an addon/script starts.
-local Window
+local Window, Library
 for attempt = 1, 40 do
-    Window = findMSDoorsWindow()
+    Window, Library = findMSDoorsWindow()
     if Window and type(Window.AddTab) == "function" then
         break
     end
@@ -37,7 +38,14 @@ if not Window or type(Window.AddTab) ~= "function" then
     return
 end
 
--- Use the library's own tab icon only; do not recolor any UI elements.
+-- Do not create duplicate Fairwell tabs if the launch button is clicked again.
+local existingTabs = (Library and Library.Tabs) or Window.Tabs
+if type(existingTabs) == "table" and existingTabs.Fairwell then
+    warn("[Fairwell] The Fairwell tab is already loaded.")
+    return
+end
+
+-- Use the library's own Obsidian tab API; no separate window or global theme changes.
 local ok, tab = pcall(function()
     return Window:AddTab("Fairwell", "sparkles")
 end)
@@ -53,11 +61,13 @@ local function loadRemoteContent()
         warn("[Fairwell] Failed to fetch remote content:", source)
         return false
     end
-    if type(loadstring) ~= "function" then
+    local compile = (type(loadstring) == "function" and loadstring)
+        or ((getgenv and getgenv()) or _G).loadstring
+    if type(compile) ~= "function" then
         warn("[Fairwell] loadstring is unavailable.")
         return false
     end
-    local compiled, chunk, compileError = pcall(loadstring, source)
+    local compiled, chunk, compileError = pcall(compile, source)
     if not compiled or type(chunk) ~= "function" then
         warn("[Fairwell] Remote content did not compile:", compileError or chunk or "unknown compiler error")
         return false
