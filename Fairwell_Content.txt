@@ -28,7 +28,7 @@ for index, url in ipairs(MODULE_URLS) do
     pieces[index] = source
 end
 
-local combinedSource = table.concat(pieces, "")
+-- Add an explicit newline between remote fragments so a fragment ending without a\n-- cannot join its final token/comment to the next fragment.\nlocal combinedSource = table.concat(pieces, "\n")
 local env = (getgenv and getgenv()) or _G
 local compile = (type(loadstring) == "function" and loadstring) or env.loadstring
 if type(compile) ~= "function" then
