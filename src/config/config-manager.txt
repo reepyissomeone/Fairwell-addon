@@ -18,6 +18,9 @@
         local fileIsFolder = (type(isfolder) == "function" and isfolder) or configEnv.isfolder
         local fileMakeFolder = (type(makefolder) == "function" and makefolder) or configEnv.makefolder
         local fileDelete = (type(delfile) == "function" and delfile) or configEnv.delfile
+        local fileList = (type(listfiles) == "function" and listfiles) or configEnv.listfiles
+        local configDropdown
+        local configChoices = {"(no saved configs)"}
 
         local function setConfigStatus(message)
             if configStatus then
@@ -47,6 +50,48 @@
 
         local function configPath(name)
             return configFolder .. "/" .. name .. ".json"
+        end
+
+        local function listConfigNames()
+            local names, seen = {}, {}
+            if type(fileList) == "function" then
+                local ok, files = pcall(fileList, configFolder)
+                if ok and type(files) == "table" then
+                    for _, path in ipairs(files) do
+                        local name = tostring(path):match("([^/\\\\]+)%.json$")
+                        if name then
+                            name = cleanConfigName(name)
+                            if name ~= "" and not seen[name] then
+                                seen[name] = true
+                                table.insert(names, name)
+                            end
+                        end
+                    end
+                end
+            end
+            table.sort(names, function(a, b) return string.lower(a) < string.lower(b) end)
+            return names
+        end
+
+        local function refreshConfigChoices()
+            local names = listConfigNames()
+            configChoices = #names > 0 and names or {"(no saved configs)"}
+            if configDropdown then
+                local updated = false
+                pcall(function()
+                    if type(configDropdown.SetValues) == "function" then
+                        configDropdown:SetValues(configChoices)
+                        updated = true
+                    elseif type(configDropdown.SetOptions) == "function" then
+                        configDropdown:SetOptions(configChoices)
+                        updated = true
+                    end
+                end)
+                if not updated then
+                    setConfigStatus("List scanned; if dropdown choices did not update, reopen Fairwell.")
+                end
+            end
+            return names
         end
 
         local function getRegistries()
@@ -251,13 +296,79 @@
                     end
                 })
             end)
+            refreshConfigChoices()
+            pcall(function()
+                configDropdown = configBox:AddDropdown("FairwellConfigSelect", {
+                    Text = "Saved configs",
+                    Values = configChoices,
+                    Default = configName ~= "" and configName or configChoices[1],
+                    Callback = function(value)
+                        if type(value) == "string" and value ~= "(no saved configs)" then
+                            configName = cleanConfigName(value)
+                            pcall(function()
+                                local registry = configEnv.Options or _G.Options or (configLibrary and configLibrary.Options) or Options or {}
+                                local input = registry.FairwellConfigName
+                                if input and type(input.SetValue) == "function" then input:SetValue(configName) end
+                            end)
+                        end
+                    end
+                })
+            end)
+            pcall(function()
+                configBox:AddButton({
+                    Text = "Refresh Config List",
+                    Func = function()
+                        refreshConfigChoices()
+                        setConfigStatus("Config list scanned. If the dropdown did not update, reopen Fairwell.")
+                    end,
+                    Tooltip = "Find saved configs in FairwellConfigs"
+                })
+            end)
+            pcall(function()
+                configBox:AddButton({
+                    Text = "Set Selected Config as Auto-Load",
+                    Func = function()
+                        local name = cleanConfigName(configName)
+                        if name == "" then setConfigStatus("Select a saved config first."); return end
+                        local exists = false
+                        pcall(function() exists = type(fileIsFile) == "function" and fileIsFile(configPath(name)) end)
+                        if not exists then setConfigStatus("Select an existing saved config first."); return end
+                        local ok, err = saveAutoLoadName(name)
+                        if ok then setConfigStatus("'" .. name .. "' will auto-load on the next run.")
+                        else setConfigStatus("Could not set auto-load: " .. tostring(err)) end
+                    end,
+                    Tooltip = "Choose which config loads automatically when Fairwell starts"
+                })
+            end)
+            pcall(function()
+                configBox:AddButton({
+                    Text = "Clear Auto-Load",
+                    Func = function()
+                        if type(fileDelete) == "function" and type(fileIsFile) == "function" then
+                            local exists = false
+                            pcall(function() exists = fileIsFile(autoLoadPath) end)
+                            if exists then
+                                local ok, err = pcall(fileDelete, autoLoadPath)
+                                if not ok then setConfigStatus("Could not clear auto-load: " .. tostring(err)); return end
+                            end
+                        elseif type(fileWrite) == "function" then
+                            local ok, err = pcall(fileWrite, autoLoadPath, "")
+                            if not ok then setConfigStatus("Could not clear auto-load: " .. tostring(err)); return end
+                        else
+                            setConfigStatus("Cannot clear auto-load with this executor's file APIs."); return
+                        end
+                        setConfigStatus("Automatic config loading is disabled.")
+                    end,
+                    Tooltip = "Start Fairwell without loading a config automatically"
+                })
+            end)
             pcall(function()
                 configBox:AddButton({
                     Text = "Save Config",
                     Func = function()
                         local name = cleanConfigName(configName)
                         if name == "" then setConfigStatus("Enter a config name first."); return end
-                        writeConfig(name, false)
+                        if writeConfig(name, false) then refreshConfigChoices() end
                     end,
                     Tooltip = "Create a config and automatically load it next run"
                 })
@@ -268,7 +379,7 @@
                     Func = function()
                         local name = cleanConfigName(configName)
                         if name == "" then setConfigStatus("Enter a config name first."); return end
-                        writeConfig(name, true)
+                        if writeConfig(name, true) then refreshConfigChoices() end
                     end,
                     Tooltip = "Replace the named config with your current settings"
                 })
@@ -290,7 +401,10 @@
                     Func = function()
                         local name = cleanConfigName(configName)
                         if name == "" then setConfigStatus("Enter a config name first."); return end
-                        deleteConfig(name)
+                        if deleteConfig(name) then
+                        configName = ""
+                        refreshConfigChoices()
+                    end
                     end,
                     Tooltip = "Permanently delete the named config"
                 })
