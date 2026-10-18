@@ -34,7 +34,7 @@ return {
                         return
                     end
 
-                    local url = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Loader.txt?cache=obsidian-entry-20261018-1"
+                    local url = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/Fairwell_Loader.txt?cache=obsidian-entry-20261018-2"
                     local fetched, source = pcall(httpGet, url)
                     if not fetched or type(source) ~= "string" or source == "" then
                         warn("[Fairwell] Could not download the Obsidian tab loader:", source)
