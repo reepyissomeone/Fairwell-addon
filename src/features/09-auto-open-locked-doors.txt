@@ -1,0 +1,180 @@
+    -- Auto Open Locked Doors: automatically use nearby door-unlock prompts when the player
+    -- has a likely key or lockpick available. Interaction still goes through the game's prompt.
+    do
+        local Players = game:GetService("Players")
+        local localPlayer = Players.LocalPlayer
+        local env = (getgenv and getgenv()) or _G
+        if env._FairwellAutoOpenLockedDoorsState then
+            env._FairwellAutoOpenLockedDoorsState.running = false
+        end
+        local state = {running = true, enabled = false}
+        env._FairwellAutoOpenLockedDoorsState = state
+
+        local box
+        pcall(function()
+            box = tab:AddRightGroupbox("Hotel Doors", "key-round")
+        end)
+
+        if box then
+            local statusLabel
+            local lastStatus = ""
+            local lastAttempt = setmetatable({}, {__mode = "k"})
+            local function setStatus(message)
+                if message == lastStatus then return end
+                lastStatus = message
+                if statusLabel then
+                    pcall(function() statusLabel:SetText("Status: " .. message) end)
+                end
+            end
+
+            pcall(function()
+                statusLabel = box:AddLabel({
+                    Text = "Status: off",
+                    DoesWrap = true
+                })
+                box:AddLabel({
+                    Text = "Automatically activates nearby locked-door prompts when a Key or Lockpick is in your inventory. Uses the game's normal prompt; exact door/key support depends on the MSDoors build.",
+                    DoesWrap = true
+                })
+            end)
+
+            local function normalize(value)
+                return string.lower(tostring(value or "")):gsub("[%s%p_%-]", "")
+            end
+
+            local function hasUnlockTool(character)
+                local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+                local containers = {character, backpack}
+                local foundKey, foundLockpick = false, false
+                for _, container in ipairs(containers) do
+                    if container then
+                        for _, item in ipairs(container:GetChildren()) do
+                            if item:IsA("Tool") then
+                                local name = normalize(item.Name)
+                                if name == "key" or name == "hotelkey" or name == "ironkey"
+                                    or name == "backdoorkey" or name == "retrokey"
+                                    or name == "courtyardkey" or name == "roomskey"
+                                    or name:match("key$") then
+                                    foundKey = true
+                                elseif name == "lockpick" or name == "lockpicks" then
+                                    foundLockpick = true
+                                end
+                            end
+                        end
+                    end
+                end
+                return foundKey, foundLockpick
+            end
+
+            local function isDoorUnlockPrompt(prompt, keyAvailable, lockpickAvailable)
+                if not prompt or not prompt:IsA("ProximityPrompt") or not prompt.Enabled then
+                    return false
+                end
+                local action = normalize(prompt.ActionText)
+                local object = normalize(prompt.ObjectText)
+                local context = ""
+                local node = prompt.Parent
+                for _ = 1, 5 do
+                    if not node then break end
+                    context = context .. " " .. normalize(node.Name)
+                    node = node.Parent
+                end
+
+                local mentionsLock = action:find("unlock", 1, true)
+                    or action:find("lockpick", 1, true)
+                    or action:find("locked", 1, true)
+                    or object:find("locked", 1, true)
+                    or context:find("lockeddoor", 1, true)
+                    or context:find("doorlock", 1, true)
+                    or context:find("lockpick", 1, true)
+
+                local explicitlyDoor = action:find("door", 1, true)
+                    or object:find("door", 1, true)
+                    or context:find("door", 1, true)
+
+                if not mentionsLock or not explicitlyDoor then return false end
+                if action:find("lockpick", 1, true) then return lockpickAvailable end
+                return keyAvailable or lockpickAvailable
+            end
+
+            local function activatePrompt(prompt)
+                local ok = false
+                local firePrompt = (type(fireproximityprompt) == "function" and fireproximityprompt)
+                    or env.fireproximityprompt
+                if type(firePrompt) == "function" then
+                    ok = pcall(firePrompt, prompt)
+                else
+                    ok = pcall(function()
+                        prompt:InputHoldBegin()
+                        task.wait(math.clamp(prompt.HoldDuration, 0.05, 1.5))
+                        prompt:InputHoldEnd()
+                    end)
+                end
+                return ok
+            end
+
+            pcall(function()
+                box:AddToggle("FairwellAutoOpenLockedDoors", {
+                    Text = "Auto Open Locked Doors",
+                    Tooltip = "Automatically uses nearby locked-door prompts when a Key or Lockpick is available.",
+                    Default = false,
+                    Callback = function(enabled)
+                        state.enabled = enabled == true
+                        lastAttempt = setmetatable({}, {__mode = "k"})
+                        setStatus(state.enabled and "enabled; looking for a nearby locked door" or "off")
+                    end
+                })
+            end)
+
+            task.spawn(function()
+                while state.running do
+                    task.wait(0.3)
+                    if state.enabled then
+                        local character = localPlayer.Character
+                        local root = character and character:FindFirstChild("HumanoidRootPart")
+                        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                        if not root or not humanoid or humanoid.Health <= 0 then
+                            setStatus("waiting for a living character")
+                        else
+                            local hasKey, hasLockpick = hasUnlockTool(character)
+                            if not hasKey and not hasLockpick then
+                                setStatus("enabled; carry a Key or Lockpick")
+                            else
+                                local bestPrompt, bestDistance
+                                for _, object in ipairs(workspace:GetDescendants()) do
+                                    if object:IsA("ProximityPrompt")
+                                        and isDoorUnlockPrompt(object, hasKey, hasLockpick) then
+                                        local parent = object.Parent
+                                        local part = parent and (parent:IsA("BasePart") and parent
+                                            or parent:FindFirstChildWhichIsA("BasePart", true))
+                                        if part then
+                                            local distance = (part.Position - root.Position).Magnitude
+                                            local maxDistance = math.max(object.MaxActivationDistance, 8)
+                                            if distance <= maxDistance and (not bestDistance or distance < bestDistance) then
+                                                bestPrompt, bestDistance = object, distance
+                                            end
+                                        end
+                                    end
+                                end
+
+                                if bestPrompt then
+                                    local now = os.clock()
+                                    if now - (lastAttempt[bestPrompt] or 0) >= 2.5 then
+                                        lastAttempt[bestPrompt] = now
+                                        if activatePrompt(bestPrompt) then
+                                            setStatus("attempted door unlock (" .. tostring(math.floor(bestDistance + 0.5)) .. " studs)")
+                                        else
+                                            setStatus("could not activate the door prompt")
+                                        end
+                                    end
+                                else
+                                    setStatus("enabled; no nearby supported locked-door prompt")
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end
+
