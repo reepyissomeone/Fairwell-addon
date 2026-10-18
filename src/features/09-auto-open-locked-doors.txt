@@ -45,7 +45,7 @@
                     DoesWrap = true
                 })
                 box:AddLabel({
-                    Text = "When you do not have a Key, moves the KeyObtain object to you locally, attempts pickup, then activates a locked-door prompt. Client-side movement may not replicate to the server in every MSDoors build.",
+                    Text = "When you do not have a Key, moves your character to the real KeyObtain pickup area and attempts pickup. The key itself is not moved locally.",
                     DoesWrap = true
                 })
             end)
@@ -172,22 +172,25 @@
             end
 
             local function bringKeyToPlayer(root)
+                -- Keep KeyObtain at its real position. Moving the key locally can
+                -- move only its visuals while the server pickup trigger stays put.
+                -- Instead, bring the local character to the actual pickup area.
                 local keyModel, keyPart = findKeyObject()
                 if not keyModel or not keyPart or not root then return false end
-                local destination = root.CFrame * CFrame.new(0, 0, -2)
-                local offset = destination.Position - keyPart.Position
-                if offset.Magnitude > 0.5 then
+
+                local destination = keyPart.Position + Vector3.new(0, 1.5, 0)
+                local offset = destination - root.Position
+                if offset.Magnitude > 2 then
+                    local character = root.Parent
                     local ok = pcall(function()
-                        keyModel:PivotTo(keyModel:GetPivot() + offset)
+                        character:PivotTo(CFrame.new(destination, destination + root.CFrame.LookVector))
                     end)
                     if not ok then
-                        -- Fallback for builds whose key model cannot be pivoted.
-                        for _, child in ipairs(keyModel:GetDescendants()) do
-                            if child:IsA("BasePart") then
-                                pcall(function() child.CFrame = child.CFrame + offset end)
-                            end
-                        end
+                        ok = pcall(function()
+                            root.CFrame = CFrame.new(destination, destination + root.CFrame.LookVector)
+                        end)
                     end
+                    if not ok then return false end
                 end
                 return true, keyModel, keyPart
             end
@@ -320,7 +323,7 @@
             pcall(function()
                 box:AddToggle("FairwellAutoOpenLockedDoors", {
                     Text = "Auto Open Locked Doors",
-                    Tooltip = "Moves the KeyObtain object to you locally, attempts pickup, then uses locked-door prompts.",
+                    Tooltip = "Moves your character to the real KeyObtain pickup area, attempts pickup, then uses locked-door prompts.",
                     Default = false,
                     Callback = function(enabled)
                         state.enabled = enabled == true
@@ -413,7 +416,7 @@
                                 end
                             elseif pickingKey then
                                 if keyModel then
-                                    setStatus("brought Key to you locally; no prompt found, tried touch/click pickup but inventory did not change")
+                                    setStatus("at the KeyObtain pickup area; no prompt found, tried touch/click but inventory did not change")
                                 else
                                     setStatus("enabled; could not find a KeyObtain object in this room")
                                 end
