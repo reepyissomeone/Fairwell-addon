@@ -4,7 +4,7 @@
 -- Remote content lives in Fairwell_Content.txt so it can be updated independently.
 
 local env = (getgenv and getgenv()) or _G
-local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=restore-device-visibility-20261018"
+local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=config-restore-20261018"
 
 local Library = env.Library or env.Obsidian or env.UI_Library
 local Window = env.Window or env.MainWindow or env.MSDoorsWindow
@@ -51,6 +51,27 @@ local function loadRemoteContent()
         warn("[Fairwell] Remote content failed while building the tab:", buildError)
         return false
     end
+
+    -- Fairwell controls are created after MSDoors has already initialized.
+    -- Reload the autoloaded config now that those controls exist, so saved
+    -- values can be applied to the Fairwell toggles, dropdowns, inputs and sliders.
+    local saveManager = (Library and (Library.SaveManager or Library.ConfigManager))
+        or env.SaveManager or env.ConfigManager
+    if saveManager and type(saveManager.LoadAutoloadConfig) == "function" then
+        task.defer(function()
+            local restored, restoreError = pcall(function()
+                saveManager:LoadAutoloadConfig()
+            end)
+            if restored then
+                print("[Fairwell] Reapplied the autoload config after creating Fairwell controls.")
+            else
+                warn("[Fairwell] Could not reapply the autoload config:", restoreError)
+            end
+        end)
+    else
+        warn("[Fairwell] Config manager autoload hook was not found; Fairwell controls were created normally.")
+    end
+
     print("[Fairwell] Remote content loaded successfully.")
     return true
 end
