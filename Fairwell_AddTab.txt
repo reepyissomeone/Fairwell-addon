@@ -170,3 +170,47 @@ if not contentLoaded then
 else
     print("[Fairwell] Fairwell tab and feature content loaded successfully.")
 end
+
+-- Copyable diagnostics groupbox, kept on the existing Fairwell tab.
+local diagnosticOk, diagnosticBox = pcall(function()
+    return tab:AddLeftGroupbox("Fairwell Diagnostics", "clipboard")
+end)
+if diagnosticOk and diagnosticBox then
+    pcall(function()
+        diagnosticBox:AddLabel({
+            Text = "Keeps the latest Fairwell loader errors. Press Copy Log to copy them for troubleshooting.",
+            DoesWrap = true
+        })
+    end)
+    pcall(function()
+        diagnosticBox:AddButton({
+            Text = "Copy Error Log",
+            Func = function()
+                local textToCopy = #ERROR_LOG > 0 and table.concat(ERROR_LOG, "\n") or "[Fairwell] No errors recorded."
+                local envNow = (getgenv and getgenv()) or _G
+                local copier = (type(setclipboard) == "function" and setclipboard)
+                    or (type(toclipboard) == "function" and toclipboard)
+                    or envNow.setclipboard or envNow.toclipboard
+                if type(copier) == "function" then
+                    local ok, err = pcall(copier, textToCopy)
+                    if ok then
+                        print("[Fairwell] Error log copied to clipboard.")
+                    else
+                        warn("[Fairwell] Clipboard copy failed: " .. tostring(err))
+                    end
+                else
+                    warn("[Fairwell] This executor does not expose a clipboard function.")
+                end
+            end
+        })
+    end)
+    pcall(function()
+        diagnosticBox:AddButton({
+            Text = "Clear Error Log",
+            Func = function()
+                table.clear(ERROR_LOG)
+                print("[Fairwell] Diagnostic log cleared.")
+            end
+        })
+    end)
+end
