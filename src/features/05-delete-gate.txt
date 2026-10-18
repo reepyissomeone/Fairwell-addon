@@ -1,0 +1,98 @@
+    -- Delete Gate: remove the Gate after the player enters its room.
+    do
+        local gateOk, gateBox = pcall(function()
+            return tab:AddLeftGroupbox("Hotel", "building-2")
+        end)
+        if gateOk and gateBox then
+            local Players = game:GetService("Players")
+            local player = Players.LocalPlayer
+            local env = (getgenv and getgenv()) or _G
+            env._FairwellDeleteGate = false
+
+            local gateStatus
+            pcall(function()
+                gateStatus = gateBox:AddLabel({Text = "Delete Gate: off", DoesWrap = true})
+            end)
+            local function setGateStatus(message)
+                if gateStatus then pcall(function() gateStatus:SetText("Delete Gate: " .. message) end) end
+            end
+            local function partFor(object)
+                if not object then return nil end
+                if object:IsA("BasePart") then return object end
+                if object:IsA("Model") then
+                    return object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart", true)
+                end
+                return object:FindFirstChildWhichIsA("BasePart", true)
+            end
+            local function getGateRoom(root)
+                local rooms = workspace:FindFirstChild("CurrentRooms")
+                if not rooms or not root then return nil end
+                local nearestRoom, nearestGate, nearestDistance
+                for _, room in ipairs(rooms:GetChildren()) do
+                    local roomPart = partFor(room)
+                    if roomPart then
+                        local distance = (root.Position - roomPart.Position).Magnitude
+                        if distance <= 180 and (not nearestDistance or distance < nearestDistance) then
+                            for _, obj in ipairs(room:GetDescendants()) do
+                                if string.lower(obj.Name) == "gate" then
+                                    nearestRoom, nearestGate, nearestDistance = room, obj, distance
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+                return nearestRoom, nearestGate
+            end
+            local function playerIsInsideRoom(root, room)
+                if not root or not room then return false end
+                local nearest = math.huge
+                for _, obj in ipairs(room:GetDescendants()) do
+                    if obj:IsA("BasePart") then
+                        local distance = (root.Position - obj.Position).Magnitude
+                        if distance < nearest then nearest = distance end
+                    end
+                end
+                return nearest <= 35
+            end
+
+            pcall(function()
+                gateBox:AddToggle("FairwellDeleteGateToggle", {
+                    Text = "Delete Gate",
+                    Tooltip = "The same effect as just noclipping",
+                    Description = "The same effect as just noclipping",
+                    Risky = true,
+                    Default = false,
+                    Callback = function(enabled)
+                        env._FairwellDeleteGate = enabled == true
+                        setGateStatus(enabled and "armed; waiting for a Gate room" or "off")
+                    end
+                })
+            end)
+
+            task.spawn(function()
+                local handledRooms = setmetatable({}, {__mode = "k"})
+                while true do
+                    if not env._FairwellDeleteGate then
+                        handledRooms = setmetatable({}, {__mode = "k"})
+                    else
+                        local character = player.Character
+                        local root = character and character:FindFirstChild("HumanoidRootPart")
+                        local roomsFolder = workspace:FindFirstChild("CurrentRooms")
+                        if not root or not roomsFolder then
+                            setGateStatus("waiting for character/CurrentRooms")
+                        else
+                            local room, gate = getGateRoom(root)
+                            if room and gate and not handledRooms[room] and playerIsInsideRoom(root, room) then
+                                handledRooms[room] = true
+                                local ok = pcall(function() gate:Destroy() end)
+                                setGateStatus(ok and ("entered " .. room.Name .. "; Gate deleted") or ("could not delete Gate in " .. room.Name))
+                            end
+                        end
+                    end
+                    task.wait(0.2)
+                end
+            end)
+        end
+    end
+

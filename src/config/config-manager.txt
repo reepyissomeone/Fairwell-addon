@@ -1,0 +1,317 @@
+    -- Fairwell Config Manager
+    -- Stores Fairwell control values locally using the executor's file APIs.
+    -- Save creates a config and selects it for auto-load on the next run.
+    -- Override replaces an existing config with the current settings.
+    do
+        local configEnv = (getgenv and getgenv()) or _G
+        local HttpService = game:GetService("HttpService")
+        local configFolder = "FairwellConfigs"
+        local autoLoadPath = configFolder .. "/autoload.txt"
+        local configName = ""
+        local configPrefix = "Fairwell"
+        local configStatus
+        local configLibrary = configEnv.Library or configEnv.Obsidian or configEnv.UI_Library
+
+        local fileRead = (type(readfile) == "function" and readfile) or configEnv.readfile
+        local fileWrite = (type(writefile) == "function" and writefile) or configEnv.writefile
+        local fileIsFile = (type(isfile) == "function" and isfile) or configEnv.isfile
+        local fileIsFolder = (type(isfolder) == "function" and isfolder) or configEnv.isfolder
+        local fileMakeFolder = (type(makefolder) == "function" and makefolder) or configEnv.makefolder
+        local fileDelete = (type(delfile) == "function" and delfile) or configEnv.delfile
+
+        local function setConfigStatus(message)
+            if configStatus then
+                pcall(function() configStatus:SetText("Status: " .. tostring(message)) end)
+            end
+            print("[Fairwell Configs] " .. tostring(message))
+        end
+
+        local function cleanConfigName(raw)
+            raw = tostring(raw or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            raw = raw:gsub("[^%w_%-]", "_"):sub(1, 48)
+            return raw
+        end
+
+        local function ensureConfigFolder()
+            if type(fileIsFolder) == "function" and fileIsFolder(configFolder) then
+                return true
+            end
+            if type(fileMakeFolder) == "function" then
+                local ok = pcall(fileMakeFolder, configFolder)
+                if ok then return true end
+            end
+            -- Some executors allow writes to create folders implicitly; test this
+            -- by writing the actual config file instead of assuming folder creation.
+            return type(fileWrite) == "function"
+        end
+
+        local function configPath(name)
+            return configFolder .. "/" .. name .. ".json"
+        end
+
+        local function getRegistries()
+            local toggles = configEnv.Toggles or _G.Toggles or (configLibrary and configLibrary.Toggles) or Toggles or {}
+            local options = configEnv.Options or _G.Options or (configLibrary and configLibrary.Options) or Options or {}
+            return toggles, options
+        end
+
+        local function captureConfig()
+            local toggles, options = getRegistries()
+            local data = {Version = 1, Toggles = {}, Options = {}}
+            local function capture(registry, destination)
+                for key, control in pairs(registry) do
+                    if type(key) == "string"
+                        and string.sub(key, 1, #configPrefix) == configPrefix
+                        and string.sub(key, 1, 13) ~= "FairwellConfig"
+                        and type(control) == "table" then
+                        local value = control.Value
+                        if value ~= nil then
+                            destination[key] = value
+                        end
+                    end
+                end
+            end
+            capture(toggles, data.Toggles)
+            capture(options, data.Options)
+            return data
+        end
+
+        local function saveAutoLoadName(name)
+            if type(fileWrite) ~= "function" then
+                return false, "This executor does not provide writefile."
+            end
+            local ok, err = pcall(function() fileWrite(autoLoadPath, name) end)
+            if not ok then return false, tostring(err) end
+            return true
+        end
+
+        local function readAutoLoadName()
+            if type(fileRead) ~= "function" or type(fileIsFile) ~= "function" then return "" end
+            local exists = false
+            pcall(function() exists = fileIsFile(autoLoadPath) end)
+            if not exists then return "" end
+            local ok, value = pcall(fileRead, autoLoadPath)
+            if not ok then return "" end
+            return cleanConfigName(value)
+        end
+
+        local function writeConfig(name, allowOverwrite)
+            if type(fileWrite) ~= "function" or type(fileRead) ~= "function"
+                or type(fileIsFile) ~= "function" then
+                setConfigStatus("File saving is unavailable in this executor.")
+                return false
+            end
+            if not ensureConfigFolder() then
+                setConfigStatus("Could not create the config folder.")
+                return false
+            end
+            local path = configPath(name)
+            local exists = false
+            pcall(function() exists = fileIsFile(path) end)
+            if exists and not allowOverwrite then
+                setConfigStatus("Config already exists. Use Override Config to replace it.")
+                return false
+            end
+            local okEncode, encoded = pcall(function()
+                return HttpService:JSONEncode(captureConfig())
+            end)
+            if not okEncode then
+                setConfigStatus("Could not encode settings: " .. tostring(encoded))
+                return false
+            end
+            local okWrite, writeError = pcall(function() fileWrite(path, encoded) end)
+            if not okWrite then
+                setConfigStatus("Save failed: " .. tostring(writeError))
+                return false
+            end
+            local autoOk, autoError = saveAutoLoadName(name)
+            if not autoOk then
+                setConfigStatus("Config saved, but auto-load could not be set: " .. tostring(autoError))
+                return true
+            end
+            configName = name
+            setConfigStatus("Saved '" .. name .. "' and selected it for auto-load.")
+            return true
+        end
+
+        local function applyConfig(data)
+            if type(data) ~= "table" then return false, "Config data is invalid." end
+            local toggles, options = getRegistries()
+            local applied = 0
+            local function apply(registry, saved)
+                if type(saved) ~= "table" then return end
+                for key, value in pairs(saved) do
+                    local control = registry[key]
+                    if control and type(control) == "table" then
+                        local ok = false
+                        if type(control.SetValue) == "function" then
+                            ok = pcall(function() control:SetValue(value) end)
+                        end
+                        if not ok then
+                            ok = pcall(function() control.Value = value end)
+                        end
+                        if ok then applied += 1 end
+                    end
+                end
+            end
+            apply(toggles, data.Toggles)
+            apply(options, data.Options)
+            return true, applied
+        end
+
+        local function loadConfig(name, setAutoLoad)
+            if type(fileRead) ~= "function" or type(fileIsFile) ~= "function" then
+                setConfigStatus("File reading is unavailable in this executor.")
+                return false
+            end
+            local path = configPath(name)
+            local exists = false
+            pcall(function() exists = fileIsFile(path) end)
+            if not exists then
+                setConfigStatus("Config '" .. name .. "' was not found.")
+                return false
+            end
+            local okRead, raw = pcall(fileRead, path)
+            if not okRead then
+                setConfigStatus("Could not read config: " .. tostring(raw))
+                return false
+            end
+            local okDecode, data = pcall(function() return HttpService:JSONDecode(raw) end)
+            if not okDecode then
+                setConfigStatus("Config file is invalid JSON.")
+                return false
+            end
+            local okApply, countOrError = applyConfig(data)
+            if not okApply then
+                setConfigStatus("Load failed: " .. tostring(countOrError))
+                return false
+            end
+            if setAutoLoad then
+                local autoOk, autoError = saveAutoLoadName(name)
+                if not autoOk then
+                    setConfigStatus("Loaded config, but auto-load could not be set: " .. tostring(autoError))
+                    return true
+                end
+            end
+            configName = name
+            setConfigStatus("Loaded '" .. name .. "' (" .. tostring(countOrError) .. " settings applied).")
+            return true
+        end
+
+        local function deleteConfig(name)
+            if type(fileIsFile) ~= "function" or type(fileDelete) ~= "function" then
+                setConfigStatus("Delete is unavailable in this executor.")
+                return false
+            end
+            local path = configPath(name)
+            local exists = false
+            pcall(function() exists = fileIsFile(path) end)
+            if not exists then
+                setConfigStatus("Config '" .. name .. "' was not found.")
+                return false
+            end
+            local okDelete, deleteError = pcall(fileDelete, path)
+            if not okDelete then
+                setConfigStatus("Delete failed: " .. tostring(deleteError))
+                return false
+            end
+            if readAutoLoadName() == name then
+                if type(fileIsFile) == "function" then
+                    local markerExists = false
+                    pcall(function() markerExists = fileIsFile(autoLoadPath) end)
+                    if markerExists then pcall(fileDelete, autoLoadPath) end
+                end
+            end
+            setConfigStatus("Deleted '" .. name .. "'.")
+            return true
+        end
+
+        local configBox
+        pcall(function() configBox = tab:AddLeftGroupbox("Fairwell Configs", "save") end)
+        if not configBox then
+            pcall(function() configBox = tab:AddRightGroupbox("Fairwell Configs", "save") end)
+        end
+
+        local savedName = readAutoLoadName()
+        if savedName ~= "" then configName = savedName end
+        if configBox then
+            pcall(function()
+                configStatus = configBox:AddLabel({
+                    Text = "Status: enter a config name, then Save / Load / Override / Delete.",
+                    DoesWrap = true
+                })
+            end)
+            pcall(function()
+                configBox:AddInput("FairwellConfigName", {
+                    Text = "Config name",
+                    Default = configName,
+                    Placeholder = "e.g. MySetup",
+                    Callback = function(value)
+                        configName = cleanConfigName(value)
+                    end
+                })
+            end)
+            pcall(function()
+                configBox:AddButton({
+                    Text = "Save Config",
+                    Func = function()
+                        local name = cleanConfigName(configName)
+                        if name == "" then setConfigStatus("Enter a config name first."); return end
+                        writeConfig(name, false)
+                    end,
+                    Tooltip = "Create a config and automatically load it next run"
+                })
+            end)
+            pcall(function()
+                configBox:AddButton({
+                    Text = "Override Config",
+                    Func = function()
+                        local name = cleanConfigName(configName)
+                        if name == "" then setConfigStatus("Enter a config name first."); return end
+                        writeConfig(name, true)
+                    end,
+                    Tooltip = "Replace the named config with your current settings"
+                })
+            end)
+            pcall(function()
+                configBox:AddButton({
+                    Text = "Load Config",
+                    Func = function()
+                        local name = cleanConfigName(configName)
+                        if name == "" then setConfigStatus("Enter a config name first."); return end
+                        loadConfig(name, true)
+                    end,
+                    Tooltip = "Load this config now and use it on the next run"
+                })
+            end)
+            pcall(function()
+                configBox:AddButton({
+                    Text = "Delete Config",
+                    Func = function()
+                        local name = cleanConfigName(configName)
+                        if name == "" then setConfigStatus("Enter a config name first."); return end
+                        deleteConfig(name)
+                    end,
+                    Tooltip = "Permanently delete the named config"
+                })
+            end)
+            pcall(function()
+                configBox:AddLabel({
+                    Text = "Configs are stored locally in FairwellConfigs. Save selects a config for automatic loading on the next run. Use Override to replace an existing config.",
+                    DoesWrap = true
+                })
+            end)
+        else
+            warn("[Fairwell Configs] Could not create the config groupbox.")
+        end
+
+        -- Load the last saved/selected config only after all Fairwell controls exist.
+        if savedName ~= "" then
+            task.defer(function()
+                task.wait(0.25)
+                loadConfig(savedName, false)
+            end)
+        end
+    end
+
+end

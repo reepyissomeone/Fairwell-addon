@@ -1,0 +1,129 @@
+    -- Anti Groundskeeper: CFrame hover while enabled; automatically stays above detected ground.
+    local hoverOk, hoverBox = pcall(function()
+        return tab:AddRightGroupbox("Outdoors", "wind")
+    end)
+
+    if hoverOk and hoverBox then
+        local Players = game:GetService("Players")
+        local RunService = game:GetService("RunService")
+        local player = Players.LocalPlayer
+        local env = (getgenv and getgenv()) or _G
+        env._FairwellAntiGroundskeeper = false
+        local hoverConnection
+        local characterAddedConnection
+        local statusLabel
+        local lastStatus
+
+        pcall(function()
+            statusLabel = hoverBox:AddLabel({Text = "Status: off", DoesWrap = true})
+        end)
+
+        local function status(message)
+            if message == lastStatus then return end
+            lastStatus = message
+            if statusLabel then
+                pcall(function() statusLabel:SetText("Status: " .. message) end)
+            end
+        end
+
+        local function stopHover()
+            if hoverConnection then hoverConnection:Disconnect(); hoverConnection = nil end
+            status("off")
+        end
+
+        local function startHover()
+            stopHover()
+            local character = player.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if not root or not humanoid then
+                status("waiting for character")
+                return
+            end
+
+            local rayParams = RaycastParams.new()
+            rayParams.FilterType = Enum.RaycastFilterType.Exclude
+            rayParams.FilterDescendantsInstances = {character}
+            local hoverHeight = 3.0
+            local baseY = root.Position.Y
+            local horizontalVelocity = Vector3.zero
+            local lastGroundY
+
+            hoverConnection = RunService.Heartbeat:Connect(function(dt)
+                if not env._FairwellAntiGroundskeeper then stopHover(); return end
+                if not character.Parent or not root.Parent or not humanoid.Parent or humanoid.Health <= 0 then
+                    status("waiting for character")
+                    return
+                end
+
+                -- CFrame movement bypasses the need to jump to gain clearance.
+                -- Raycast downward to maintain a consistent gap above the surface.
+                local result = workspace:Raycast(root.Position, Vector3.new(0, -22, 0), rayParams)
+                if not result then
+                    status("no ground detected")
+                    return
+                end
+
+                local material = result.Material and result.Material.Name or ""
+                local node = result.Instance
+                local grassName = false
+                for _ = 1, 5 do
+                    if not node then break end
+                    if string.find(string.lower(node.Name), "grass", 1, true) then
+                        grassName = true
+                        break
+                    end
+                    node = node.Parent
+                end
+
+                -- Also check nearby grass parts for maps with separate grass visuals.
+                local isGrass = material == "Grass" or material == "LeafyGrass" or grassName
+                if not isGrass then
+                    for _, instance in ipairs(workspace:GetDescendants()) do
+                        if instance:IsA("BasePart") and string.find(string.lower(instance.Name), "grass", 1, true)
+                            and (instance.Position - root.Position).Magnitude <= 9
+                            and math.abs(instance.Position.Y - result.Position.Y) <= 5 then
+                            isGrass = true
+                            break
+                        end
+                    end
+                end
+
+                if isGrass then
+                    local targetY = result.Position.Y + humanoid.HipHeight + (root.Size.Y * 0.5) + hoverHeight
+                    local current = root.Position
+                    local alpha = math.clamp(dt * 12, 0, 1)
+                    local newY = current.Y + (targetY - current.Y) * alpha
+                    -- Preserve the character's current facing and horizontal position.
+                    character:PivotTo(CFrame.new(current.X, newY, current.Z) * (root.CFrame - root.Position))
+                    -- Cancel vertical momentum so the character doesn't fall back onto the grass.
+                    local velocity = root.AssemblyLinearVelocity
+                    root.AssemblyLinearVelocity = Vector3.new(velocity.X, 0, velocity.Z)
+                    status("CFrame hovering above grass")
+                    lastGroundY = result.Position.Y
+                else
+                    status("ground detected; grass not identified")
+                end
+            end)
+        end
+
+        pcall(function()
+            hoverBox:AddToggle("FairwellAntiGroundskeeperToggle", {
+                Text = "Anti Groundskeeper",
+                Default = false,
+                Callback = function(enabled)
+                    env._FairwellAntiGroundskeeper = enabled == true
+                    if enabled then startHover() else stopHover() end
+                end
+            })
+        end)
+
+        characterAddedConnection = player.CharacterAdded:Connect(function()
+            if env._FairwellAntiGroundskeeper then
+                task.wait(1)
+                startHover()
+            end
+        end)
+    end
+
+

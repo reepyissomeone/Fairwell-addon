@@ -1,0 +1,217 @@
+    -- Auto Giggle Glowstick: equips and throws a real Glowstick toward a nearby Giggle.
+    -- This uses the normal Tool activation path; it does not fire arbitrary remotes.
+    local gigglePlayers = game:GetService("Players")
+    local giggleRunService = game:GetService("RunService")
+    local gigglePlayer = gigglePlayers.LocalPlayer
+    local giggleEnv = (getgenv and getgenv()) or _G
+    if giggleEnv._FairwellAutoGiggleGlowstickState then
+        giggleEnv._FairwellAutoGiggleGlowstickState.running = false
+    end
+    local giggleState = {running = true, enabled = false}
+    giggleEnv._FairwellAutoGiggleGlowstickState = giggleState
+
+    local giggleBox
+    pcall(function()
+        giggleBox = tab:AddRightGroupbox("The Mines", "target")
+    end)
+
+    if giggleBox then
+        local giggleStatus
+        local lastGiggleThrow = 0
+        local busy = false
+        local statusText = ""
+
+        local function setGiggleStatus(message)
+            if message == statusText then return end
+            statusText = message
+            if giggleStatus then pcall(function() giggleStatus:SetText("Status: " .. message) end) end
+        end
+
+        pcall(function()
+            giggleStatus = giggleBox:AddLabel({Text = "Status: off", DoesWrap = true})
+        end)
+        pcall(function()
+            giggleBox:AddLabel({
+                Text = "Locks the camera onto a nearby Giggle and rapidly throws Glowsticks. Stops when inventory is empty, target disappears, or the safety limit is reached.",
+                DoesWrap = true
+            })
+        end)
+
+        local function isGiggleModel(model)
+            if not model or not model:IsA("Model") then return false end
+            local name = string.lower(model.Name)
+            return string.find(name, "giggle", 1, true) ~= nil
+                and string.find(name, "dead", 1, true) == nil
+                and string.find(name, "corpse", 1, true) == nil
+        end
+
+        local function modelAimPart(model)
+            if not model then return nil end
+            return model.PrimaryPart
+                or model:FindFirstChild("Head", true)
+                or model:FindFirstChild("HumanoidRootPart", true)
+                or model:FindFirstChildWhichIsA("BasePart", true)
+        end
+
+        local function findNearestGiggle(root)
+            local bestModel, bestPart, bestDistance
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if isGiggleModel(obj) then
+                    local part = modelAimPart(obj)
+                    if part and part:IsDescendantOf(workspace) then
+                        local distance = (part.Position - root.Position).Magnitude
+                        if distance <= 65 and (not bestDistance or distance < bestDistance) then
+                            bestModel, bestPart, bestDistance = obj, part, distance
+                        end
+                    end
+                end
+            end
+            return bestModel, bestPart, bestDistance
+        end
+
+        local function findGlowstick(character, humanoid)
+            local backpack = gigglePlayer:FindFirstChildOfClass("Backpack")
+            if character then
+                for _, item in ipairs(character:GetChildren()) do
+                    if item:IsA("Tool") and string.find(string.lower(item.Name), "glowstick", 1, true) then
+                        return item
+                    end
+                end
+            end
+            if backpack then
+                for _, item in ipairs(backpack:GetChildren()) do
+                    if item:IsA("Tool") and string.find(string.lower(item.Name), "glowstick", 1, true) then
+                        return item
+                    end
+                end
+            end
+            return nil
+        end
+
+        local function countGlowsticks(character)
+            local count = 0
+            local backpack = gigglePlayer:FindFirstChildOfClass("Backpack")
+            for _, container in ipairs({character, backpack}) do
+                if container then
+                    for _, item in ipairs(container:GetChildren()) do
+                        if item:IsA("Tool") and string.find(string.lower(item.Name), "glowstick", 1, true) then count += 1 end
+                    end
+                end
+            end
+            return count
+        end
+
+        local function throwAtGiggle(tool, character, humanoid, targetPart)
+            if busy or not tool or not targetPart or not targetPart.Parent then return false end
+            busy = true
+            local camera = workspace.CurrentCamera
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            local oldCameraCFrame = camera and camera.CFrame
+            local oldCameraType = camera and camera.CameraType
+            local oldAutoRotate = humanoid and humanoid.AutoRotate
+            local lockConnection
+            local ok, err = pcall(function()
+                if tool.Parent ~= character then humanoid:EquipTool(tool) end
+                task.wait(0.12)
+                if tool.Parent ~= character then error("Glowstick did not equip") end
+                local folder = character:FindFirstChild("Glowsticks")
+                local remote = folder and folder:FindFirstChild("Remote")
+                if not (remote and remote:IsA("RemoteEvent")) then remote = tool:FindFirstChild("Remote", true) end
+                if not (remote and remote:IsA("RemoteEvent")) then error("Glowsticks Remote not found") end
+                if not root or not root:IsA("BasePart") then error("HumanoidRootPart not found") end
+
+                -- Face the target with the complete character pivot before sending the normal
+                -- Glowsticks request. This is the strongest client-side rotation attempt, but
+                -- the game server may still override it if character rotation is server-owned.
+                humanoid.AutoRotate = false
+                local lastFacing = nil
+                local function faceTarget()
+                    if not targetPart.Parent or not root.Parent or not character.Parent then return end
+                    local pos = root.Position
+                    local target = targetPart.Position
+                    local flatTarget = Vector3.new(target.X, pos.Y, target.Z)
+                    local delta = flatTarget - pos
+                    if delta.Magnitude > 0.05 then
+                        local facing = CFrame.lookAt(pos, flatTarget)
+                        local currentPivot = character:GetPivot()
+                        local rootToPivot = root.CFrame:ToObjectSpace(currentPivot)
+                        character:PivotTo(facing * rootToPivot)
+                        lastFacing = facing
+                    end
+                    if camera then
+                        camera.CameraType = Enum.CameraType.Scriptable
+                        local lookFrom = root.Position - root.CFrame.LookVector * 8 + Vector3.new(0, 3.5, 0)
+                        camera.CFrame = CFrame.lookAt(lookFrom, target)
+                    end
+                end
+                faceTarget()
+                lockConnection = giggleRunService.RenderStepped:Connect(faceTarget)
+
+                -- Let the rotation replicate for a brief moment before using the game's normal throw.
+                task.wait(0.18)
+                local started, throws = os.clock(), 0
+                while giggleState.enabled and targetPart.Parent and countGlowsticks(character) > 0
+                    and throws < 40 and os.clock() - started < 5 do
+                    faceTarget()
+                    remote:FireServer()
+                    throws += 1
+                    task.wait(0.09)
+                end
+                setGiggleStatus("faced target locally; sent " .. throws .. " throw requests. Server-visible facing depends on DOORS replication.")
+            end)
+            if lockConnection then pcall(function() lockConnection:Disconnect() end) end
+            if humanoid and humanoid.Parent and oldAutoRotate ~= nil then
+                pcall(function() humanoid.AutoRotate = oldAutoRotate end)
+            end
+            if camera and oldCameraCFrame and camera.Parent then
+                pcall(function()
+                    if oldCameraType then camera.CameraType = oldCameraType end
+                    camera.CFrame = oldCameraCFrame
+                end)
+            end
+            busy = false
+            if not ok then setGiggleStatus("throw attempt failed: " .. tostring(err)); return false end
+            lastGiggleThrow = os.clock()
+            return true
+        end
+
+        pcall(function()
+            giggleBox:AddToggle("FairwellAutoGiggleGlowstick", {
+                Text = "Auto-throw Glowsticks at Giggles",
+                Default = false,
+                Callback = function(enabled)
+                    giggleState.enabled = enabled == true
+                    setGiggleStatus(giggleState.enabled and "searching for Giggle" or "off")
+                end
+            })
+        end)
+
+        task.spawn(function()
+            while giggleState.running do
+                task.wait(0.25)
+                if giggleState.enabled and not busy then
+                    local character = gigglePlayer.Character
+                    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                    local root = character and character:FindFirstChild("HumanoidRootPart")
+                    if not character or not humanoid or humanoid.Health <= 0 or not root then
+                        setGiggleStatus("waiting for living character")
+                    elseif os.clock() - lastGiggleThrow < 1.8 then
+                        -- Prevent repeated activation while the throw animation/item state settles.
+                    else
+                        local model, part, distance = findNearestGiggle(root)
+                        if not model or not part then
+                            setGiggleStatus("enabled; no Giggle detected within 65 studs")
+                        else
+                            local tool = findGlowstick(character, humanoid)
+                            if not tool then
+                                setGiggleStatus(string.format("Giggle %.0f studs away; no Glowstick in inventory", distance))
+                            else
+                                throwAtGiggle(tool, character, humanoid, part)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+

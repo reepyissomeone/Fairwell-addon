@@ -3,7 +3,7 @@
 -- All Fairwell controls are translated into the standard Addon Elements list.
 -- Gameplay logic remains in Fairwell_Content.txt so updates can be made centrally.
 
-local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=native-addon-20261018"
+local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=organized-source-20261018"
 local elements = {}
 local usedNames = {}
 local buildFailed = nil
