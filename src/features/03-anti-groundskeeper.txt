@@ -1,0 +1,247 @@
+    -- Anti-Creak Survival Assist:
+    -- Creak behavior documented by the community is gaze/proximity-sensitive.
+    -- This is local detection and coaching only; it does not modify shared/server AI.
+    local antiCreakEnv = (getgenv and getgenv()) or _G
+    if antiCreakEnv._FairwellAntiCreakState then
+        antiCreakEnv._FairwellAntiCreakState.running = false
+        local oldHighlight = antiCreakEnv._FairwellAntiCreakState.highlight
+        if oldHighlight then pcall(function() oldHighlight:Destroy() end) end
+    end
+
+    local antiCreakState = {
+        running = true,
+        enabled = false,
+        highlight = nil
+    }
+    antiCreakEnv._FairwellAntiCreakState = antiCreakState
+
+    local antiCreakBox
+    pcall(function()
+        antiCreakBox = stairwellBox
+    end)
+
+    if antiCreakBox then
+        local Players = game:GetService("Players")
+        local RunService = game:GetService("RunService")
+        local localPlayer = Players.LocalPlayer
+        local statusLabel
+        local lastStatusText = ""
+        local lastNotifiedText = ""
+        local lastNotifyTime = 0
+        local trackedModel = nil
+        local trackedPart = nil
+        local previousDistance = nil
+        local previousSampleAt = 0
+        local gazeStartedAt = nil
+        local lastScanAt = 0
+        local rayParams = RaycastParams.new()
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+        pcall(function()
+            statusLabel = antiCreakBox:AddLabel({
+                Text = "Status: off",
+                DoesWrap = true
+            })
+        end)
+
+        pcall(function()
+            antiCreakBox:AddLabel({
+                Text = "Local survival assist: highlights Creak, warns about close range, prolonged eye contact, and a fast approach. It does not freeze or alter server AI.",
+                DoesWrap = true
+            })
+        end)
+
+        local function setAntiCreakStatus(message)
+            if message == lastStatusText then return end
+            lastStatusText = message
+            if statusLabel then
+                pcall(function() statusLabel:SetText("Status: " .. message) end)
+            end
+        end
+
+        local function findCreakPart(model)
+            if not model or not model:IsA("Model") then return nil end
+            return model.PrimaryPart
+                or model:FindFirstChild("HumanoidRootPart", true)
+                or model:FindFirstChild("Root", true)
+                or model:FindFirstChildWhichIsA("BasePart", true)
+        end
+
+        local function findNearestCreak(root)
+            local bestModel, bestPart, bestDistance
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("Model") and string.find(string.lower(obj.Name), "creak", 1, true) then
+                    local part = findCreakPart(obj)
+                    if part and part:IsDescendantOf(workspace) then
+                        local distance = (part.Position - root.Position).Magnitude
+                        if distance <= 300 and (not bestDistance or distance < bestDistance) then
+                            bestModel, bestPart, bestDistance = obj, part, distance
+                        end
+                    end
+                end
+            end
+            return bestModel, bestPart, bestDistance
+        end
+
+        local highlightedModel = nil
+
+        local function clearCreakHighlight()
+            if antiCreakState.highlight then
+                pcall(function() antiCreakState.highlight:Destroy() end)
+                antiCreakState.highlight = nil
+            end
+            highlightedModel = nil
+        end
+
+        local function updateCreakHighlight(model, danger)
+            if highlightedModel ~= model then
+                clearCreakHighlight()
+                highlightedModel = model
+                if model then
+                    local highlight = Instance.new("Highlight")
+                    highlight.Name = "FairwellAntiCreakHighlight"
+                    highlight.Adornee = model
+                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    highlight.FillTransparency = 0.78
+                    highlight.OutlineTransparency = 0
+                    highlight.Parent = game:GetService("CoreGui")
+                    antiCreakState.highlight = highlight
+                end
+            end
+            local highlight = antiCreakState.highlight
+            if highlight then
+                pcall(function()
+                    highlight.FillColor = danger and Color3.fromRGB(255, 55, 55) or Color3.fromRGB(80, 210, 255)
+                    highlight.OutlineColor = danger and Color3.fromRGB(255, 55, 55) or Color3.fromRGB(230, 245, 255)
+                    highlight.Enabled = model ~= nil
+                end)
+            end
+        end
+
+        local function notifyCreak(message, urgent)
+            local now = os.clock()
+            if message == lastNotifiedText and now - lastNotifyTime < 6 then return end
+            if now - lastNotifyTime < (urgent and 2.5 or 5) then return end
+            lastNotifiedText = message
+            lastNotifyTime = now
+            pcall(function()
+                if tab and tab.Notify then
+                    tab:Notify({
+                        Title = urgent and "ANTI-CREAK: DANGER" or "ANTI-CREAK",
+                        Description = message,
+                        Time = urgent and 5 or 4
+                    })
+                end
+            end)
+        end
+
+        pcall(function()
+            antiCreakBox:AddToggle("FairwellAntiCreakSurvival", {
+                Text = "Anti-Creak Survival Assist",
+                Default = false,
+                Callback = function(enabled)
+                    antiCreakState.enabled = enabled == true
+                    gazeStartedAt = nil
+                    previousDistance = nil
+                    previousSampleAt = 0
+                    lastNotifiedText = ""
+                    if not antiCreakState.enabled then
+                        trackedModel = nil
+                        trackedPart = nil
+                        clearCreakHighlight()
+                        setAntiCreakStatus("off")
+                    else
+                        setAntiCreakStatus("scanning for Creak")
+                    end
+                end
+            })
+        end)
+
+        task.spawn(function()
+            while antiCreakState.running do
+                task.wait(0.2)
+                if antiCreakState.enabled then
+                    local character = localPlayer.Character
+                    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                    local root = character and character:FindFirstChild("HumanoidRootPart")
+                    local camera = workspace.CurrentCamera
+
+                    if not character or not root or not humanoid or humanoid.Health <= 0 or not camera then
+                        trackedModel = nil
+                        trackedPart = nil
+                        gazeStartedAt = nil
+                        previousDistance = nil
+                        clearCreakHighlight()
+                        setAntiCreakStatus("waiting for a living character")
+                    else
+                        rayParams.FilterDescendantsInstances = {character}
+                        local now = os.clock()
+                        if now - lastScanAt >= 0.8 or (trackedModel and not trackedModel.Parent) then
+                            trackedModel, trackedPart = findNearestCreak(root)
+                            lastScanAt = now
+                        end
+
+                        if not trackedModel or not trackedPart or not trackedPart.Parent then
+                            trackedModel = nil
+                            trackedPart = nil
+                            gazeStartedAt = nil
+                            previousDistance = nil
+                            clearCreakHighlight()
+                            setAntiCreakStatus("enabled; Creak not detected within 300 studs")
+                        else
+                            local distance = (trackedPart.Position - root.Position).Magnitude
+                            local cameraOffset = trackedPart.Position - camera.CFrame.Position
+                            local lookingAtCreak = false
+                            if cameraOffset.Magnitude > 0 then
+                                local dot = camera.CFrame.LookVector:Dot(cameraOffset.Unit)
+                                if dot >= 0.94 then
+                                    local result = workspace:Raycast(camera.CFrame.Position, cameraOffset, rayParams)
+                                    lookingAtCreak = result ~= nil and result.Instance ~= nil
+                                        and (result.Instance == trackedModel or result.Instance:IsDescendantOf(trackedModel))
+                                end
+                            end
+
+                            if lookingAtCreak then
+                                gazeStartedAt = gazeStartedAt or now
+                            else
+                                gazeStartedAt = nil
+                            end
+
+                            local dt = previousSampleAt > 0 and (now - previousSampleAt) or 0
+                            local closingSpeed = 0
+                            if previousDistance and dt > 0 then
+                                closingSpeed = (previousDistance - distance) / dt
+                            end
+                            previousDistance = distance
+                            previousSampleAt = now
+
+                            local danger = false
+                            local status = string.format("Creak detected - %.0f studs away", distance)
+                            if distance <= 12 then
+                                danger = true
+                                status = string.format("DANGER: Creak is very close (%.0f studs); create distance", distance)
+                                notifyCreak("Creak is dangerously close. Create distance and do not chase it.", true)
+                            elseif closingSpeed >= 11 and distance <= 45 then
+                                danger = true
+                                status = string.format("DANGER: Creak closing quickly (%.0f studs; %.0f studs/s)", distance, closingSpeed)
+                                notifyCreak("Creak is closing quickly. Be ready to turn and face it if it rushes or sneaks up behind you.", true)
+                            elseif gazeStartedAt and now - gazeStartedAt >= 2.5 then
+                                danger = true
+                                status = string.format("prolonged eye contact (%.1fs) - break the stare", now - gazeStartedAt)
+                                notifyCreak("You've been staring at Creak. Break eye contact briefly; don't chase it or stay too close.", false)
+                            elseif distance <= 24 then
+                                status = string.format("Creak nearby (%.0f studs) - avoid crowding it", distance)
+                            elseif lookingAtCreak then
+                                status = string.format("Creak visible (%.0f studs) - keep glances brief", distance)
+                            end
+
+                            updateCreakHighlight(trackedModel, danger)
+                            setAntiCreakStatus(status)
+                        end
+                    end
+                end
+            end
+            clearCreakHighlight()
+        end)
+    end
+
