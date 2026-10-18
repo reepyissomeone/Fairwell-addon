@@ -1,5 +1,5 @@
--- Fairwell Heaven: add a tab to the existing MSDoors window
--- This addon does NOT create a separate window.
+-- Fairwell Heaven: direct-running script for the existing MSDoors window
+-- This script does NOT create a separate window.
 -- No global theme/color changes are applied to MSDoors.
 -- Remote content lives in Fairwell_Content.txt so it can be updated independently.
 
@@ -126,15 +126,32 @@ local function loadRemoteContent()
     return true
 end
 
-if not loadRemoteContent() then
+local contentLoaded = loadRemoteContent()
+if not contentLoaded then
     local fallbackOk, fallback = pcall(function()
-        return tab:AddLeftGroupbox("Fairwell Heaven", "sparkles")
+        return tab:AddLeftGroupbox("Fairwell Loader", "alert-circle")
     end)
     if fallbackOk and fallback then
+        local statusLabel
         pcall(function()
-            fallback:AddLabel({Text = "Remote content failed to load. Check the console and run the addon again.", DoesWrap = true})
+            statusLabel = fallback:AddLabel({
+                Text = "Fairwell features did not finish loading. Check the executor console, then retry below.",
+                DoesWrap = true
+            })
+        end)
+        pcall(function()
+            fallback:AddButton({
+                Text = "Retry Loading Fairwell",
+                Func = function()
+                    local retried = loadRemoteContent()
+                    if retried and statusLabel and type(statusLabel.SetText) == "function" then
+                        pcall(function() statusLabel:SetText("Fairwell features loaded successfully.") end)
+                    end
+                end
+            })
         end)
     end
+    warn("[Fairwell] The tab was created, but its feature content did not load.")
+else
+    print("[Fairwell] Fairwell tab and feature content loaded successfully.")
 end
-
-print("[Fairwell] Stylish Fairwell tab added to MSDoors. No global theming applied.")
