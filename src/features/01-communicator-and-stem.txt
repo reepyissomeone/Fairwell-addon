@@ -1,0 +1,485 @@
+-- Fairwell Heaven DOORS features for MSDoors
+-- Remote content file. Only gameplay features are shown in this tab.
+
+return function(tab, reloadContent, hotelTab)
+    if not tab then return end
+
+    -- Fairwell Communicator: automatically grant to the configured developer.
+    -- No addon groupbox or custom ScreenGui is created. Tool activation cycles its
+    -- built-in command modes and updates the physical communicator screen.
+    do
+        local Players = game:GetService("Players")
+        local TweenService = game:GetService("TweenService")
+        local RunService = game:GetService("RunService")
+        local localPlayer = Players.LocalPlayer
+        local allowedUserId = 11412884109
+
+        local function grantCommunicator()
+            if not localPlayer or localPlayer.UserId ~= allowedUserId then
+                if localPlayer then
+                    warn("[Fairwell Communicator] Auto-grant skipped: UserId does not match.")
+                end
+                return
+            end
+
+            local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+                or localPlayer:WaitForChild("Backpack", 10)
+            if not backpack then
+                warn("[Fairwell Communicator] Backpack not ready; could not grant item.")
+                return
+            end
+
+            local character = localPlayer.Character
+            local existing = backpack:FindFirstChild("Fairwell Communicator")
+                or (character and character:FindFirstChild("Fairwell Communicator"))
+            if existing then
+                print("[Fairwell Communicator] Already in inventory.")
+                return
+            end
+
+            local tool = Instance.new("Tool")
+            tool.Name = "Fairwell Communicator"
+            tool.ToolTip = "Tap/use to inspect and cycle communicator commands"
+            tool.RequiresHandle = true
+            tool.CanBeDropped = false
+            -- Keep the tool equipped for normal item controls, but let its visible device float
+            -- in front of the player instead of forcing the arm into a presentation pose.
+            tool.Grip = CFrame.new(0, 0.10, -0.34)
+                * CFrame.Angles(0, math.rad(180), 0)
+
+            local handle = Instance.new("Part")
+            handle.Name = "Handle"
+            handle.Size = Vector3.new(0.72, 1.12, 0.16)
+            handle.Color = Color3.fromRGB(16, 13, 55)
+            handle.Material = Enum.Material.SmoothPlastic
+            handle.CanCollide = false
+            handle.CanTouch = false
+            handle.CanQuery = false
+            handle.Massless = true
+            handle.Parent = tool
+
+            local function detail(name, size, offset, color, material)
+                local part = Instance.new("Part")
+                part.Name = name
+                part.Size = size
+                part.Color = color
+                part.Material = material or Enum.Material.Neon
+                part.CanCollide = false
+                part.CanTouch = false
+                part.CanQuery = false
+                part.Massless = true
+                part.CFrame = handle.CFrame * offset
+                part.Parent = tool
+                local weld = Instance.new("WeldConstraint")
+                weld.Part0 = handle
+                weld.Part1 = part
+                weld.Parent = part
+                return part
+            end
+
+            detail("BlueBezel", Vector3.new(0.55, 0.72, 0.035),
+                CFrame.new(0, 0.12, -0.095), Color3.fromRGB(27, 147, 227), Enum.Material.SmoothPlastic)
+            local screen = detail("CyanScreen", Vector3.new(0.46, 0.62, 0.018),
+                CFrame.new(0, 0.12, -0.122), Color3.fromRGB(35, 185, 255), Enum.Material.Neon)
+            detail("ScreenHeader", Vector3.new(0.36, 0.025, 0.012),
+                CFrame.new(0, 0.39, -0.136), Color3.fromRGB(190, 245, 255), Enum.Material.Neon)
+            detail("BottomButton", Vector3.new(0.18, 0.065, 0.03),
+                CFrame.new(0, -0.43, -0.105), Color3.fromRGB(27, 147, 227), Enum.Material.Neon)
+            detail("LeftButton", Vector3.new(0.055, 0.11, 0.03),
+                CFrame.new(-0.26, -0.39, -0.105), Color3.fromRGB(70, 110, 230), Enum.Material.Neon)
+            detail("RightButton", Vector3.new(0.055, 0.11, 0.03),
+                CFrame.new(0.26, -0.39, -0.105), Color3.fromRGB(70, 110, 230), Enum.Material.Neon)
+            local statusLight = detail("StatusLight", Vector3.new(0.07, 0.035, 0.025),
+                CFrame.new(0.23, 0.48, -0.105), Color3.fromRGB(110, 255, 180), Enum.Material.Neon)
+
+            local screenGui = Instance.new("SurfaceGui")
+            screenGui.Name = "CommunicatorDisplay"
+            screenGui.Face = Enum.NormalId.Front
+            screenGui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+            screenGui.PixelsPerStud = 180
+            screenGui.LightInfluence = 0
+            screenGui.Parent = screen
+
+            local displayText = Instance.new("TextLabel")
+            displayText.Name = "CommandText"
+            displayText.Size = UDim2.fromScale(1, 1)
+            displayText.BackgroundColor3 = Color3.fromRGB(6, 4, 43)
+            displayText.BackgroundTransparency = 0.05
+            displayText.BorderSizePixel = 0
+            displayText.TextColor3 = Color3.fromRGB(220, 250, 255)
+            displayText.TextScaled = true
+            displayText.Font = Enum.Font.GothamBold
+            displayText.TextWrapped = true
+            displayText.Text = "FAIRWELL\nREADY"
+            displayText.Parent = screenGui
+
+            local modes = {
+                {name = "STATUS", reply = "CHECKING STATUS"},
+                {name = "PING", reply = "PINGING NEARBY"},
+                {name = "HELP", reply = "COMMAND GUIDE"},
+                {name = "SCAN", reply = "SCANNING AREA"},
+            }
+            local modeIndex = 1
+            local equipped = false
+            local preAnimationConnection
+            local preSimulationConnection
+            local equipConnection
+            local unequipConnection
+            local activateConnection
+            local originalGrip = tool.Grip
+            local rightShoulder
+            local rightElbow
+            local shoulderBaseTransform
+            local elbowBaseTransform
+            local animationStartedAt = 0
+            local inspectStartedAt = nil
+            local inspectDuration = 1.15
+            local inspectGripOffset = CFrame.new(0, 0.12, -0.12)
+
+            local function currentRoomLabel()
+                local rooms = workspace:FindFirstChild("CurrentRooms")
+                if rooms then
+                    local latest
+                    for _, room in ipairs(rooms:GetChildren()) do
+                        local number = tonumber(room.Name)
+                        if number and (not latest or number > latest) then latest = number end
+                    end
+                    if latest then return "ROOM " .. tostring(latest) end
+                end
+                return "ROOM UNKNOWN"
+            end
+
+            local function findNearbyEntity()
+                local characterNow = localPlayer.Character
+                local root = characterNow and characterNow:FindFirstChild("HumanoidRootPart")
+                if not root then return nil, nil end
+                local bestName, bestDistance
+                for _, object in ipairs(workspace:GetDescendants()) do
+                    if object:IsA("Model") then
+                        local name = string.lower(object.Name)
+                        local isEntity = string.find(name, "rush", 1, true)
+                            or string.find(name, "ambush", 1, true)
+                            or string.find(name, "screech", 1, true)
+                            or string.find(name, "seek", 1, true)
+                            or string.find(name, "eyes", 1, true)
+                            or string.find(name, "figure", 1, true)
+                            or string.find(name, "giggle", 1, true)
+                            or string.find(name, "grumble", 1, true)
+                        local part = object.PrimaryPart
+                            or object:FindFirstChild("HumanoidRootPart", true)
+                            or object:FindFirstChildWhichIsA("BasePart", true)
+                        if isEntity and part and part:IsDescendantOf(workspace) then
+                            local distance = (part.Position - root.Position).Magnitude
+                            if not bestDistance or distance < bestDistance then
+                                bestName, bestDistance = object.Name, distance
+                            end
+                        end
+                    end
+                end
+                return bestName, bestDistance
+            end
+
+            local function executeMode()
+                local mode = modes[modeIndex]
+                local characterNow = localPlayer.Character
+                local humanoid = characterNow and characterNow:FindFirstChildOfClass("Humanoid")
+                local reply
+                if mode.name == "STATUS" then
+                    local health = humanoid and math.floor(humanoid.Health + 0.5) or 0
+                    local maxHealth = humanoid and math.floor(humanoid.MaxHealth + 0.5) or 0
+                    reply = currentRoomLabel() .. "\\nHP " .. tostring(health) .. "/" .. tostring(maxHealth)
+                elseif mode.name == "PING" then
+                    local entityName, distance = findNearbyEntity()
+                    if entityName and distance then
+                        reply = entityName .. " / " .. tostring(math.floor(distance + 0.5)) .. " STUDS"
+                    else
+                        reply = "NO ENTITY SIGNAL"
+                    end
+                elseif mode.name == "HELP" then
+                    reply = "STATUS: HP/ROOM\\nPING: NEAREST ENTITY\\nSCAN: AREA CHECK"
+                elseif mode.name == "SCAN" then
+                    local entityName, distance = findNearbyEntity()
+                    if entityName and distance then
+                        reply = "FOUND " .. string.upper(entityName) .. "\\nDIST " .. tostring(math.floor(distance + 0.5)) .. " STUDS"
+                    else
+                        reply = "AREA CLEAR\\nNO KNOWN ENTITY"
+                    end
+                end
+                modes[modeIndex].reply = reply or "COMMAND FAILED"
+                displayText.Text = "FW / " .. mode.name .. "\\n" .. modes[modeIndex].reply
+                print("[Fairwell Communicator] Executed " .. mode.name .. ": " .. modes[modeIndex].reply:gsub("\\n", " | "))
+            end
+
+            local function findJoint(characterNow, jointName)
+                if not characterNow then return nil end
+                for _, object in ipairs(characterNow:GetDescendants()) do
+                    if object:IsA("Motor6D") and object.Name == jointName then
+                        return object
+                    end
+                end
+                return nil
+            end
+
+            local function stopHoldingPose()
+                equipped = false
+                if preAnimationConnection then preAnimationConnection:Disconnect(); preAnimationConnection = nil end
+                if preSimulationConnection then preSimulationConnection:Disconnect(); preSimulationConnection = nil end
+                if rightShoulder and rightShoulder.Parent and shoulderBaseTransform then
+                    rightShoulder.Transform = shoulderBaseTransform
+                end
+                if rightElbow and rightElbow.Parent and elbowBaseTransform then
+                    rightElbow.Transform = elbowBaseTransform
+                end
+                rightShoulder, rightElbow = nil, nil
+                shoulderBaseTransform, elbowBaseTransform = nil, nil
+            end
+
+            -- A local anchored display floats in front of the camera while equipped.
+            -- The Tool remains equipped only to receive the game's normal Use input.
+            local floatModel
+            local floatConnection
+            local function clearFloatDisplay()
+                if floatConnection then floatConnection:Disconnect(); floatConnection = nil end
+                if floatModel then floatModel:Destroy(); floatModel = nil end
+            end
+            local function makeFloatDisplay()
+                clearFloatDisplay()
+                floatModel = Instance.new("Model")
+                floatModel.Name = "FairwellCommunicatorFloatingDisplay"
+                floatModel.Parent = workspace
+
+                local function floatPart(name, size, color, material, offset)
+                    local part = Instance.new("Part")
+                    part.Name = name
+                    part.Size = size
+                    part.Color = color
+                    part.Material = material or Enum.Material.SmoothPlastic
+                    part.Anchored = true
+                    part.CanCollide = false
+                    part.CanTouch = false
+                    part.CanQuery = false
+                    part.CastShadow = false
+                    part.Massless = true
+                    part.Parent = floatModel
+                    part:SetAttribute("FloatOffset", offset)
+                    return part
+                end
+
+                local body = floatPart("Body", Vector3.new(0.72, 1.12, 0.16),
+                    Color3.fromRGB(16, 13, 55), Enum.Material.SmoothPlastic, CFrame.new())
+                local bezel = floatPart("BlueBezel", Vector3.new(0.55, 0.72, 0.035),
+                    Color3.fromRGB(27, 147, 227), Enum.Material.SmoothPlastic, CFrame.new(0, 0.12, -0.095))
+                local screenPart = floatPart("CyanScreen", Vector3.new(0.46, 0.62, 0.018),
+                    Color3.fromRGB(35, 185, 255), Enum.Material.Neon, CFrame.new(0, 0.12, -0.122))
+                floatPart("ScreenHeader", Vector3.new(0.36, 0.025, 0.012),
+                    Color3.fromRGB(190, 245, 255), Enum.Material.Neon, CFrame.new(0, 0.39, -0.136))
+                floatPart("BottomButton", Vector3.new(0.18, 0.065, 0.03),
+                    Color3.fromRGB(27, 147, 227), Enum.Material.Neon, CFrame.new(0, -0.43, -0.105))
+                floatPart("LeftButton", Vector3.new(0.055, 0.11, 0.03),
+                    Color3.fromRGB(70, 110, 230), Enum.Material.Neon, CFrame.new(-0.26, -0.39, -0.105))
+                floatPart("RightButton", Vector3.new(0.055, 0.11, 0.03),
+                    Color3.fromRGB(70, 110, 230), Enum.Material.Neon, CFrame.new(0.26, -0.39, -0.105))
+                local light = floatPart("StatusLight", Vector3.new(0.07, 0.035, 0.025),
+                    Color3.fromRGB(110, 255, 180), Enum.Material.Neon, CFrame.new(0.23, 0.48, -0.105))
+
+                local gui = Instance.new("SurfaceGui")
+                gui.Name = "CommunicatorDisplay"
+                gui.Face = Enum.NormalId.Front
+                gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+                gui.PixelsPerStud = 180
+                gui.LightInfluence = 0
+                gui.Parent = screenPart
+
+                local label = Instance.new("TextLabel")
+                label.Name = "CommandText"
+                label.Size = UDim2.fromScale(1, 1)
+                label.BackgroundColor3 = Color3.fromRGB(6, 4, 43)
+                label.BackgroundTransparency = 0.05
+                label.BorderSizePixel = 0
+                label.TextColor3 = Color3.fromRGB(220, 250, 255)
+                label.TextScaled = true
+                label.Font = Enum.Font.GothamBold
+                label.TextWrapped = true
+                label.Text = displayText.Text
+                label.Parent = gui
+
+                -- Float relative to the character's head, not the camera.
+                -- This remains visible in third-person and on mobile camera setups.
+                floatConnection = RunService.RenderStepped:Connect(function()
+                    if not equipped or not floatModel or not floatModel.Parent then return end
+                    local characterNow = localPlayer.Character
+                    local head = characterNow and characterNow:FindFirstChild("Head")
+                    local root = characterNow and characterNow:FindFirstChild("HumanoidRootPart")
+                    if not head or not head:IsA("BasePart") then return end
+                    local t = os.clock()
+                    local forward = head.CFrame.LookVector
+                    local flatForward = Vector3.new(forward.X, 0, forward.Z)
+                    if flatForward.Magnitude < 0.01 and root then
+                        flatForward = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
+                    end
+                    if flatForward.Magnitude < 0.01 then return end
+                    flatForward = flatForward.Unit
+                    local center = head.Position + flatForward * 2.0 + Vector3.new(0, 0.05 + math.sin(t * 1.8) * 0.025, 0)
+                    local base = CFrame.lookAt(center, center - flatForward, Vector3.yAxis)
+                    for _, part in ipairs(floatModel:GetChildren()) do
+                        if part:IsA("BasePart") then
+                            local offset = part:GetAttribute("FloatOffset")
+                            if typeof(offset) == "CFrame" then
+                                part.CFrame = base * offset
+                            end
+                        end
+                    end
+                    label.Text = displayText.Text
+                    light.Color = (math.floor(t * 3) % 2 == 0)
+                        and Color3.fromRGB(110, 255, 180) or Color3.fromRGB(27, 147, 227)
+                end)
+            end
+
+            equipConnection = tool.Equipped:Connect(function()
+                stopHoldingPose()
+                equipped = true
+                animationStartedAt = os.clock()
+                -- Hide the hand-mounted Tool geometry; its floating local display is the visible device.
+                for _, part in ipairs(tool:GetDescendants()) do
+                    if part:IsA("BasePart") then part.LocalTransparencyModifier = 1 end
+                end
+                makeFloatDisplay()
+                executeMode()
+            end)
+
+            unequipConnection = tool.Unequipped:Connect(function()
+                stopHoldingPose()
+                clearFloatDisplay()
+                for _, part in ipairs(tool:GetDescendants()) do
+                    if part:IsA("BasePart") then part.LocalTransparencyModifier = 0 end
+                end
+                tool.Grip = originalGrip
+            end)
+
+            -- Inspect cycles the selected command; it does not execute it.
+            local function cycleMode()
+                modeIndex = (modeIndex % #modes) + 1
+                displayText.Text = "FW / " .. modes[modeIndex].name .. "\\nREADY TO USE"
+                print("[Fairwell Communicator] Selected " .. modes[modeIndex].name)
+            end
+
+            activateConnection = tool.Activated:Connect(function()
+                -- Use runs the currently selected command, like a normal DOORS item.
+                inspectStartedAt = os.clock()
+                executeMode()
+                TweenService:Create(screen, TweenInfo.new(0.1), {
+                    Color = Color3.fromRGB(170, 245, 255)
+                }):Play()
+                task.delay(0.12, function()
+                    if screen and screen.Parent then
+                        TweenService:Create(screen, TweenInfo.new(0.22), {
+                            Color = Color3.fromRGB(35, 185, 255)
+                        }):Play()
+                    end
+                end)
+                TweenService:Create(statusLight, TweenInfo.new(0.16, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 1, true), {
+                    Color = Color3.fromRGB(27, 147, 227)
+                }):Play()
+            end)
+
+            -- Listen for the game's Inspect signals. CoinRoll's RemoteInspect is
+            -- item-specific, so discover that exact remote as well as DOORS ToolAnimate.
+            -- Keep keyboard R as a fallback for builds that don't emit either signal.
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            local UserInputService = game:GetService("UserInputService")
+            local inspectConnections = {}
+            local lastCycleAt = 0
+            local function handleInspectSignal(...)
+                if not equipped then return end
+                local now = os.clock()
+                if now - lastCycleAt < 0.22 then return end
+                local args = {...}
+                local isInspect = false
+                for _, value in ipairs(args) do
+                    if type(value) == "string" and string.lower(value) == "inspect" then
+                        isInspect = true
+                        break
+                    end
+                end
+                -- RemoteInspect itself is the inspect action; ToolAnimate requires
+                -- its payload to identify the Inspect animation.
+                if isInspect then
+                    lastCycleAt = now
+                    cycleMode()
+                end
+            end
+
+            local remotesFolder = ReplicatedStorage:FindFirstChild("RemotesFolder")
+            local toolAnimateRemote = remotesFolder and remotesFolder:FindFirstChild("ToolAnimate")
+            if toolAnimateRemote and toolAnimateRemote:IsA("RemoteEvent") then
+                table.insert(inspectConnections, toolAnimateRemote.OnClientEvent:Connect(handleInspectSignal))
+            end
+
+            local coinRoll = workspace:FindFirstChild("FIXROBLOX_015")
+            coinRoll = coinRoll and coinRoll:FindFirstChild("CoinRoll")
+            local remoteInspect = coinRoll and coinRoll:FindFirstChild("RemoteInspect")
+            if remoteInspect and remoteInspect:IsA("RemoteEvent") then
+                table.insert(inspectConnections, remoteInspect.OnClientEvent:Connect(function(...)
+                    if not equipped then return end
+                    lastCycleAt = os.clock()
+                    cycleMode()
+                end))
+            end
+
+            local inspectInputConnection = UserInputService.InputBegan:Connect(function(input, processed)
+                if processed or not equipped then return end
+                if input.KeyCode == Enum.KeyCode.R then
+                    local now = os.clock()
+                    if now - lastCycleAt >= 0.22 then
+                        lastCycleAt = now
+                        cycleMode()
+                    end
+                end
+            end)
+
+            tool.Destroying:Connect(function()
+                stopHoldingPose()
+                clearFloatDisplay()
+                if equipConnection then equipConnection:Disconnect() end
+                if unequipConnection then unequipConnection:Disconnect() end
+                if activateConnection then activateConnection:Disconnect() end
+                for _, connection in ipairs(inspectConnections) do
+                    if connection then connection:Disconnect() end
+                end
+                if inspectInputConnection then inspectInputConnection:Disconnect() end
+            end)
+
+            tool.Parent = backpack
+            print("[Fairwell Communicator] Automatically granted to UserId " .. tostring(allowedUserId) .. ".")
+        end
+
+        task.spawn(function()
+            grantCommunicator()
+            -- Retry once after a short delay if the backpack was not ready on first load.
+            task.wait(2)
+            local backpack = localPlayer and localPlayer:FindFirstChildOfClass("Backpack")
+            local character = localPlayer and localPlayer.Character
+            if localPlayer and localPlayer.UserId == allowedUserId
+                and backpack
+                and not backpack:FindFirstChild("Fairwell Communicator")
+                and not (character and character:FindFirstChild("Fairwell Communicator")) then
+                grantCommunicator()
+            end
+        end)
+    end
+
+    local stairwellBox
+    pcall(function()
+        stairwellBox = tab:AddLeftGroupbox("Stairwell", "eye")
+    end)
+
+    local espOk, espBox = pcall(function()
+        return stairwellBox
+    end)
+
+    if espOk and espBox then
+        local espEnabled = false
+        local espFolder = Instance.new("Folder")
+        espFolder.Name = "FairwellStemESP"
+        espFolder.Parent = game:GetService("CoreGui")
+
