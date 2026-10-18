@@ -189,7 +189,30 @@
                         end
                     end
                 end
-                return true
+                return true, keyModel, keyPart
+            end
+
+            local function findKeyPickupPrompt(keyModel)
+                if not keyModel then return nil end
+                -- Prefer prompts parented under the actual key object. Do not rely only
+                -- on ObjectText: some MSDoors builds leave it blank.
+                for _, object in ipairs(keyModel:GetDescendants()) do
+                    if object:IsA("ProximityPrompt") and object.Enabled then
+                        local action = normalize(object.ActionText)
+                        local objectText = normalize(object.ObjectText)
+                        if action == "pickup" or action == "pick" or action == "take"
+                            or action == "grab" or action == "get"
+                            or action:find("pickup", 1, true)
+                            or objectText:find("key", 1, true) then
+                            return object
+                        end
+                    end
+                end
+                -- Fallback to the broader world search used by the original feature.
+                for _, object in ipairs(workspace:GetDescendants()) do
+                    if isKeyPickupPrompt(object) then return object end
+                end
+                return nil
             end
 
             local function promptPart(prompt)
@@ -243,18 +266,30 @@
                             local hasKey, hasLockpick = hasUnlockTool(character)
                             local bestPrompt, bestDistance
                             local pickingKey = not hasKey
+                            local keyModel
                             if pickingKey then
-                                bringKeyToPlayer(root)
-                            end
-                            for _, object in ipairs(workspace:GetDescendants()) do
-                                if object:IsA("ProximityPrompt") then
-                                    local matches = false
-                                    if pickingKey then
-                                        matches = isKeyPickupPrompt(object)
-                                    else
-                                        matches = isDoorUnlockPrompt(object, hasKey, hasLockpick)
+                                local moved, model = bringKeyToPlayer(root)
+                                keyModel = model
+                                if moved then
+                                    bestPrompt = findKeyPickupPrompt(keyModel)
+                                    if bestPrompt then
+                                        local part = promptPart(bestPrompt)
+                                        if part then
+                                            bestDistance = (part.Position - root.Position).Magnitude
+                                            local range = math.max(bestPrompt.MaxActivationDistance, 8)
+                                            if bestDistance > range then
+                                                setStatus("key is nearby but pickup prompt is out of range")
+                                                bestPrompt = nil
+                                            end
+                                        else
+                                            setStatus("found key prompt but could not locate its interaction part")
+                                            bestPrompt = nil
+                                        end
                                     end
-                                    if matches then
+                                end
+                            else
+                                for _, object in ipairs(workspace:GetDescendants()) do
+                                    if object:IsA("ProximityPrompt") and isDoorUnlockPrompt(object, hasKey, hasLockpick) then
                                         local part = promptPart(object)
                                         if part then
                                             local distance = (part.Position - root.Position).Magnitude
@@ -271,9 +306,16 @@
                                 local now = os.clock()
                                 if now - (lastAttempt[bestPrompt] or 0) >= 2.5 then
                                     lastAttempt[bestPrompt] = now
-                                    if activatePrompt(bestPrompt) then
+                                    local activated = activatePrompt(bestPrompt)
+                                    if activated then
                                         if pickingKey then
-                                            setStatus("attempted key pickup; waiting for inventory")
+                                            task.wait(0.6)
+                                            local nowHasKey = hasUnlockTool(character)
+                                            if nowHasKey then
+                                                setStatus("key picked up successfully")
+                                            else
+                                                setStatus("pickup prompt activated, but key is not in inventory; server pickup may be required")
+                                            end
                                         else
                                             setStatus("attempted door unlock (" .. tostring(math.floor(bestDistance + 0.5)) .. " studs)")
                                         end
@@ -282,9 +324,8 @@
                                     end
                                 end
                             elseif pickingKey then
-                                local keyModel = findKeyObject()
                                 if keyModel then
-                                    setStatus("brought Key to you locally; no supported pickup prompt found")
+                                    setStatus("brought Key to you locally; no supported pickup prompt found on KeyObtain")
                                 else
                                     setStatus("enabled; could not find a KeyObtain object in this room")
                                 end
