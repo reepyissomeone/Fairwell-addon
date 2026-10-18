@@ -2476,6 +2476,8 @@ return function(tab, reloadContent, hotelTab)
         local autoLoadPath = configFolder .. "/autoload.txt"
         local configName = ""
         local configPrefix = "Fairwell"
+        local configStatus
+        local configLibrary = configEnv.Library or configEnv.Obsidian or configEnv.UI_Library
 
         local fileRead = (type(readfile) == "function" and readfile) or configEnv.readfile
         local fileWrite = (type(writefile) == "function" and writefile) or configEnv.writefile
@@ -2515,8 +2517,8 @@ return function(tab, reloadContent, hotelTab)
         end
 
         local function getRegistries()
-            local toggles = configEnv.Toggles or _G.Toggles or Toggles or {}
-            local options = configEnv.Options or _G.Options or Options or {}
+            local toggles = configEnv.Toggles or _G.Toggles or (configLibrary and configLibrary.Toggles) or Toggles or {}
+            local options = configEnv.Options or _G.Options or (configLibrary and configLibrary.Options) or Options or {}
             return toggles, options
         end
 
@@ -2699,7 +2701,6 @@ return function(tab, reloadContent, hotelTab)
 
         local savedName = readAutoLoadName()
         if savedName ~= "" then configName = savedName end
-        local configStatus
         if configBox then
             pcall(function()
                 configStatus = configBox:AddLabel({
