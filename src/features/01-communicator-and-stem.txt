@@ -483,3 +483,259 @@ return function(tab, reloadContent, hotelTab)
         espFolder.Name = "FairwellStemESP"
         espFolder.Parent = game:GetService("CoreGui")
 
+        local function clearESP()
+            for _, child in ipairs(espFolder:GetChildren()) do
+                child:Destroy()
+            end
+        end
+
+        local function stemRelated(instance)
+            local node = instance
+            for _ = 1, 5 do
+                if not node then break end
+                if string.find(string.lower(node.Name), "stem", 1, true) then
+                    return true
+                end
+                node = node.Parent
+            end
+            return false
+        end
+
+        local function scan()
+            clearESP()
+            local seen = {}
+            for _, instance in ipairs(workspace:GetDescendants()) do
+                if stemRelated(instance) then
+                    local target = instance:IsA("Model") and instance or instance:FindFirstAncestorOfClass("Model")
+                    target = target or (instance:IsA("BasePart") and instance or nil)
+                    if target and not seen[target] then
+                        seen[target] = true
+                        local holder = Instance.new("Folder")
+                        holder.Name = "StemESPItem"
+                        holder.Parent = espFolder
+
+                        local highlight = Instance.new("Highlight")
+                        highlight.Adornee = target
+                        highlight.FillColor = Color3.fromRGB(255, 70, 70)
+                        highlight.OutlineColor = Color3.fromRGB(255, 230, 70)
+                        highlight.FillTransparency = 0.55
+                        highlight.OutlineTransparency = 0
+                        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        highlight.Parent = holder
+
+                        local part = target:IsA("BasePart") and target or target:FindFirstChildWhichIsA("BasePart", true)
+                        if part then
+                            local labelGui = Instance.new("BillboardGui")
+                            labelGui.Name = "StemLabel"
+                            labelGui.Adornee = part
+                            labelGui.AlwaysOnTop = true
+                            labelGui.Size = UDim2.fromOffset(110, 30)
+                            labelGui.StudsOffset = Vector3.new(0, 2.5, 0)
+                            labelGui.Parent = holder
+
+                            local label = Instance.new("TextLabel")
+                            label.BackgroundTransparency = 1
+                            label.Size = UDim2.fromScale(1, 1)
+                            label.Text = "STEM"
+                            label.TextColor3 = Color3.fromRGB(255, 230, 70)
+                            label.TextStrokeTransparency = 0
+                            label.TextScaled = true
+                            label.Font = Enum.Font.GothamBold
+                            label.Parent = labelGui
+                        end
+                    end
+                end
+            end
+        end
+
+        pcall(function()
+            espBox:AddToggle("FairwellStemESPToggle", {
+                Text = "STEM ESP",
+                Default = false,
+                Callback = function(enabled)
+                    espEnabled = enabled == true
+                    clearESP()
+                    if espEnabled then scan() end
+                end
+            })
+        end)
+
+        task.spawn(function()
+            while espFolder.Parent do
+                if espEnabled then scan() end
+                task.wait(2)
+            end
+        end)
+    end
+
+    local stemOk, stemBox = pcall(function()
+        return stairwellBox
+    end)
+
+    if stemOk and stemBox then
+        local Players = game:GetService("Players")
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local player = Players.LocalPlayer
+        local env = (getgenv and getgenv()) or _G
+        env._FairwellAutoKillStem = false
+        local statusLabel
+
+        local function setStatus(message)
+            print("[Fairwell Auto kill Stem] " .. message)
+            if statusLabel then pcall(function() statusLabel:SetText("Status: " .. message) end) end
+        end
+        pcall(function() statusLabel = stemBox:AddLabel({Text = "Status: idle", DoesWrap = true}) end)
+
+        local function findHeldStem()
+            local character = player.Character
+            if not character then return nil end
+            local tool = character:FindFirstChild("Stem")
+            if not tool or not tool:IsA("Tool") then return nil end
+            local handle = tool:FindFirstChild("Handle")
+            if not handle or not handle:IsA("BasePart") then return tool, nil, nil end
+            for _, item in ipairs(handle:GetDescendants()) do
+                if item.Name:match("^Stem_") then return tool, handle, item.Name end
+            end
+            return tool, handle, nil
+        end
+
+        local function findVariant(tool, handle, identifier)
+            -- Check the held item, its identifier, attributes, and exposed string values.
+            local function inspect(value)
+                local lower = string.lower(tostring(value or ""))
+                for _, variant in ipairs({"Mouth", "Ear", "Eye", "Blank"}) do
+                    if string.find(lower, string.lower(variant), 1, true) then return variant end
+                end
+            end
+            local found = inspect(identifier)
+            if found then return found end
+            local roots = {tool}
+            if handle then table.insert(roots, handle) end
+            for _, root in ipairs(roots) do
+                for key, value in pairs(root:GetAttributes()) do
+                    found = inspect(key) or inspect(value)
+                    if found then return found end
+                end
+                for _, item in ipairs(root:GetDescendants()) do
+                    found = inspect(item.Name)
+                    if not found and item:IsA("StringValue") then found = inspect(item.Value) end
+                    if not found then
+                        for key, value in pairs(item:GetAttributes()) do
+                            found = inspect(key) or inspect(value)
+                            if found then break end
+                        end
+                    end
+                    if found then return found end
+                end
+            end
+            return "Blank"
+        end
+
+        local function findNearbyStemPrompt()
+            local character = player.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            if not root then return nil, "character root not found" end
+            local bestPrompt, bestDistance
+            for _, prompt in ipairs(workspace:GetDescendants()) do
+                if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                    local parent = prompt.Parent
+                    local part = parent and (parent:IsA("BasePart") and parent or parent:FindFirstChildWhichIsA("BasePart", true))
+                    if part then
+                        local distance = (root.Position - part.Position).Magnitude
+                        if distance <= math.max(prompt.MaxActivationDistance + 5, 12) then
+                            local node, isStem = prompt, false
+                            for _ = 1, 8 do
+                                if not node then break end
+                                if string.find(string.lower(node.Name), "stem", 1, true) then isStem = true break end
+                                node = node.Parent
+                            end
+                            if isStem and (not bestDistance or distance < bestDistance) then
+                                bestPrompt, bestDistance = prompt, distance
+                            end
+                        end
+                    end
+                end
+            end
+            return bestPrompt, bestPrompt and "nearby Stem pickup found" or "searching for a nearby Stem"
+        end
+
+        local function activatePrompt(prompt)
+            if not prompt or not prompt.Parent then return false, "prompt disappeared" end
+            local ok, err = pcall(function()
+                prompt:InputHoldBegin()
+                task.wait(math.max(prompt.HoldDuration, 0.02) + 0.02)
+                prompt:InputHoldEnd()
+            end)
+            if not ok then return false, tostring(err) end
+            return true, "pickup attempted"
+        end
+
+        local function fireHeldStem(tool, handle, identifier)
+            if not handle then return false, "held Stem Handle not found" end
+            if not identifier then return false, "Stem_ identifier not found under Handle" end
+            local remotes = ReplicatedStorage:FindFirstChild("RemotesFolder")
+            local remote = remotes and remotes:FindFirstChild("FireProjectile")
+            if not remote or not remote:IsA("RemoteEvent") then return false, "FireProjectile RemoteEvent not found" end
+            local camera = workspace.CurrentCamera
+            if not camera then return false, "camera unavailable" end
+            local direction = camera.CFrame.LookVector
+            local velocity = direction * 100
+            local exclusions = {}
+            local props = workspace:FindFirstChild("Props")
+            local character = player.Character
+            if props then table.insert(exclusions, props) end
+            if character then table.insert(exclusions, character) end
+            local variant = findVariant(tool, handle, identifier)
+            local ok, err = pcall(function()
+                remote:FireServer(identifier, handle.Position, direction, velocity, "Stem", variant, exclusions)
+            end)
+            if not ok then return false, tostring(err) end
+            return true, "threw " .. variant .. " Stem"
+        end
+
+        pcall(function()
+            stemBox:AddToggle("FairwellAutoKillStemToggle", {
+                Text = "Auto kill Stem",
+                Default = false,
+                Callback = function(enabled)
+                    env._FairwellAutoKillStem = enabled == true
+                    if not enabled then setStatus("off") return end
+                    task.spawn(function()
+                        setStatus("enabled; auto-picking up and throwing Stems")
+                        local lastIdentifier
+                        local lastInfo
+                        while env._FairwellAutoKillStem do
+                            local character = player.Character
+                            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                            if not humanoid or humanoid.Health <= 0 then
+                                setStatus("paused: character unavailable/dead")
+                                task.wait(0.25)
+                            else
+                                local tool, handle, identifier = findHeldStem()
+                                if tool and handle and identifier and identifier ~= lastIdentifier then
+                                    local ok, message = fireHeldStem(tool, handle, identifier)
+                                    setStatus(ok and message or ("throw failed: " .. message))
+                                    if ok then lastIdentifier = identifier end
+                                    task.wait(ok and 0.08 or 0.15)
+                                else
+                                    -- If no usable held Stem is available, seek and pick one up.
+                                    if not tool or not handle or not identifier then lastIdentifier = nil end
+                                    local prompt, info = findNearbyStemPrompt()
+                                    if info ~= lastInfo then setStatus(info); lastInfo = info end
+                                    if prompt then
+                                        local ok, message = activatePrompt(prompt)
+                                        setStatus(ok and message or ("pickup failed: " .. message))
+                                        task.wait(0.04)
+                                    else
+                                        task.wait(0.08)
+                                    end
+                                end
+                            end
+                        end
+                        setStatus("off")
+                    end)
+                end
+            })
+        end)
+    end
+
