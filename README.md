@@ -1,35 +1,30 @@
-# Fairwell Heaven — MSDoors Addon
+# Fairwell Heaven — MSDoors tab script
 
-Fairwell is packaged as a native MSDoors addon. The installed entry point stays at `addons/Fairwell.txt`.
+Fairwell is a **direct-running script**, not a native MSDoors addon. It adds a **Fairwell** tab to the existing MSDoors Obsidian window and keeps the feature controls in their existing groupboxes. It does not create a second window.
 
-## Repository layout
+## Run it
 
-- `addons/Fairwell.txt` — native addon entry point; builds the standard MSDoors `Elements` list.
-- `Fairwell_Content.txt` — runtime source loader used by the entry point.
-- `src/features/` — ordered source fragments for gameplay features:
-  - `01-communicator-and-stem.txt`
-  - `02-anti-creak.txt`
-  - `03-anti-groundskeeper.txt`
-  - `04-auto-closet.txt`
-  - `05-delete-gate.txt`
-  - `06-friendly-entities.txt`
-  - `07-item-notifications-and-floor-detection.txt`
-  - `08-auto-giggle-glowstick.txt`
-  - `09-auto-open-locked-doors.txt`
-- `src/config/config-manager.txt` — config save/load/override and auto-load behavior.
+1. Start MSDoors and wait for its existing UI to finish loading.
+2. Run the contents of `Fairwell_AddTab.txt` in your supported script executor.
+3. The loader locates the existing Obsidian window, adds the Fairwell tab, and loads `Fairwell_Content.txt`.
+4. If loading fails, check the executor console for a specific `[Fairwell]` error.
 
-## Why the source files are fragments
+## Source layout
 
-The existing features share one Lua builder scope and contain local callbacks and registries. To reduce regression risk, the feature files are concatenated in the order listed by `Fairwell_Content.txt` before compilation. Keep that order stable and preserve the beginning/end of the complete source when editing. These files are source fragments, not independent Lua modules.
+- `Fairwell_AddTab.txt` — direct-running tab loader. It locates the existing MSDoors window and creates the Fairwell tab.
+- `Fairwell_Content.txt` — downloads and compiles the ordered feature fragments.
+- `src/features/` — feature code, in the order listed in `Fairwell_Content.txt`.
+- `src/config/config-manager.txt` — config save/load and auto-load behavior.
 
-## Adding or changing a feature
+## Important implementation notes
 
-1. Edit the appropriate feature fragment under `src/features/`.
-2. If adding a new fragment, add its raw GitHub URL to `MODULE_URLS` in `Fairwell_Content.txt` at the correct source-order position.
-3. Keep the config manager after the feature code so it can see all controls and registries.
-4. Update the cache key in `addons/Fairwell.txt` when a release needs to bypass a cached loader.
-5. Test the addon in MSDoors and check the executor console for download/compile errors.
+The feature files are source fragments, not independent modules. They share one Lua builder scope and must be concatenated in the existing order. Keep the config manager last so it can access the controls and registries created by the features.
 
-## Installation
+The loader checks exposed globals first and then looks for the existing Obsidian window through executor GC inspection when available. It never intentionally creates a separate UI window. The Fairwell tab is guarded against duplicate creation in the same window.
 
-Install `addons/Fairwell.txt` into `msdoors/addons/Fairwell.txt`. The loader downloads the source files from this repository's `main` branch, so changes become live once merged to `main`.
+## Updating features
+
+1. Edit the appropriate fragment under `src/features/`.
+2. If adding a fragment, add its raw GitHub URL to `MODULE_URLS` in `Fairwell_Content.txt` in the correct order.
+3. Bump the content URL cache key in `Fairwell_AddTab.txt` after changing the loader/content contract.
+4. Test in MSDoors and check the console for download, compile, or feature initialization errors.
