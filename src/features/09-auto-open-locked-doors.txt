@@ -243,11 +243,60 @@
 
                 local touch = (type(firetouchinterest) == "function" and firetouchinterest)
                     or env.firetouchinterest
-                if keyPart and root and type(touch) == "function" then
-                    attempted = true
-                    pcall(touch, root, keyPart, 0)
-                    task.wait(0.1)
-                    pcall(touch, root, keyPart, 1)
+                if keyModel and root and type(touch) == "function" then
+                    -- The pickup trigger can be a small, specifically named hitbox,
+                    -- not the visible key mesh. Prefer hitbox-like parts, then try
+                    -- every remaining key part with real character body parts.
+                    local keyParts, bodyParts = {}, {}
+                    for _, object in ipairs(keyModel:GetDescendants()) do
+                        if object:IsA("BasePart") then
+                            table.insert(keyParts, object)
+                        end
+                    end
+                    table.sort(keyParts, function(a, b)
+                        local an, bn = normalize(a.Name), normalize(b.Name)
+                        local function priority(name)
+                            if name:find("hitbox", 1, true) or name:find("touch", 1, true)
+                                or name:find("pickup", 1, true) or name:find("trigger", 1, true) then
+                                return 0
+                            end
+                            if name:find("handle", 1, true) or name:find("key", 1, true) then
+                                return 1
+                            end
+                            return 2
+                        end
+                        return priority(an) < priority(bn)
+                    end)
+                    for _, object in ipairs(root.Parent:GetDescendants()) do
+                        if object:IsA("BasePart") and not object:IsDescendantOf(keyModel) then
+                            table.insert(bodyParts, object)
+                        end
+                    end
+                    -- HumanoidRootPart is a fallback, but limb/body contacts are
+                    -- often what the game's Touched handler listens for.
+                    table.sort(bodyParts, function(a, b)
+                        local an, bn = normalize(a.Name), normalize(b.Name)
+                        local function priority(name)
+                            if name == "humanoidrootpart" then return 2 end
+                            if name == "head" or name:find("torso", 1, true) then return 0 end
+                            return 1
+                        end
+                        return priority(an) < priority(bn)
+                    end)
+                    local attempts = 0
+                    for _, targetPart in ipairs(keyParts) do
+                        for _, bodyPart in ipairs(bodyParts) do
+                            if (targetPart.Position - bodyPart.Position).Magnitude <= 10 then
+                                attempts += 1
+                                attempted = true
+                                pcall(touch, bodyPart, targetPart, 0)
+                                task.wait(0.03)
+                                pcall(touch, bodyPart, targetPart, 1)
+                                if attempts >= 24 then break end
+                            end
+                        end
+                        if attempts >= 24 then break end
+                    end
                 end
                 return attempted
             end
