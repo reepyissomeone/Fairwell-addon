@@ -1,217 +1,317 @@
-    -- Auto Giggle Glowstick: equips and throws a real Glowstick toward a nearby Giggle.
-    -- This uses the normal Tool activation path; it does not fire arbitrary remotes.
-    local gigglePlayers = game:GetService("Players")
-    local giggleRunService = game:GetService("RunService")
-    local gigglePlayer = gigglePlayers.LocalPlayer
-    local giggleEnv = (getgenv and getgenv()) or _G
-    if giggleEnv._FairwellAutoGiggleGlowstickState then
-        giggleEnv._FairwellAutoGiggleGlowstickState.running = false
-    end
-    local giggleState = {running = true, enabled = false}
-    giggleEnv._FairwellAutoGiggleGlowstickState = giggleState
+    -- Fairwell Config Manager
+    -- Stores Fairwell control values locally using the executor's file APIs.
+    -- Save creates a config and selects it for auto-load on the next run.
+    -- Override replaces an existing config with the current settings.
+    do
+        local configEnv = (getgenv and getgenv()) or _G
+        local HttpService = game:GetService("HttpService")
+        local configFolder = "FairwellConfigs"
+        local autoLoadPath = configFolder .. "/autoload.txt"
+        local configName = ""
+        local configPrefix = "Fairwell"
+        local configStatus
+        local configLibrary = configEnv.Library or configEnv.Obsidian or configEnv.UI_Library
 
-    local giggleBox
-    pcall(function()
-        giggleBox = tab:AddRightGroupbox("The Mines", "target")
-    end)
+        local fileRead = (type(readfile) == "function" and readfile) or configEnv.readfile
+        local fileWrite = (type(writefile) == "function" and writefile) or configEnv.writefile
+        local fileIsFile = (type(isfile) == "function" and isfile) or configEnv.isfile
+        local fileIsFolder = (type(isfolder) == "function" and isfolder) or configEnv.isfolder
+        local fileMakeFolder = (type(makefolder) == "function" and makefolder) or configEnv.makefolder
+        local fileDelete = (type(delfile) == "function" and delfile) or configEnv.delfile
 
-    if giggleBox then
-        local giggleStatus
-        local lastGiggleThrow = 0
-        local busy = false
-        local statusText = ""
-
-        local function setGiggleStatus(message)
-            if message == statusText then return end
-            statusText = message
-            if giggleStatus then pcall(function() giggleStatus:SetText("Status: " .. message) end) end
+        local function setConfigStatus(message)
+            if configStatus then
+                pcall(function() configStatus:SetText("Status: " .. tostring(message)) end)
+            end
+            print("[Fairwell Configs] " .. tostring(message))
         end
 
-        pcall(function()
-            giggleStatus = giggleBox:AddLabel({Text = "Status: off", DoesWrap = true})
-        end)
-        pcall(function()
-            giggleBox:AddLabel({
-                Text = "Locks the camera onto a nearby Giggle and rapidly throws Glowsticks. Stops when inventory is empty, target disappears, or the safety limit is reached.",
-                DoesWrap = true
-            })
-        end)
-
-        local function isGiggleModel(model)
-            if not model or not model:IsA("Model") then return false end
-            local name = string.lower(model.Name)
-            return string.find(name, "giggle", 1, true) ~= nil
-                and string.find(name, "dead", 1, true) == nil
-                and string.find(name, "corpse", 1, true) == nil
+        local function cleanConfigName(raw)
+            raw = tostring(raw or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            raw = raw:gsub("[^%w_%-]", "_"):sub(1, 48)
+            return raw
         end
 
-        local function modelAimPart(model)
-            if not model then return nil end
-            return model.PrimaryPart
-                or model:FindFirstChild("Head", true)
-                or model:FindFirstChild("HumanoidRootPart", true)
-                or model:FindFirstChildWhichIsA("BasePart", true)
+        local function ensureConfigFolder()
+            if type(fileIsFolder) == "function" and fileIsFolder(configFolder) then
+                return true
+            end
+            if type(fileMakeFolder) == "function" then
+                local ok = pcall(fileMakeFolder, configFolder)
+                if ok then return true end
+            end
+            -- Some executors allow writes to create folders implicitly; test this
+            -- by writing the actual config file instead of assuming folder creation.
+            return type(fileWrite) == "function"
         end
 
-        local function findNearestGiggle(root)
-            local bestModel, bestPart, bestDistance
-            for _, obj in ipairs(workspace:GetDescendants()) do
-                if isGiggleModel(obj) then
-                    local part = modelAimPart(obj)
-                    if part and part:IsDescendantOf(workspace) then
-                        local distance = (part.Position - root.Position).Magnitude
-                        if distance <= 65 and (not bestDistance or distance < bestDistance) then
-                            bestModel, bestPart, bestDistance = obj, part, distance
+        local function configPath(name)
+            return configFolder .. "/" .. name .. ".json"
+        end
+
+        local function getRegistries()
+            local toggles = configEnv.Toggles or _G.Toggles or (configLibrary and configLibrary.Toggles) or Toggles or {}
+            local options = configEnv.Options or _G.Options or (configLibrary and configLibrary.Options) or Options or {}
+            return toggles, options
+        end
+
+        local function captureConfig()
+            local toggles, options = getRegistries()
+            local data = {Version = 1, Toggles = {}, Options = {}}
+            local function capture(registry, destination)
+                for key, control in pairs(registry) do
+                    if type(key) == "string"
+                        and string.sub(key, 1, #configPrefix) == configPrefix
+                        and string.sub(key, 1, 13) ~= "FairwellConfig"
+                        and type(control) == "table" then
+                        local value = control.Value
+                        if value ~= nil then
+                            destination[key] = value
                         end
                     end
                 end
             end
-            return bestModel, bestPart, bestDistance
+            capture(toggles, data.Toggles)
+            capture(options, data.Options)
+            return data
         end
 
-        local function findGlowstick(character, humanoid)
-            local backpack = gigglePlayer:FindFirstChildOfClass("Backpack")
-            if character then
-                for _, item in ipairs(character:GetChildren()) do
-                    if item:IsA("Tool") and string.find(string.lower(item.Name), "glowstick", 1, true) then
-                        return item
-                    end
-                end
+        local function saveAutoLoadName(name)
+            if type(fileWrite) ~= "function" then
+                return false, "This executor does not provide writefile."
             end
-            if backpack then
-                for _, item in ipairs(backpack:GetChildren()) do
-                    if item:IsA("Tool") and string.find(string.lower(item.Name), "glowstick", 1, true) then
-                        return item
-                    end
-                end
-            end
-            return nil
-        end
-
-        local function countGlowsticks(character)
-            local count = 0
-            local backpack = gigglePlayer:FindFirstChildOfClass("Backpack")
-            for _, container in ipairs({character, backpack}) do
-                if container then
-                    for _, item in ipairs(container:GetChildren()) do
-                        if item:IsA("Tool") and string.find(string.lower(item.Name), "glowstick", 1, true) then count += 1 end
-                    end
-                end
-            end
-            return count
-        end
-
-        local function throwAtGiggle(tool, character, humanoid, targetPart)
-            if busy or not tool or not targetPart or not targetPart.Parent then return false end
-            busy = true
-            local camera = workspace.CurrentCamera
-            local root = character and character:FindFirstChild("HumanoidRootPart")
-            local oldCameraCFrame = camera and camera.CFrame
-            local oldCameraType = camera and camera.CameraType
-            local oldAutoRotate = humanoid and humanoid.AutoRotate
-            local lockConnection
-            local ok, err = pcall(function()
-                if tool.Parent ~= character then humanoid:EquipTool(tool) end
-                task.wait(0.12)
-                if tool.Parent ~= character then error("Glowstick did not equip") end
-                local folder = character:FindFirstChild("Glowsticks")
-                local remote = folder and folder:FindFirstChild("Remote")
-                if not (remote and remote:IsA("RemoteEvent")) then remote = tool:FindFirstChild("Remote", true) end
-                if not (remote and remote:IsA("RemoteEvent")) then error("Glowsticks Remote not found") end
-                if not root or not root:IsA("BasePart") then error("HumanoidRootPart not found") end
-
-                -- Face the target with the complete character pivot before sending the normal
-                -- Glowsticks request. This is the strongest client-side rotation attempt, but
-                -- the game server may still override it if character rotation is server-owned.
-                humanoid.AutoRotate = false
-                local lastFacing = nil
-                local function faceTarget()
-                    if not targetPart.Parent or not root.Parent or not character.Parent then return end
-                    local pos = root.Position
-                    local target = targetPart.Position
-                    local flatTarget = Vector3.new(target.X, pos.Y, target.Z)
-                    local delta = flatTarget - pos
-                    if delta.Magnitude > 0.05 then
-                        local facing = CFrame.lookAt(pos, flatTarget)
-                        local currentPivot = character:GetPivot()
-                        local rootToPivot = root.CFrame:ToObjectSpace(currentPivot)
-                        character:PivotTo(facing * rootToPivot)
-                        lastFacing = facing
-                    end
-                    if camera then
-                        camera.CameraType = Enum.CameraType.Scriptable
-                        local lookFrom = root.Position - root.CFrame.LookVector * 8 + Vector3.new(0, 3.5, 0)
-                        camera.CFrame = CFrame.lookAt(lookFrom, target)
-                    end
-                end
-                faceTarget()
-                lockConnection = giggleRunService.RenderStepped:Connect(faceTarget)
-
-                -- Let the rotation replicate for a brief moment before using the game's normal throw.
-                task.wait(0.18)
-                local started, throws = os.clock(), 0
-                while giggleState.enabled and targetPart.Parent and countGlowsticks(character) > 0
-                    and throws < 40 and os.clock() - started < 5 do
-                    faceTarget()
-                    remote:FireServer()
-                    throws += 1
-                    task.wait(0.09)
-                end
-                setGiggleStatus("faced target locally; sent " .. throws .. " throw requests. Server-visible facing depends on DOORS replication.")
-            end)
-            if lockConnection then pcall(function() lockConnection:Disconnect() end) end
-            if humanoid and humanoid.Parent and oldAutoRotate ~= nil then
-                pcall(function() humanoid.AutoRotate = oldAutoRotate end)
-            end
-            if camera and oldCameraCFrame and camera.Parent then
-                pcall(function()
-                    if oldCameraType then camera.CameraType = oldCameraType end
-                    camera.CFrame = oldCameraCFrame
-                end)
-            end
-            busy = false
-            if not ok then setGiggleStatus("throw attempt failed: " .. tostring(err)); return false end
-            lastGiggleThrow = os.clock()
+            local ok, err = pcall(function() fileWrite(autoLoadPath, name) end)
+            if not ok then return false, tostring(err) end
             return true
         end
 
-        pcall(function()
-            giggleBox:AddToggle("FairwellAutoGiggleGlowstick", {
-                Text = "Auto-throw Glowsticks at Giggles",
-                Default = false,
-                Callback = function(enabled)
-                    giggleState.enabled = enabled == true
-                    setGiggleStatus(giggleState.enabled and "searching for Giggle" or "off")
-                end
-            })
-        end)
+        local function readAutoLoadName()
+            if type(fileRead) ~= "function" or type(fileIsFile) ~= "function" then return "" end
+            local exists = false
+            pcall(function() exists = fileIsFile(autoLoadPath) end)
+            if not exists then return "" end
+            local ok, value = pcall(fileRead, autoLoadPath)
+            if not ok then return "" end
+            return cleanConfigName(value)
+        end
 
-        task.spawn(function()
-            while giggleState.running do
-                task.wait(0.25)
-                if giggleState.enabled and not busy then
-                    local character = gigglePlayer.Character
-                    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-                    local root = character and character:FindFirstChild("HumanoidRootPart")
-                    if not character or not humanoid or humanoid.Health <= 0 or not root then
-                        setGiggleStatus("waiting for living character")
-                    elseif os.clock() - lastGiggleThrow < 1.8 then
-                        -- Prevent repeated activation while the throw animation/item state settles.
-                    else
-                        local model, part, distance = findNearestGiggle(root)
-                        if not model or not part then
-                            setGiggleStatus("enabled; no Giggle detected within 65 studs")
-                        else
-                            local tool = findGlowstick(character, humanoid)
-                            if not tool then
-                                setGiggleStatus(string.format("Giggle %.0f studs away; no Glowstick in inventory", distance))
-                            else
-                                throwAtGiggle(tool, character, humanoid, part)
-                            end
+        local function writeConfig(name, allowOverwrite)
+            if type(fileWrite) ~= "function" or type(fileRead) ~= "function"
+                or type(fileIsFile) ~= "function" then
+                setConfigStatus("File saving is unavailable in this executor.")
+                return false
+            end
+            if not ensureConfigFolder() then
+                setConfigStatus("Could not create the config folder.")
+                return false
+            end
+            local path = configPath(name)
+            local exists = false
+            pcall(function() exists = fileIsFile(path) end)
+            if exists and not allowOverwrite then
+                setConfigStatus("Config already exists. Use Override Config to replace it.")
+                return false
+            end
+            local okEncode, encoded = pcall(function()
+                return HttpService:JSONEncode(captureConfig())
+            end)
+            if not okEncode then
+                setConfigStatus("Could not encode settings: " .. tostring(encoded))
+                return false
+            end
+            local okWrite, writeError = pcall(function() fileWrite(path, encoded) end)
+            if not okWrite then
+                setConfigStatus("Save failed: " .. tostring(writeError))
+                return false
+            end
+            local autoOk, autoError = saveAutoLoadName(name)
+            if not autoOk then
+                setConfigStatus("Config saved, but auto-load could not be set: " .. tostring(autoError))
+                return true
+            end
+            configName = name
+            setConfigStatus("Saved '" .. name .. "' and selected it for auto-load.")
+            return true
+        end
+
+        local function applyConfig(data)
+            if type(data) ~= "table" then return false, "Config data is invalid." end
+            local toggles, options = getRegistries()
+            local applied = 0
+            local function apply(registry, saved)
+                if type(saved) ~= "table" then return end
+                for key, value in pairs(saved) do
+                    local control = registry[key]
+                    if control and type(control) == "table" then
+                        local ok = false
+                        if type(control.SetValue) == "function" then
+                            ok = pcall(function() control:SetValue(value) end)
                         end
+                        if not ok then
+                            ok = pcall(function() control.Value = value end)
+                        end
+                        if ok then applied += 1 end
                     end
                 end
             end
-        end)
+            apply(toggles, data.Toggles)
+            apply(options, data.Options)
+            return true, applied
+        end
+
+        local function loadConfig(name, setAutoLoad)
+            if type(fileRead) ~= "function" or type(fileIsFile) ~= "function" then
+                setConfigStatus("File reading is unavailable in this executor.")
+                return false
+            end
+            local path = configPath(name)
+            local exists = false
+            pcall(function() exists = fileIsFile(path) end)
+            if not exists then
+                setConfigStatus("Config '" .. name .. "' was not found.")
+                return false
+            end
+            local okRead, raw = pcall(fileRead, path)
+            if not okRead then
+                setConfigStatus("Could not read config: " .. tostring(raw))
+                return false
+            end
+            local okDecode, data = pcall(function() return HttpService:JSONDecode(raw) end)
+            if not okDecode then
+                setConfigStatus("Config file is invalid JSON.")
+                return false
+            end
+            local okApply, countOrError = applyConfig(data)
+            if not okApply then
+                setConfigStatus("Load failed: " .. tostring(countOrError))
+                return false
+            end
+            if setAutoLoad then
+                local autoOk, autoError = saveAutoLoadName(name)
+                if not autoOk then
+                    setConfigStatus("Loaded config, but auto-load could not be set: " .. tostring(autoError))
+                    return true
+                end
+            end
+            configName = name
+            setConfigStatus("Loaded '" .. name .. "' (" .. tostring(countOrError) .. " settings applied).")
+            return true
+        end
+
+        local function deleteConfig(name)
+            if type(fileIsFile) ~= "function" or type(fileDelete) ~= "function" then
+                setConfigStatus("Delete is unavailable in this executor.")
+                return false
+            end
+            local path = configPath(name)
+            local exists = false
+            pcall(function() exists = fileIsFile(path) end)
+            if not exists then
+                setConfigStatus("Config '" .. name .. "' was not found.")
+                return false
+            end
+            local okDelete, deleteError = pcall(fileDelete, path)
+            if not okDelete then
+                setConfigStatus("Delete failed: " .. tostring(deleteError))
+                return false
+            end
+            if readAutoLoadName() == name then
+                if type(fileIsFile) == "function" then
+                    local markerExists = false
+                    pcall(function() markerExists = fileIsFile(autoLoadPath) end)
+                    if markerExists then pcall(fileDelete, autoLoadPath) end
+                end
+            end
+            setConfigStatus("Deleted '" .. name .. "'.")
+            return true
+        end
+
+        local configBox
+        pcall(function() configBox = tab:AddLeftGroupbox("Fairwell Configs", "save") end)
+        if not configBox then
+            pcall(function() configBox = tab:AddRightGroupbox("Fairwell Configs", "save") end)
+        end
+
+        local savedName = readAutoLoadName()
+        if savedName ~= "" then configName = savedName end
+        if configBox then
+            pcall(function()
+                configStatus = configBox:AddLabel({
+                    Text = "Status: enter a config name, then Save / Load / Override / Delete.",
+                    DoesWrap = true
+                })
+            end)
+            pcall(function()
+                configBox:AddInput("FairwellConfigName", {
+                    Text = "Config name",
+                    Default = configName,
+                    Placeholder = "e.g. MySetup",
+                    Callback = function(value)
+                        configName = cleanConfigName(value)
+                    end
+                })
+            end)
+            pcall(function()
+                configBox:AddButton({
+                    Text = "Save Config",
+                    Func = function()
+                        local name = cleanConfigName(configName)
+                        if name == "" then setConfigStatus("Enter a config name first."); return end
+                        writeConfig(name, false)
+                    end,
+                    Tooltip = "Create a config and automatically load it next run"
+                })
+            end)
+            pcall(function()
+                configBox:AddButton({
+                    Text = "Override Config",
+                    Func = function()
+                        local name = cleanConfigName(configName)
+                        if name == "" then setConfigStatus("Enter a config name first."); return end
+                        writeConfig(name, true)
+                    end,
+                    Tooltip = "Replace the named config with your current settings"
+                })
+            end)
+            pcall(function()
+                configBox:AddButton({
+                    Text = "Load Config",
+                    Func = function()
+                        local name = cleanConfigName(configName)
+                        if name == "" then setConfigStatus("Enter a config name first."); return end
+                        loadConfig(name, true)
+                    end,
+                    Tooltip = "Load this config now and use it on the next run"
+                })
+            end)
+            pcall(function()
+                configBox:AddButton({
+                    Text = "Delete Config",
+                    Func = function()
+                        local name = cleanConfigName(configName)
+                        if name == "" then setConfigStatus("Enter a config name first."); return end
+                        deleteConfig(name)
+                    end,
+                    Tooltip = "Permanently delete the named config"
+                })
+            end)
+            pcall(function()
+                configBox:AddLabel({
+                    Text = "Configs are stored locally in FairwellConfigs. Save selects a config for automatic loading on the next run. Use Override to replace an existing config.",
+                    DoesWrap = true
+                })
+            end)
+        else
+            warn("[Fairwell Configs] Could not create the config groupbox.")
+        end
+
+        -- Load the last saved/selected config only after all Fairwell controls exist.
+        if savedName ~= "" then
+            task.defer(function()
+                task.wait(0.25)
+                loadConfig(savedName, false)
+            end)
+        end
     end
 
+end
