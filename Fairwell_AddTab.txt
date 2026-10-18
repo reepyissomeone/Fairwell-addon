@@ -178,7 +178,7 @@ end)
 if diagnosticOk and diagnosticBox then
     pcall(function()
         diagnosticBox:AddLabel({
-            Text = "Keeps the latest Fairwell loader errors. Press Copy Log to copy them for troubleshooting.",
+            Text = (#ERROR_LOG > 0 and "Errors recorded. Copy the log for troubleshooting." or "No errors :p"),
             DoesWrap = true
         })
     end)
@@ -186,7 +186,7 @@ if diagnosticOk and diagnosticBox then
         diagnosticBox:AddButton({
             Text = "Copy Error Log",
             Func = function()
-                local textToCopy = #ERROR_LOG > 0 and table.concat(ERROR_LOG, "\n") or "[Fairwell] No errors recorded."
+                local textToCopy = #ERROR_LOG > 0 and table.concat(ERROR_LOG, "\n") or "No errors :p"
                 local envNow = (getgenv and getgenv()) or _G
                 local copier = (type(setclipboard) == "function" and setclipboard)
                     or (type(toclipboard) == "function" and toclipboard)
