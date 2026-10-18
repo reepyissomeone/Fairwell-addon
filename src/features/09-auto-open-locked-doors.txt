@@ -86,25 +86,41 @@
                 local object = normalize(prompt.ObjectText)
                 local context = ""
                 local node = prompt.Parent
-                for _ = 1, 5 do
+                local hasDoor, hasLock = false, false
+                for _ = 1, 8 do
                     if not node then break end
-                    context = context .. " " .. normalize(node.Name)
+                    local name = normalize(node.Name)
+                    context = context .. " " .. name
+                    if name:find("door", 1, true) or name:find("gate", 1, true) then
+                        hasDoor = true
+                    end
+                    if name:find("lock", 1, true) or name:find("padlock", 1, true) then
+                        hasLock = true
+                    end
                     node = node.Parent
                 end
 
-                local mentionsLock = action:find("unlock", 1, true)
+                local actionSaysUnlock = action:find("unlock", 1, true)
                     or action:find("lockpick", 1, true)
-                    or action:find("locked", 1, true)
-                    or object:find("locked", 1, true)
+                    or action:find("usekey", 1, true)
+                    or action:find("usekeycard", 1, true)
+                local textSaysLocked = object:find("locked", 1, true)
+                    or object:find("lock", 1, true)
                     or context:find("lockeddoor", 1, true)
                     or context:find("doorlock", 1, true)
-                    or context:find("lockpick", 1, true)
-
+                    or context:find("padlock", 1, true)
+                    or hasLock
                 local explicitlyDoor = action:find("door", 1, true)
                     or object:find("door", 1, true)
-                    or context:find("door", 1, true)
+                    or object:find("gate", 1, true)
+                    or hasDoor
 
-                if not mentionsLock or not explicitlyDoor then return false end
+                -- Many versions label the prompt only "Unlock" and put the
+                -- lock in a child/parent model; others have no useful ObjectText.
+                -- Accept those common variants, but don't fire arbitrary prompts.
+                local targetLooksLocked = (actionSaysUnlock and (explicitlyDoor or textSaysLocked))
+                    or (explicitlyDoor and textSaysLocked)
+                if not targetLooksLocked then return false end
                 if action:find("lockpick", 1, true) then return lockpickAvailable end
                 return keyAvailable or lockpickAvailable
             end
@@ -408,7 +424,12 @@
                                                 setStatus("pickup prompt activated, but key is not in inventory; server pickup may be required")
                                             end
                                         else
-                                            setStatus("attempted door unlock (" .. tostring(math.floor(bestDistance + 0.5)) .. " studs)")
+                                            task.wait(0.35)
+                                            if not bestPrompt.Parent or not bestPrompt.Enabled then
+                                                setStatus("door prompt accepted; lock prompt disabled")
+                                            else
+                                                setStatus("sent unlock interaction (" .. tostring(math.floor(bestDistance + 0.5)) .. " studs); prompt remains enabled")
+                                            end
                                         end
                                     else
                                         setStatus("could not activate the nearby prompt")
