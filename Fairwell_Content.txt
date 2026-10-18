@@ -1,19 +1,18 @@
 -- Fairwell Heaven DOORS feature loader for MSDoors
--- Source is split into readable files under src/features and src/config.
--- The fragments are concatenated in their original order before compilation,
--- preserving the original shared Lua scope and runtime behavior.
+-- Feature source is organized under src/features and src/config.
+-- The source fragments are concatenated in their original order before compilation,
+-- preserving the original shared Lua scope and behavior.
 
 local MODULE_URLS = {
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/refactor/organize-feature-files/src/features/01-communicator-and-stem.txt",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/refactor/organize-feature-files/src/features/02-anti-creak.txt",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/refactor/organize-feature-files/src/features/03-anti-groundskeeper.txt",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/refactor/organize-feature-files/src/features/04-auto-closet.txt",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/refactor/organize-feature-files/src/features/05-delete-gate.txt",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/refactor/organize-feature-files/src/features/06-friendly-entities.txt",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/refactor/organize-feature-files/src/features/07-item-notifications-and-floor-detection.txt",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/refactor/organize-feature-files/src/features/08-auto-giggle-glowstick.txt",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/refactor/organize-feature-files/src/config/config-manager.txt",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/refactor/organize-feature-files/src/features/10-remaining-content.txt",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/01-communicator-and-stem.txt?v=20261018",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/02-anti-creak.txt?v=20261018",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/03-anti-groundskeeper.txt?v=20261018",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/04-auto-closet.txt?v=20261018",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/05-delete-gate.txt?v=20261018",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/06-friendly-entities.txt?v=20261018",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/07-item-notifications-and-floor-detection.txt?v=20261018",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/08-auto-giggle-glowstick.txt?v=20261018",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/config/config-manager.txt?v=20261018",
 }
 
 local pieces = {}
@@ -27,8 +26,8 @@ for index, url in ipairs(MODULE_URLS) do
     pieces[index] = source
 end
 
-local source = table.concat(pieces, "\n")
-local compileOk, chunk = pcall(loadstring, source)
+local combinedSource = table.concat(pieces, "\n")
+local compileOk, chunk = pcall(loadstring, combinedSource)
 if not compileOk or type(chunk) ~= "function" then
     error("[Fairwell] Combined feature source failed to compile: " .. tostring(chunk))
 end
