@@ -311,19 +311,6 @@ return function(tab, reloadContent, hotelTab)
                     local head = characterNow and characterNow:FindFirstChild("Head")
                     local root = characterNow and characterNow:FindFirstChild("HumanoidRootPart")
                     if not head or not head:IsA("BasePart") then return end
-                    local camera = workspace.CurrentCamera
-                    local freecam = camera and camera.CameraType == Enum.CameraType.Scriptable
-                    -- The communicator is a character-world prop, so explicitly hide it
-                    -- whenever a freecam/scriptable camera takes control.
-                    for _, visiblePart in ipairs(floatModel:GetChildren()) do
-                        if visiblePart:IsA("BasePart") then
-                            visiblePart.LocalTransparencyModifier = freecam and 1 or 0
-                        end
-                    end
-                    local guiNow = floatModel:FindFirstChildWhichIsA("SurfaceGui", true)
-                    if guiNow then guiNow.Enabled = not freecam end
-                    if freecam then return end
-
                     local t = os.clock()
                     local forward = head.CFrame.LookVector
                     local flatForward = Vector3.new(forward.X, 0, forward.Z)
