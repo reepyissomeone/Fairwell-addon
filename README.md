@@ -13,7 +13,8 @@ Fairwell is a **direct-running script**, not a native MSDoors addon. It adds a *
 
 - `Fairwell_AddTab.txt` — direct-running tab loader. It locates the existing MSDoors window and creates the Fairwell tab.
 - `Fairwell_Content.txt` — downloads and compiles the ordered feature fragments.
-- `src/features/` — feature code, in the order listed in `Fairwell_Content.txt`.
+- `src/features/` — existing feature fragments, plus `10-feature-connector.txt` for independently loaded new features.
+- The feature connector lets new feature files return `function(tab, context)` and registers them in `FEATURE_MODULE_URLS` inside `10-feature-connector.txt`. It adds controls to the existing Fairwell tab and never creates a separate window or tab.
 - `src/config/config-manager.txt` — config save/load and auto-load behavior.
 
 ## Important implementation notes
