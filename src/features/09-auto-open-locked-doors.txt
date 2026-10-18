@@ -243,6 +243,48 @@
                 return nil
             end
 
+            local function getCurrentRoom(root)
+                local rooms = workspace:FindFirstChild("CurrentRooms")
+                if not rooms or not root then return nil end
+
+                -- Room models are the authoritative scope. Pick the closest room
+                -- with a nearby part; never search/teleport to a locked door in a
+                -- different room elsewhere in the map.
+                local bestRoom, bestDistance
+                for _, room in ipairs(rooms:GetChildren()) do
+                    local nearestPartDistance
+                    for _, object in ipairs(room:GetDescendants()) do
+                        if object:IsA("BasePart") then
+                            local distance = (root.Position - object.Position).Magnitude
+                            if not nearestPartDistance or distance < nearestPartDistance then
+                                nearestPartDistance = distance
+                            end
+                        end
+                    end
+                    if nearestPartDistance and nearestPartDistance <= 120
+                        and (not bestDistance or nearestPartDistance < bestDistance) then
+                        bestRoom, bestDistance = room, nearestPartDistance
+                    end
+                end
+                return bestRoom, bestDistance
+            end
+
+            local function teleportToDoor(root, prompt)
+                local part = promptPart(prompt)
+                if not root or not part then return false end
+                local destination = part.Position + (part.CFrame.LookVector * -3) + Vector3.new(0, 1.5, 0)
+                local character = root.Parent
+                local ok = pcall(function()
+                    character:PivotTo(CFrame.new(destination, part.Position))
+                end)
+                if not ok then
+                    ok = pcall(function()
+                        root.CFrame = CFrame.new(destination, part.Position)
+                    end)
+                end
+                return ok
+            end
+
             -- Some MSDoors builds do not attach a ProximityPrompt to KeyObtain:
             -- the pickup is handled by touch or a ClickDetector instead.
             local function tryPickupWithoutPrompt(keyModel, keyPart, root)
@@ -395,17 +437,25 @@
                                     end
                                 end
                             else
-                                for _, object in ipairs(workspace:GetDescendants()) do
-                                    if object:IsA("ProximityPrompt") and isDoorUnlockPrompt(object, hasKey, hasLockpick) then
-                                        local part = promptPart(object)
-                                        if part then
-                                            local distance = (part.Position - root.Position).Magnitude
-                                            local maxDistance = math.max(object.MaxActivationDistance, 8)
-                                            if distance <= maxDistance and (not bestDistance or distance < bestDistance) then
-                                                bestPrompt, bestDistance = object, distance
+                                local currentRoom, roomDistance = getCurrentRoom(root)
+                                if currentRoom then
+                                    for _, object in ipairs(currentRoom:GetDescendants()) do
+                                        if object:IsA("ProximityPrompt")
+                                            and isDoorUnlockPrompt(object, hasKey, hasLockpick) then
+                                            local part = promptPart(object)
+                                            if part then
+                                                local distance = (part.Position - root.Position).Magnitude
+                                                if not bestDistance or distance < bestDistance then
+                                                    bestPrompt, bestDistance = object, distance
+                                                end
                                             end
                                         end
                                     end
+                                    if not bestPrompt then
+                                        setStatus("in room " .. tostring(currentRoom.Name) .. "; no supported locked-door prompt")
+                                    end
+                                else
+                                    setStatus("detecting current room; no nearby CurrentRooms room found")
                                 end
                             end
 
@@ -413,6 +463,15 @@
                                 local now = os.clock()
                                 if now - (lastAttempt[bestPrompt] or 0) >= 2.5 then
                                     lastAttempt[bestPrompt] = now
+                                    local inRoom = getCurrentRoom(root)
+                                    if not pickingKey then
+                                        setStatus("detected room " .. tostring(inRoom and inRoom.Name or "unknown") .. "; teleporting to locked door")
+                                        if teleportToDoor(root, bestPrompt) then
+                                            task.wait(0.2)
+                                        else
+                                            setStatus("found locked door, but teleport failed")
+                                        end
+                                    end
                                     local activated = activatePrompt(bestPrompt)
                                     if activated then
                                         if pickingKey then
@@ -426,9 +485,9 @@
                                         else
                                             task.wait(0.35)
                                             if not bestPrompt.Parent or not bestPrompt.Enabled then
-                                                setStatus("door prompt accepted; lock prompt disabled")
+                                                setStatus("room " .. tostring(inRoom and inRoom.Name or "unknown") .. "; door prompt disabled after unlock")
                                             else
-                                                setStatus("sent unlock interaction (" .. tostring(math.floor(bestDistance + 0.5)) .. " studs); prompt remains enabled")
+                                                setStatus("teleported to door in " .. tostring(inRoom and inRoom.Name or "unknown") .. "; sent unlock interaction, prompt remains enabled")
                                             end
                                         end
                                     else
