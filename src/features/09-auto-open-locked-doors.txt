@@ -33,7 +33,7 @@
                     DoesWrap = true
                 })
                 box:AddLabel({
-                    Text = "Automatically activates nearby locked-door prompts when a Key or Lockpick is in your inventory. Uses the game's normal prompt; exact door/key support depends on the MSDoors build.",
+                    Text = "Automatically picks up a nearby Key when you do not have one, then activates a nearby locked-door prompt. Uses the game's normal prompts; exact pickup support depends on the MSDoors build.",
                     DoesWrap = true
                 })
             end)
@@ -97,6 +97,28 @@
                 return keyAvailable or lockpickAvailable
             end
 
+            local function isKeyPickupPrompt(prompt)
+                if not prompt or not prompt:IsA("ProximityPrompt") or not prompt.Enabled then return false end
+                local action = normalize(prompt.ActionText)
+                local object = normalize(prompt.ObjectText)
+                local node = prompt.Parent
+                local context = ""
+                for _ = 1, 6 do
+                    if not node then break end
+                    context = context .. " " .. normalize(node.Name)
+                    node = node.Parent
+                end
+                local keyPickup = object:find("key", 1, true)
+                    or context:find("keypickup", 1, true)
+                    or context:find("hotelkey", 1, true)
+                    or context:find("ironkey", 1, true)
+                    or context:find("backdoorkey", 1, true)
+                    or context:find("retrokey", 1, true)
+                local pickupAction = action == "pickup" or action == "pick" or action == "take"
+                    or action == "grab" or action == "get" or action:find("pickup", 1, true)
+                return keyPickup ~= nil and pickupAction ~= nil
+            end
+
             local function promptPart(prompt)
                 local node = prompt and prompt.Parent
                 while node do
@@ -125,7 +147,7 @@
             pcall(function()
                 box:AddToggle("FairwellAutoOpenLockedDoors", {
                     Text = "Auto Open Locked Doors",
-                    Tooltip = "Automatically uses nearby locked-door prompts when a Key or Lockpick is available.",
+                    Tooltip = "Automatically picks up a nearby Key, then uses nearby locked-door prompts.",
                     Default = false,
                     Callback = function(enabled)
                         state.enabled = enabled == true
@@ -146,13 +168,17 @@
                             setStatus("waiting for a living character")
                         else
                             local hasKey, hasLockpick = hasUnlockTool(character)
-                            if not hasKey and not hasLockpick then
-                                setStatus("enabled; carry a Key or Lockpick")
-                            else
-                                local bestPrompt, bestDistance
-                                for _, object in ipairs(workspace:GetDescendants()) do
-                                    if object:IsA("ProximityPrompt")
-                                        and isDoorUnlockPrompt(object, hasKey, hasLockpick) then
+                            local bestPrompt, bestDistance
+                            local pickingKey = not hasKey
+                            for _, object in ipairs(workspace:GetDescendants()) do
+                                if object:IsA("ProximityPrompt") then
+                                    local matches = false
+                                    if pickingKey then
+                                        matches = isKeyPickupPrompt(object)
+                                    else
+                                        matches = isDoorUnlockPrompt(object, hasKey, hasLockpick)
+                                    end
+                                    if matches then
                                         local part = promptPart(object)
                                         if part then
                                             local distance = (part.Position - root.Position).Magnitude
@@ -163,20 +189,26 @@
                                         end
                                     end
                                 end
+                            end
 
-                                if bestPrompt then
-                                    local now = os.clock()
-                                    if now - (lastAttempt[bestPrompt] or 0) >= 2.5 then
-                                        lastAttempt[bestPrompt] = now
-                                        if activatePrompt(bestPrompt) then
-                                            setStatus("attempted door unlock (" .. tostring(math.floor(bestDistance + 0.5)) .. " studs)")
+                            if bestPrompt then
+                                local now = os.clock()
+                                if now - (lastAttempt[bestPrompt] or 0) >= 2.5 then
+                                    lastAttempt[bestPrompt] = now
+                                    if activatePrompt(bestPrompt) then
+                                        if pickingKey then
+                                            setStatus("attempted key pickup; waiting for inventory")
                                         else
-                                            setStatus("could not activate the door prompt")
+                                            setStatus("attempted door unlock (" .. tostring(math.floor(bestDistance + 0.5)) .. " studs)")
                                         end
+                                    else
+                                        setStatus("could not activate the nearby prompt")
                                     end
-                                else
-                                    setStatus("enabled; no nearby supported locked-door prompt")
                                 end
+                            elseif pickingKey then
+                                setStatus("enabled; searching nearby for a Key pickup")
+                            else
+                                setStatus("enabled; no nearby supported locked-door prompt")
                             end
                         end
                     end
