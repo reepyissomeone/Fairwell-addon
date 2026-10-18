@@ -1,0 +1,279 @@
+-- Fairwell Roblox Music Search & Player
+-- Adds music search and local playback controls to the existing Fairwell tab.
+-- Audio search uses Roblox's AssetService:SearchAudioAsync when the current client exposes it.
+-- Playback is local to this client; Roblox asset privacy/permissions can prevent some tracks from loading.
+
+return function(tab, context)
+    local ok, musicBox = pcall(function()
+        return tab:AddLeftGroupbox("Roblox Music Player", "music")
+    end)
+    if not ok or not musicBox then
+        warn("[Fairwell Music] Could not create the music groupbox.")
+        return
+    end
+
+    local AssetService = game:GetService("AssetService")
+    local SoundService = game:GetService("SoundService")
+    local HttpService = game:GetService("HttpService")
+
+    local queryText = ""
+    local activeSound = nil
+    local searchBusy = false
+    local resultButtons = {}
+    local MAX_RESULTS = 8
+
+    local statusLabel
+    pcall(function()
+        statusLabel = musicBox:AddLabel({
+            Text = "Enter a song, artist, or keyword, then press Search Roblox Music.",
+            DoesWrap = true
+        })
+    end)
+
+    local nowPlayingLabel
+    pcall(function()
+        nowPlayingLabel = musicBox:AddLabel({
+            Text = "Now Playing: nothing",
+            DoesWrap = true
+        })
+    end)
+
+    local function setStatus(message)
+        if statusLabel and type(statusLabel.SetText) == "function" then
+            pcall(function() statusLabel:SetText(tostring(message)) end)
+        end
+        print("[Fairwell Music] " .. tostring(message))
+    end
+
+    local function setNowPlaying(message)
+        if nowPlayingLabel and type(nowPlayingLabel.SetText) == "function" then
+            pcall(function() nowPlayingLabel:SetText("Now Playing: " .. tostring(message)) end)
+        end
+    end
+
+    local function stopCurrent()
+        if activeSound then
+            pcall(function() activeSound:Stop() end)
+            pcall(function() activeSound:Destroy() end)
+            activeSound = nil
+        end
+        setNowPlaying("nothing")
+    end
+
+    local function playAsset(assetId, title)
+        assetId = tonumber(assetId)
+        if not assetId or assetId <= 0 then
+            setStatus("That result did not contain a valid audio asset ID.")
+            return
+        end
+
+        stopCurrent()
+        local sound = Instance.new("Sound")
+        sound.Name = "FairwellRobloxMusic"
+        sound.SoundId = "rbxassetid://" .. tostring(math.floor(assetId))
+        sound.Volume = 0.35
+        sound.Looped = false
+        sound.Parent = SoundService
+        activeSound = sound
+        setNowPlaying(tostring(title or "Audio") .. " (ID " .. tostring(math.floor(assetId)) .. ")")
+        setStatus("Loading audio ID " .. tostring(math.floor(assetId)) .. "...")
+
+        sound.Ended:Connect(function()
+            if activeSound == sound then
+                setNowPlaying("finished")
+                activeSound = nil
+                pcall(function() sound:Destroy() end)
+            end
+        end)
+
+        task.spawn(function()
+            local loaded = sound.IsLoaded
+            if not loaded then
+                local loadedSignal = false
+                local connection
+                connection = sound.Loaded:Connect(function()
+                    loadedSignal = true
+                    if connection then connection:Disconnect() end
+                end)
+                local started = os.clock()
+                while not loadedSignal and activeSound == sound and os.clock() - started < 10 do
+                    task.wait(0.1)
+                end
+                if connection then pcall(function() connection:Disconnect() end) end
+                loaded = sound.IsLoaded
+            end
+
+            if activeSound ~= sound then return end
+            if not loaded then
+                setStatus("Audio did not load. Roblox may restrict this asset or it may be unavailable.")
+                setNowPlaying("could not load ID " .. tostring(math.floor(assetId)))
+                return
+            end
+
+            local played, playError = pcall(function() sound:Play() end)
+            if played then
+                setStatus("Playing. If you hear nothing, Roblox may block this audio for this experience.")
+            else
+                setStatus("Could not play this audio: " .. tostring(playError))
+            end
+        end)
+    end
+
+    local function clearResultButtons()
+        -- Obsidian does not expose a consistent cross-version remove-element API.
+        -- Keep previous results functional; the next result set is clearly separated by labels.
+    end
+
+    local function addSearchResult(result, index)
+        local title = tostring(result.Title or result.title or result.Name or result.name or ("Audio result " .. index))
+        local artist = tostring(result.Artist or result.artist or (type(result.Creator) == "table" and result.Creator.Name) or "")
+        local id = result.Id or result.id or result.AssetId or result.assetId
+        if not tonumber(id) then return false end
+        local displayTitle = title
+        if artist ~= "" and artist ~= "nil" then
+            displayTitle = displayTitle .. " — " .. artist
+        end
+        local shortTitle = displayTitle
+        if #shortTitle > 72 then shortTitle = string.sub(shortTitle, 1, 69) .. "..." end
+
+        local buttonOk = pcall(function()
+            musicBox:AddButton({
+                Text = "Play: " .. shortTitle .. " [ID " .. tostring(id) .. "]",
+                Func = function()
+                    playAsset(id, displayTitle)
+                end
+            })
+        end)
+        return buttonOk
+    end
+
+    local function searchMusic()
+        if searchBusy then return end
+        local query = tostring(queryText or ""):match("^%s*(.-)%s*$")
+        if query == "" then
+            setStatus("Type a song name, artist, or keyword first.")
+            return
+        end
+
+        searchBusy = true
+        setStatus("Searching Roblox audio for: " .. query)
+        task.spawn(function()
+            local searchOk, pages = pcall(function()
+                local params = Instance.new("AudioSearchParams")
+                params.SearchKeyword = query
+                pcall(function() params.AudioSubType = Enum.AudioSubType.Music end)
+                return AssetService:SearchAudioAsync(params)
+            end)
+
+            if not searchOk or not pages then
+                setStatus("Roblox audio search isn't available in this client: " .. tostring(pages))
+                searchBusy = false
+                return
+            end
+
+            local pageOk, results = pcall(function()
+                return pages:GetCurrentPage()
+            end)
+            if not pageOk or type(results) ~= "table" then
+                setStatus("Roblox returned an unreadable search result.")
+                searchBusy = false
+                return
+            end
+
+            if #results == 0 then
+                setStatus("No matching audio found. Try a shorter or different search.")
+                searchBusy = false
+                return
+            end
+
+            local added = 0
+            for index, result in ipairs(results) do
+                if added >= MAX_RESULTS then break end
+                if type(result) == "table" and addSearchResult(result, index) then
+                    added = added + 1
+                end
+            end
+
+            if added > 0 then
+                setStatus("Found " .. tostring(added) .. " result(s). Tap a Play result button below.")
+            else
+                setStatus("Search returned results, but none included a usable audio ID.")
+            end
+            searchBusy = false
+        end)
+    end
+
+    pcall(function()
+        musicBox:AddInput("FairwellRobloxMusicQuery", {
+            Text = "Search Roblox music",
+            Default = "",
+            Placeholder = "Song, artist, or keyword",
+            Callback = function(value)
+                queryText = tostring(value or "")
+            end
+        })
+    end)
+
+    pcall(function()
+        musicBox:AddButton({
+            Text = "Search Roblox Music",
+            Func = searchMusic
+        })
+    end)
+
+    pcall(function()
+        musicBox:AddButton({
+            Text = "Pause Music",
+            Func = function()
+                if activeSound then
+                    local paused = pcall(function() activeSound:Pause() end)
+                    setStatus(paused and "Music paused." or "Could not pause the current audio.")
+                else
+                    setStatus("Nothing is playing.")
+                end
+            end
+        })
+    end)
+
+    pcall(function()
+        musicBox:AddButton({
+            Text = "Resume Music",
+            Func = function()
+                if activeSound then
+                    local resumed = pcall(function() activeSound:Resume() end)
+                    setStatus(resumed and "Music resumed." or "Could not resume the current audio.")
+                else
+                    setStatus("Nothing is playing.")
+                end
+            end
+        })
+    end)
+
+    pcall(function()
+        musicBox:AddButton({
+            Text = "Stop Music",
+            Func = function()
+                stopCurrent()
+                setStatus("Music stopped.")
+            end
+        })
+    end)
+
+    pcall(function()
+        musicBox:AddSlider("FairwellRobloxMusicVolume", {
+            Text = "Music Volume",
+            Default = 35,
+            Min = 0,
+            Max = 100,
+            Rounding = 0,
+            Suffix = "%",
+            Callback = function(value)
+                if activeSound then
+                    pcall(function() activeSound.Volume = math.clamp(tonumber(value) or 35, 0, 100) / 100 end)
+                end
+            end
+        })
+    end)
+
+    setStatus("Ready. Search results are added below; some audio IDs may be restricted by Roblox.")
+end
