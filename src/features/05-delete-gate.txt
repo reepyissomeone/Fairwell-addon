@@ -7,6 +7,8 @@
             local Players = game:GetService("Players")
             local player = Players.LocalPlayer
             local env = (getgenv and getgenv()) or _G
+            -- Share the existing Hotel groupbox with other Hotel features.
+            env._FairwellHotelGroupbox = gateBox
             env._FairwellDeleteGate = false
 
             local gateStatus
