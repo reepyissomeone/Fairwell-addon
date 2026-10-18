@@ -10,10 +10,8 @@
         local state = {running = true, enabled = false}
         env._FairwellAutoOpenLockedDoorsState = state
 
-        local box
-        pcall(function()
-            box = tab:AddRightGroupbox("Hotel Doors", "key-round")
-        end)
+        -- Reuse the existing Hotel groupbox created by the Delete Gate feature.
+        local box = env._FairwellHotelGroupbox
 
         if box then
             local statusLabel
