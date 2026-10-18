@@ -3,15 +3,34 @@
 -- No global theme/color changes are applied to MSDoors.
 -- Remote content lives in Fairwell_Content.txt so it can be updated independently.
 
-local env = (getgenv and getgenv()) or _G
-local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=config-manager-20261018"
+local function findMSDoorsWindow()
+    local env = (getgenv and getgenv()) or _G
+    local Library = env.Library or env.Obsidian or env.UI_Library
+        or _G.Library or _G.Obsidian or _G.UI_Library
+    local Window = env.Window or env.MainWindow or env.MSDoorsWindow
+        or _G.Window or _G.MainWindow or _G.MSDoorsWindow
+    if not Window and Library then
+        Window = Library.Window
+    end
+    return Window
+end
 
-local Library = env.Library or env.Obsidian or env.UI_Library
-local Window = env.Window or env.MainWindow or env.MSDoorsWindow
-if not Window and Library then Window = Library.Window end
+-- MSDoors may finish creating its UI shortly after an addon/script starts.
+local Window
+for attempt = 1, 40 do
+    Window = findMSDoorsWindow()
+    if Window and type(Window.AddTab) == "function" then
+        break
+    end
+    if task and type(task.wait) == "function" then
+        task.wait(0.25)
+    else
+        break
+    end
+end
 
 if not Window or type(Window.AddTab) ~= "function" then
-    warn("[Fairwell] Couldn't find the existing MSDoors window.")
+    warn("[Fairwell] Couldn't find the existing MSDoors window after waiting.")
     warn("[Fairwell] Make sure MSDoors has loaded before running this addon.")
     return
 end
