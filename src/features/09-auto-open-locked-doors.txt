@@ -1,5 +1,5 @@
-    -- Auto Open Locked Doors: automatically use nearby door-unlock prompts when the player
-    -- has a likely key or lockpick available. Interaction still goes through the game's prompt.
+    -- Auto Open Locked Doors: bring the KeyObtain object to the player, pick it up,
+    -- then use nearby door-unlock prompts. Interaction still goes through game prompts.
     do
         local Players = game:GetService("Players")
         local localPlayer = Players.LocalPlayer
@@ -33,7 +33,7 @@
                     DoesWrap = true
                 })
                 box:AddLabel({
-                    Text = "Automatically picks up a nearby Key when you do not have one, then activates a nearby locked-door prompt. Uses the game's normal prompts; exact pickup support depends on the MSDoors build.",
+                    Text = "When you do not have a Key, moves the KeyObtain object to you locally, attempts pickup, then activates a locked-door prompt. Client-side movement may not replicate to the server in every MSDoors build.",
                     DoesWrap = true
                 })
             end)
@@ -119,6 +119,67 @@
                 return keyPickup ~= nil and pickupAction ~= nil
             end
 
+            local function findKeyObject()
+                local keyModel, keyPart
+                for _, object in ipairs(workspace:GetDescendants()) do
+                    if object:IsA("Model") and normalize(object.Name) == "keyobtain" then
+                        keyModel = object
+                        for _, child in ipairs(object:GetDescendants()) do
+                            if child:IsA("BasePart") then
+                                local name = normalize(child.Name)
+                                if name == "keyhitbox" then
+                                    keyPart = child
+                                    break
+                                elseif name == "hitbox" and not keyPart then
+                                    keyPart = child
+                                elseif not keyPart then
+                                    keyPart = child
+                                end
+                            end
+                        end
+                        if keyPart then break end
+                    end
+                end
+
+                -- Some builds expose the hitbox but use a differently named model.
+                if not keyModel then
+                    for _, object in ipairs(workspace:GetDescendants()) do
+                        if object:IsA("BasePart") and normalize(object.Name) == "keyhitbox" then
+                            local node = object.Parent
+                            while node and not node:IsA("Model") do
+                                node = node.Parent
+                            end
+                            if node then
+                                keyModel, keyPart = node, object
+                                break
+                            end
+                        end
+                    end
+                end
+                return keyModel, keyPart
+            end
+
+            local function bringKeyToPlayer(root)
+                local keyModel, keyPart = findKeyObject()
+                if not keyModel or not keyPart or not root then return false end
+                local destination = root.CFrame * CFrame.new(0, 0, -2)
+                local offset = destination.Position - keyPart.Position
+                if offset.Magnitude > 0.5 then
+                    local ok = pcall(function()
+                        keyModel:PivotTo(keyModel:GetPivot() + offset)
+                    end)
+                    if not ok then
+                        -- Fallback for builds whose key model cannot be pivoted.
+                        for _, child in ipairs(keyModel:GetDescendants()) do
+                            if child:IsA("BasePart") then
+                                pcall(function() child.CFrame = child.CFrame + offset end)
+                            end
+                        end
+                    end
+                end
+                return true
+            end
+
             local function promptPart(prompt)
                 local node = prompt and prompt.Parent
                 while node do
@@ -147,7 +208,7 @@
             pcall(function()
                 box:AddToggle("FairwellAutoOpenLockedDoors", {
                     Text = "Auto Open Locked Doors",
-                    Tooltip = "Automatically picks up a nearby Key, then uses nearby locked-door prompts.",
+                    Tooltip = "Moves the KeyObtain object to you locally, attempts pickup, then uses locked-door prompts.",
                     Default = false,
                     Callback = function(enabled)
                         state.enabled = enabled == true
@@ -170,6 +231,9 @@
                             local hasKey, hasLockpick = hasUnlockTool(character)
                             local bestPrompt, bestDistance
                             local pickingKey = not hasKey
+                            if pickingKey then
+                                bringKeyToPlayer(root)
+                            end
                             for _, object in ipairs(workspace:GetDescendants()) do
                                 if object:IsA("ProximityPrompt") then
                                     local matches = false
@@ -206,7 +270,12 @@
                                     end
                                 end
                             elseif pickingKey then
-                                setStatus("enabled; searching nearby for a Key pickup")
+                                local keyModel = findKeyObject()
+                                if keyModel then
+                                    setStatus("brought Key to you locally; no supported pickup prompt found")
+                                else
+                                    setStatus("enabled; could not find a KeyObtain object in this room")
+                                end
                             else
                                 setStatus("enabled; no nearby supported locked-door prompt")
                             end
