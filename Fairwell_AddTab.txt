@@ -1,4 +1,28 @@
--- DEPRECATED: Fairwell now uses the native MSDoors addon template.
--- Install addons/Fairwell.txt into msdoors/addons/ instead of running this loader.
--- This legacy file intentionally does not create a second Fairwell tab.
-warn("[Fairwell] This tab loader is deprecated. Install msdoors/addons/Fairwell.txt to use the native addon version.")
+-- Fairwell legacy tab loader, restored as a temporary fallback.
+local url = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt"
+local ok, source = pcall(function() return game:HttpGet(url) end)
+if not ok or type(source) ~= "string" then
+    warn("[Fairwell] Could not download Fairwell_Content.txt")
+    return
+end
+local compileOk, chunk = pcall(function() return loadstring(source) end)
+if not compileOk or type(chunk) ~= "function" then
+    warn("[Fairwell] Could not compile Fairwell_Content.txt")
+    return
+end
+local runOk, builder = pcall(chunk)
+if not runOk or type(builder) ~= "function" then
+    warn("[Fairwell] Feature file did not return its builder")
+    return
+end
+if not Window or type(Window.AddTab) ~= "function" then
+    warn("[Fairwell] MSDoors Window:AddTab API unavailable")
+    return
+end
+local tabOk, tab = pcall(function() return Window:AddTab("Fairwell", "sparkles") end)
+if not tabOk or not tab then
+    warn("[Fairwell] Could not create Fairwell tab")
+    return
+end
+local buildOk, err = pcall(builder, tab, function() end, nil)
+if not buildOk then warn("[Fairwell] Tab build failed: " .. tostring(err)) end
