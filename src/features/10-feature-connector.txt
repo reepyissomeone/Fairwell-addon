@@ -8,6 +8,7 @@ do
     local FEATURE_MODULE_URLS = {
         -- Add new feature modules here, one URL per line:
         "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/11-roblox-music-player.txt?v=2",
+        "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/12-fairwell-companion.txt?v=1",
     }
 
     local env = (getgenv and getgenv()) or _G
