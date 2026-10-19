@@ -1,0 +1,387 @@
+-- Fairwell Companion: client-side 3D companion in the existing Fairwell tab.
+-- Built from the user's reference drawing. It walks to the current room's exit and waits
+-- for the player to open it. If it gets too far behind, it teleports nearby with particles.
+
+return function(tab, context)
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local PathfindingService = game:GetService("PathfindingService")
+    local TweenService = game:GetService("TweenService")
+    local Debris = game:GetService("Debris")
+    local Workspace = game:GetService("Workspace")
+
+    local player = Players.LocalPlayer
+    if not player or player.UserId ~= 11412884109 then
+        return
+    end
+
+    local ok, box = pcall(function()
+        return tab:AddLeftGroupbox("Fairwell Companion", "heart")
+    end)
+    if not ok or not box then
+        warn("[Fairwell Companion] Could not create groupbox in the Fairwell tab.")
+        return
+    end
+
+    local BLUE = Color3.fromRGB(0, 112, 255)
+    local NAVY = Color3.fromRGB(5, 31, 68)
+    local ORANGE = Color3.fromRGB(255, 65, 25)
+    local running, model, humanoid, root = false, nil, nil, nil
+    local connections = {}
+    local statusLabel
+    local lastRoomName
+    local busyTeleport = false
+    local lastTeleport = 0
+    local WALK_SPEED = 11
+    local TELEPORT_DISTANCE = 100
+    local TELEPORT_COOLDOWN = 5
+
+    local function status(text)
+        if statusLabel then pcall(function() statusLabel:SetText(text) end) end
+        print("[Fairwell Companion] " .. text)
+    end
+
+    local function disconnectAll()
+        for _, connection in ipairs(connections) do
+            pcall(function() connection:Disconnect() end)
+        end
+        table.clear(connections)
+    end
+
+    local function addPart(parent, name, size, color, cf, material)
+        local part = Instance.new("Part")
+        part.Name = name
+        part.Size = size
+        part.Color = color
+        part.CFrame = cf
+        part.Material = material or Enum.Material.SmoothPlastic
+        part.TopSurface = Enum.SurfaceType.Smooth
+        part.BottomSurface = Enum.SurfaceType.Smooth
+        part.CanCollide = false
+        part.CanTouch = false
+        part.CanQuery = false
+        part.Massless = true
+        part.Parent = parent
+        return part
+    end
+
+    local function weldTo(part, base, offset)
+        local weld = Instance.new("Weld")
+        weld.Part0 = base
+        weld.Part1 = part
+        weld.C0 = offset
+        weld.Parent = base
+        return weld
+    end
+
+    local function makeFace(head)
+        local face = Instance.new("SurfaceGui")
+        face.Name = "FairwellSmile"
+        face.Face = Enum.NormalId.Front
+        face.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+        face.PixelsPerStud = 90
+        face.LightInfluence = 0
+        face.Parent = head
+
+        local canvas = Instance.new("Frame")
+        canvas.Size = UDim2.fromScale(1, 1)
+        canvas.BackgroundTransparency = 1
+        canvas.Parent = face
+
+        local function line(name, pos, size, rotation)
+            local stroke = Instance.new("Frame")
+            stroke.Name = name
+            stroke.Position = pos
+            stroke.Size = size
+            stroke.Rotation = rotation or 0
+            stroke.BackgroundColor3 = ORANGE
+            stroke.BorderSizePixel = 0
+            stroke.Parent = canvas
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(1, 0)
+            corner.Parent = stroke
+        end
+        -- Simple orange-red eyes and a segmented curved smile, matching the drawing.
+        line("LeftEye", UDim2.fromScale(0.28, 0.18), UDim2.fromScale(0.055, 0.32), 2)
+        line("RightEye", UDim2.fromScale(0.67, 0.24), UDim2.fromScale(0.055, 0.30), 8)
+        line("SmileLeft", UDim2.fromScale(0.17, 0.56), UDim2.fromScale(0.30, 0.055), 35)
+        line("SmileMiddle", UDim2.fromScale(0.39, 0.69), UDim2.fromScale(0.26, 0.055), 0)
+        line("SmileRight", UDim2.fromScale(0.62, 0.61), UDim2.fromScale(0.20, 0.055), -35)
+    end
+
+    local function createModel()
+        if model then model:Destroy() end
+        model = Instance.new("Model")
+        model.Name = "FairwellLocalCompanion"
+        model.Parent = Workspace
+
+        local base = CFrame.new(0, 5, 0)
+        root = addPart(model, "HumanoidRootPart", Vector3.new(2, 3, 1), NAVY, base)
+        root.Transparency = 1
+        root.Anchored = false
+        root.CanCollide = false
+
+        local torso = addPart(model, "Torso", Vector3.new(2, 2.25, 0.9), NAVY, base * CFrame.new(0, 0.15, 0))
+        local head = addPart(model, "Head", Vector3.new(1.85, 1.75, 0.35), BLUE, base * CFrame.new(0, 1.85, 0))
+        makeFace(head)
+        weldTo(torso, root, CFrame.new(0, 0.15, 0))
+        weldTo(head, root, CFrame.new(0, 1.85, 0))
+
+        local leftArm = addPart(model, "LeftArm", Vector3.new(0.65, 2.35, 0.65), NAVY, base * CFrame.new(-1.45, 0.05, 0) * CFrame.Angles(0, 0, math.rad(12)))
+        local rightArm = addPart(model, "RightArm", Vector3.new(0.65, 2.35, 0.65), NAVY, base * CFrame.new(1.45, 0.05, 0) * CFrame.Angles(0, 0, math.rad(-12)))
+        weldTo(leftArm, root, CFrame.new(-1.35, 0.05, 0) * CFrame.Angles(0, 0, math.rad(12)))
+        weldTo(rightArm, root, CFrame.new(1.35, 0.05, 0) * CFrame.Angles(0, 0, math.rad(-12)))
+
+        for _, side in ipairs({-1, 1}) do
+            local cuff = addPart(model, side < 0 and "LeftCuff" or "RightCuff",
+                Vector3.new(0.67, 0.42, 0.68), Color3.fromRGB(0, 0, 0), base * CFrame.new(side * 1.45, -0.92, 0))
+            weldTo(cuff, root, CFrame.new(side * 1.35, -0.92, 0))
+            local accent = addPart(model, side < 0 and "LeftBlueAccent" or "RightBlueAccent",
+                Vector3.new(0.67, 0.16, 0.69), BLUE, base * CFrame.new(side * 1.45, -1.15, 0))
+            weldTo(accent, root, CFrame.new(side * 1.35, -1.15, 0))
+        end
+
+        local leftLeg = addPart(model, "LeftLeg", Vector3.new(0.78, 2.1, 0.8), NAVY, base * CFrame.new(-0.52, -2, 0))
+        local rightLeg = addPart(model, "RightLeg", Vector3.new(0.78, 2.1, 0.8), NAVY, base * CFrame.new(0.52, -2, 0))
+        weldTo(leftLeg, root, CFrame.new(-0.52, -2, 0))
+        weldTo(rightLeg, root, CFrame.new(0.52, -2, 0))
+
+        local hum = Instance.new("Humanoid")
+        hum.DisplayName = "Fairwell"
+        hum.Name = "Humanoid"
+        hum.WalkSpeed = WALK_SPEED
+        hum.HipHeight = 0
+        hum.RequiresNeck = false
+        hum.Parent = model
+        model.PrimaryPart = root
+        humanoid = hum
+        -- Local-only parts; movement is controlled by this client's script.
+        return model
+    end
+
+    local function currentRoom()
+        local rooms = Workspace:FindFirstChild("CurrentRooms")
+        if not rooms then return nil end
+        local character = player.Character
+        local playerRoot = character and character:FindFirstChild("HumanoidRootPart")
+        local best, bestDistance
+        for _, room in ipairs(rooms:GetChildren()) do
+            local center = room:FindFirstChild("RoomEntrance", true)
+                or room:FindFirstChild("Entrance", true)
+                or room:FindFirstChildWhichIsA("BasePart", true)
+            local distance = playerRoot and center and (center.Position - playerRoot.Position).Magnitude or math.huge
+            if not bestDistance or distance < bestDistance then
+                best, bestDistance = room, distance
+            end
+        end
+        return best
+    end
+
+    local function findExit(room)
+        if not room then return nil end
+        local candidates = {}
+        for _, obj in ipairs(room:GetDescendants()) do
+            if obj:IsA("Model") or obj:IsA("BasePart") then
+                local name = string.lower(obj.Name)
+                if string.find(name, "door", 1, true) or string.find(name, "exit", 1, true) then
+                    local part = obj:IsA("BasePart") and obj or obj.PrimaryPart
+                        or obj:FindFirstChild("Door", true)
+                        or obj:FindFirstChild("Knob", true)
+                        or obj:FindFirstChildWhichIsA("BasePart", true)
+                    if part and part:IsA("BasePart") then
+                        table.insert(candidates, part)
+                    end
+                end
+            end
+        end
+        local char = player.Character
+        local playerRoot = char and char:FindFirstChild("HumanoidRootPart")
+        table.sort(candidates, function(a, b)
+            if not playerRoot then return a.Position.Z < b.Position.Z end
+            return (a.Position - playerRoot.Position).Magnitude < (b.Position - playerRoot.Position).Magnitude
+        end)
+        return candidates[1]
+    end
+
+    local function teleportEffect(position)
+        local puff = Instance.new("Part")
+        puff.Name = "FairwellTeleportEffect"
+        puff.Anchored = true
+        puff.CanCollide = false
+        puff.CanTouch = false
+        puff.CanQuery = false
+        puff.Transparency = 1
+        puff.Size = Vector3.new(1, 1, 1)
+        puff.CFrame = CFrame.new(position)
+        puff.Parent = Workspace
+        local particles = Instance.new("ParticleEmitter")
+        particles.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+        particles.Color = ColorSequence.new(Color3.fromRGB(15, 20, 70), BLUE)
+        particles.LightEmission = 0.8
+        particles.Rate = 0
+        particles.Lifetime = NumberRange.new(0.35, 0.75)
+        particles.Speed = NumberRange.new(3, 7)
+        particles.SpreadAngle = Vector2.new(180, 180)
+        particles.Parent = puff
+        particles:Emit(36)
+        Debris:AddItem(puff, 1.5)
+    end
+
+    local function teleportNearPlayer()
+        if busyTeleport or os.clock() - lastTeleport < TELEPORT_COOLDOWN then return end
+        local character = player.Character
+        local playerRoot = character and character:FindFirstChild("HumanoidRootPart")
+        if not playerRoot or not root then return end
+        busyTeleport = true
+        lastTeleport = os.clock()
+        local oldPosition = root.Position
+        teleportEffect(oldPosition)
+        for _, obj in ipairs(model:GetDescendants()) do
+            if obj:IsA("BasePart") then obj.Transparency = 1 end
+        end
+        task.wait(0.35)
+        local destination = playerRoot.CFrame * CFrame.new(-3, 0, 5)
+        local rayParams = RaycastParams.new()
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+        rayParams.FilterDescendantsInstances = {model, character}
+        local hit = Workspace:Raycast(destination.Position + Vector3.new(0, 8, 0), Vector3.new(0, -20, 0), rayParams)
+        local finalPos = hit and (hit.Position + Vector3.new(0, 2.5, 0)) or (playerRoot.Position + Vector3.new(-3, 2.5, 5))
+        model:PivotTo(CFrame.lookAt(finalPos, playerRoot.Position))
+        teleportEffect(finalPos)
+        for _, obj in ipairs(model:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Name ~= "HumanoidRootPart" then obj.Transparency = 0 end
+        end
+        root.Transparency = 1
+        busyTeleport = false
+        status("Teleported nearby to catch up.")
+    end
+
+    local function stop()
+        running = false
+        disconnectAll()
+        if model then model:Destroy(); model = nil end
+        humanoid, root = nil, nil
+        status("Companion disabled.")
+    end
+
+    local function start()
+        if running then return end
+        running = true
+        createModel()
+        local lastMoveTarget
+        local lastPathAt = 0
+        local waitingDoor, waitingRoom
+        status("Active. Fairwell is looking for the next door.")
+        table.insert(connections, RunService.Heartbeat:Connect(function()
+            if not running or not model or not root or not root.Parent then return end
+            local character = player.Character
+            local playerRoot = character and character:FindFirstChild("HumanoidRootPart")
+            if not playerRoot then return end
+            if (root.Position - playerRoot.Position).Magnitude > TELEPORT_DISTANCE then
+                teleportNearPlayer()
+                return
+            end
+
+            local room = currentRoom()
+            if not room then return end
+            if lastRoomName ~= room.Name then
+                lastRoomName = room.Name
+                waitingDoor, waitingRoom, lastMoveTarget = nil, nil, nil
+            end
+
+            local exit = findExit(room)
+            if not exit then
+                status("Room " .. room.Name .. ": searching for its exit door...")
+                return
+            end
+
+            local isOpen = false
+            local doorModel = exit:FindFirstAncestorOfClass("Model")
+            if doorModel then
+                local openAttr = doorModel:GetAttribute("Opened") or doorModel:GetAttribute("Open")
+                isOpen = openAttr == true
+                local doorName = string.lower(doorModel.Name)
+                if string.find(doorName, "open", 1, true) then isOpen = true end
+            end
+            if waitingDoor == exit and waitingRoom == room and not isOpen then
+                humanoid:MoveTo(root.Position)
+                return
+            end
+            if waitingDoor == exit and waitingRoom == room and isOpen then
+                waitingDoor, waitingRoom, lastMoveTarget = nil, nil, nil
+            end
+
+            local distance = (exit.Position - root.Position).Magnitude
+            if distance > 4 then
+                if not lastMoveTarget or (lastMoveTarget - exit.Position).Magnitude > 3 or os.clock() - lastPathAt > 2 then
+                    lastMoveTarget = exit.Position
+                    lastPathAt = os.clock()
+                    local path = PathfindingService:CreatePath({
+                        AgentRadius = 1,
+                        AgentHeight = 5,
+                        AgentCanJump = true,
+                        WaypointSpacing = 5,
+                    })
+                    local computed = pcall(function()
+                        path:ComputeAsync(root.Position, exit.Position + exit.CFrame.LookVector * -3)
+                    end)
+                    if computed and path.Status == Enum.PathStatus.Success then
+                        local waypoints = path:GetWaypoints()
+                        local waypoint = waypoints[math.min(2, #waypoints)]
+                        if waypoint then humanoid:MoveTo(waypoint.Position) end
+                    else
+                        humanoid:MoveTo(exit.Position + exit.CFrame.LookVector * -3)
+                    end
+                    status("Walking to the door in room " .. room.Name .. ".")
+                else
+                    humanoid:MoveTo(exit.Position + exit.CFrame.LookVector * -3)
+                end
+            else
+                waitingDoor, waitingRoom = exit, room
+                humanoid:MoveTo(root.Position)
+                status("Waiting for you to open the door.")
+            end
+        end))
+    end
+
+    pcall(function()
+        statusLabel = box:AddLabel({Text = "Off - ready to summon Fairwell", DoesWrap = true})
+    end)
+    pcall(function()
+        box:AddLabel({
+            Text = "A local 3D Fairwell based on your drawing. He walks to the next door and waits for you. If you get too far away, he teleports nearby.",
+            DoesWrap = true
+        })
+    end)
+    pcall(function()
+        box:AddToggle("Fairwell3DCompanionEnabled", {
+            Text = "Enable Fairwell Companion",
+            Default = false,
+            Callback = function(enabled)
+                if enabled then
+                    local success, err = pcall(start)
+                    if not success then
+                        warn("[Fairwell Companion] Start failed: " .. tostring(err))
+                        status("Could not start: " .. tostring(err))
+                    end
+                else
+                    stop()
+                end
+            end
+        })
+    end)
+    pcall(function()
+        box:AddButton({
+            Text = "Teleport Fairwell to me",
+            Func = function()
+                if running then teleportNearPlayer() else status("Enable the companion first.") end
+            end
+        })
+    end)
+    pcall(function()
+        box:AddButton({
+            Text = "Remove Fairwell",
+            Func = stop
+        })
+    end)
+end
