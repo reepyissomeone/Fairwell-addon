@@ -124,8 +124,8 @@ return function(tab, context)
         -- Rebuilt from the proportions and placements in the supplied Group.obj export,
         -- rather than the previous generic Roblox block avatar. OBJ mesh files cannot be
         -- loaded directly by a client-side Lua addon, so these are fitted primitives.
-        local base = CFrame.new(0, 5, 0)
-        root = addPart(model, "HumanoidRootPart", Vector3.new(2, 3, 1), NAVY, base)
+        local base = CFrame.new(0, 6, 0)
+        root = addPart(model, "HumanoidRootPart", Vector3.new(2, 4, 1), NAVY, base)
         root.Transparency = 1
         root.Anchored = false
         root.CanCollide = true
@@ -136,41 +136,41 @@ return function(tab, context)
         end
 
         -- OBJ layout: narrow long legs, wide horizontal arms, compact torso, cube head.
-        local torso = fittedPart("Torso", Vector3.new(1.0, 1.92, 1.0), NAVY, Vector3.new(0, 0.25, 0))
-        weldTo(torso, root, CFrame.new(0, 0.25, 0))
+        local torso = fittedPart("Torso", Vector3.new(0.82, 2.65, 0.82), NAVY, Vector3.new(0, 0.05, 0))
+        weldTo(torso, root, CFrame.new(0, 0.05, 0))
 
-        local head = fittedPart("Head", Vector3.new(1.0, 1.0, 1.0), BLUE, Vector3.new(0, 1.78, 0))
+        local head = fittedPart("Head", Vector3.new(1.18, 1.18, 1.18), BLUE, Vector3.new(0, 2.18, 0))
         makeFace(head)
-        weldTo(head, root, CFrame.new(0, 1.78, 0))
+        weldTo(head, root, CFrame.new(0, 2.18, 0))
 
-        local leftLeg = fittedPart("LeftLeg", Vector3.new(0.58, 3.2, 0.58), NAVY, Vector3.new(-0.35, -1.25, 0))
-        local rightLeg = fittedPart("RightLeg", Vector3.new(0.58, 3.2, 0.58), NAVY, Vector3.new(0.35, -1.25, 0))
-        weldTo(leftLeg, root, CFrame.new(-0.35, -1.25, 0))
-        weldTo(rightLeg, root, CFrame.new(0.35, -1.25, 0))
+        local leftLeg = fittedPart("LeftLeg", Vector3.new(0.48, 3.65, 0.48), NAVY, Vector3.new(-0.25, -2.95, 0))
+        local rightLeg = fittedPart("RightLeg", Vector3.new(0.48, 3.65, 0.48), NAVY, Vector3.new(0.25, -2.95, 0))
+        weldTo(leftLeg, root, CFrame.new(-0.25, -2.95, 0))
+        weldTo(rightLeg, root, CFrame.new(0.25, -2.95, 0))
 
         -- The export's arms are long, slim horizontal forms with black cuffs and blue tips.
-        local leftArm = fittedPart("LeftArm", Vector3.new(2.02, 0.66, 0.7), NAVY, Vector3.new(-1.62, 0.45, 0))
-        local rightArm = fittedPart("RightArm", Vector3.new(2.02, 0.66, 0.7), NAVY, Vector3.new(1.69, 0.39, 0))
-        weldTo(leftArm, root, CFrame.new(-1.62, 0.45, 0))
-        weldTo(rightArm, root, CFrame.new(1.69, 0.39, 0))
+        local leftArm = fittedPart("LeftArm", Vector3.new(2.45, 0.48, 0.48), NAVY, Vector3.new(-1.55, 0.72, 0), CFrame.Angles(0, 0, math.rad(-22)))
+        local rightArm = fittedPart("RightArm", Vector3.new(2.45, 0.48, 0.48), NAVY, Vector3.new(1.55, 0.72, 0), CFrame.Angles(0, 0, math.rad(22)))
+        weldTo(leftArm, root, CFrame.new(-1.55, 0.72, 0) * CFrame.Angles(0, 0, math.rad(-22)))
+        weldTo(rightArm, root, CFrame.new(1.55, 0.72, 0) * CFrame.Angles(0, 0, math.rad(22)))
 
-        local leftCuff = fittedPart("LeftCuff", Vector3.new(0.5, 0.66, 0.81), Color3.fromRGB(0, 0, 0), Vector3.new(-2.81, 0.39, 0))
-        local rightCuff = fittedPart("RightCuff", Vector3.new(0.5, 0.67, 0.81), Color3.fromRGB(0, 0, 0), Vector3.new(2.88, 0.3, 0))
-        weldTo(leftCuff, root, CFrame.new(-2.81, 0.39, 0))
-        weldTo(rightCuff, root, CFrame.new(2.88, 0.3, 0))
+        local leftCuff = fittedPart("LeftCuff", Vector3.new(0.42, 0.52, 0.56), Color3.fromRGB(0, 0, 0), Vector3.new(-2.65, 0.3, 0), CFrame.Angles(0, 0, math.rad(-22)))
+        local rightCuff = fittedPart("RightCuff", Vector3.new(0.42, 0.52, 0.56), Color3.fromRGB(0, 0, 0), Vector3.new(2.65, 0.3, 0), CFrame.Angles(0, 0, math.rad(22)))
+        weldTo(leftCuff, root, CFrame.new(-2.65, 0.3, 0) * CFrame.Angles(0, 0, math.rad(-22)))
+        weldTo(rightCuff, root, CFrame.new(2.65, 0.3, 0) * CFrame.Angles(0, 0, math.rad(22)))
 
-        local leftAccent = fittedPart("LeftBlueAccent", Vector3.new(0.24, 0.32, 0.39), BLUE, Vector3.new(-2.95, 0.2, 0.22))
-        local rightAccent = fittedPart("RightBlueAccent", Vector3.new(0.24, 0.32, 0.39), BLUE, Vector3.new(3.01, 0.2, 0.22))
-        weldTo(leftAccent, root, CFrame.new(-2.95, 0.2, 0.22))
-        weldTo(rightAccent, root, CFrame.new(3.01, 0.2, 0.22))
+        local leftAccent = fittedPart("LeftBlueAccent", Vector3.new(0.24, 0.32, 0.39), BLUE, Vector3.new(-2.8, 0.08, 0.22))
+        local rightAccent = fittedPart("RightBlueAccent", Vector3.new(0.24, 0.32, 0.39), BLUE, Vector3.new(2.8, 0.08, 0.22))
+        weldTo(leftAccent, root, CFrame.new(-2.8, 0.08, 0.22))
+        weldTo(rightAccent, root, CFrame.new(2.8, 0.08, 0.22))
 
         -- Small front details present in the OBJ export.
-        local mouth = fittedPart("FaceMouth", Vector3.new(0.57, 0.17, 0.17), ORANGE, Vector3.new(0, 1.55, -0.45))
-        weldTo(mouth, root, CFrame.new(0, 1.55, -0.45))
-        local leftEye = fittedPart("LeftEye", Vector3.new(0.17, 0.17, 0.17), ORANGE, Vector3.new(-0.28, 1.9, -0.45))
-        local rightEye = fittedPart("RightEye", Vector3.new(0.17, 0.17, 0.17), ORANGE, Vector3.new(0.26, 1.9, -0.45))
-        weldTo(leftEye, root, CFrame.new(-0.28, 1.9, -0.45))
-        weldTo(rightEye, root, CFrame.new(0.26, 1.9, -0.45))
+        local mouth = fittedPart("FaceMouth", Vector3.new(0.62, 0.14, 0.14), ORANGE, Vector3.new(0, 1.88, -0.6))
+        weldTo(mouth, root, CFrame.new(0, 1.88, -0.6))
+        local leftEye = fittedPart("LeftEye", Vector3.new(0.14, 0.14, 0.14), ORANGE, Vector3.new(-0.3, 2.32, -0.6))
+        local rightEye = fittedPart("RightEye", Vector3.new(0.14, 0.14, 0.14), ORANGE, Vector3.new(0.3, 2.32, -0.6))
+        weldTo(leftEye, root, CFrame.new(-0.3, 2.32, -0.6))
+        weldTo(rightEye, root, CFrame.new(0.3, 2.32, -0.6))
 
         local hum = Instance.new("Humanoid")
         hum.DisplayName = "Fairwell"
