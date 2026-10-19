@@ -119,7 +119,7 @@ return function(tab, context)
         root = addPart(model, "HumanoidRootPart", Vector3.new(2, 3, 1), NAVY, base)
         root.Transparency = 1
         root.Anchored = false
-        root.CanCollide = false
+        root.CanCollide = true
 
         local torso = addPart(model, "Torso", Vector3.new(2, 2.25, 0.9), NAVY, base * CFrame.new(0, 0.15, 0))
         local head = addPart(model, "Head", Vector3.new(1.85, 1.75, 0.35), BLUE, base * CFrame.new(0, 1.85, 0))
