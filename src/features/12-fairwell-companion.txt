@@ -28,6 +28,7 @@ return function(tab, context)
     local ORANGE = Color3.fromRGB(255, 65, 25)
     local running, model, humanoid, root = false, nil, nil, nil
     local connections = {}
+    local joints = {}
     local statusLabel
     local lastRoomName
     local busyTeleport = false
@@ -65,13 +66,17 @@ return function(tab, context)
         return part
     end
 
+    -- Motor6D joints allow independent limb posing.
     local function weldTo(part, base, offset)
-        local weld = Instance.new("Weld")
-        weld.Part0 = base
-        weld.Part1 = part
-        weld.C0 = offset
-        weld.Parent = base
-        return weld
+        local joint = Instance.new("Motor6D")
+        joint.Name = part.Name .. "Joint"
+        joint.Part0 = base
+        joint.Part1 = part
+        joint.C0 = offset
+        joint.C1 = CFrame.identity
+        joint.Parent = base
+        joints[part.Name] = joint
+        return joint
     end
 
     local function makeFace(head)
@@ -268,6 +273,24 @@ return function(tab, context)
         if running then return end
         running = true
         createModel()
+        local animationClock = 0
+        table.insert(connections, RunService.Heartbeat:Connect(function(dt)
+            if not running or not humanoid or not model then return end
+            animationClock += dt
+            local moving = humanoid.MoveDirection.Magnitude > 0.05
+            local swing = moving and math.sin(animationClock * 8) * 0.55 or math.sin(animationClock * 1.5) * 0.035
+            local bob = moving and 0 or math.sin(animationClock * 2) * 0.035
+            local function pose(name, transform)
+                local joint = joints[name]
+                if joint then joint.Transform = transform end
+            end
+            pose("LeftArm", CFrame.Angles(swing, 0, math.rad(12)))
+            pose("RightArm", CFrame.Angles(-swing, 0, math.rad(-12)))
+            pose("LeftLeg", CFrame.Angles(-swing, 0, 0))
+            pose("RightLeg", CFrame.Angles(swing, 0, 0))
+            pose("Head", CFrame.new(0, bob, 0) * CFrame.Angles(0, math.sin(animationClock * 0.8) * 0.025, 0))
+            pose("Torso", CFrame.new(0, bob, 0))
+        end))
         local lastMoveTarget
         local lastPathAt = 0
         local waitingDoor, waitingRoom
