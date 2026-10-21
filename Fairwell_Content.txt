@@ -14,7 +14,7 @@ local MODULE_URLS = {
     "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/08-auto-giggle-glowstick.txt?v=20261018",
     "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/09-auto-open-locked-doors.txt?v=20261018-13",
     "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/10-feature-connector.txt?v=5",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/config/config-manager.txt?v=20261018-2",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/config/config-manager.txt?v=20261020-1",
 }
 
 local pieces = {}
