@@ -4,7 +4,7 @@
 -- preserving the original shared Lua scope and behavior.
 
 local MODULE_URLS = {
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/01-communicator-and-stem.txt?v=20261018",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/01-communicator-and-stem.txt?v=20261020-farm-stairwell",
     "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/02-anti-creak.txt?v=20261018",
     "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/03-anti-groundskeeper.txt?v=20261018",
     "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/04-auto-closet.txt?v=20261018",
