@@ -874,8 +874,7 @@ return function(tab, reloadContent, hotelTab)
             return false
         end
 
-        local function findCurrentDoor()
-            local room = currentRoom()
+        local function findClosedDoorInRoom(room)
             if not room then return nil end
 
             for _, object in ipairs(room:GetDescendants()) do
@@ -982,18 +981,32 @@ return function(tab, reloadContent, hotelTab)
                     end
 
                     task.spawn(function()
-                        setFarmStatus('looking for a closed Door model in your current room')
+                        setFarmStatus('looking for a closed Door in the room before the latest')
 
                         while state.running do
-                            local room = currentRoom()
-                            local targetDoor = findCurrentDoor()
+                            local rooms = workspace:FindFirstChild("CurrentRooms")
+                            local roomList = {}
+                            if rooms then
+                                for _, candidate in ipairs(rooms:GetChildren()) do
+                                    if tonumber(candidate.Name) then
+                                        table.insert(roomList, candidate)
+                                    end
+                                end
+                            end
+                            table.sort(roomList, function(a, b)
+                                return tonumber(a.Name) < tonumber(b.Name)
+                            end)
 
-                            if room and targetDoor then
-                                setFarmStatus('CFrame teleporting to closed Door in current room')
+                            -- Target the room immediately before the latest loaded room.
+                            local targetRoom = #roomList >= 2 and roomList[#roomList - 1] or nil
+                            local targetDoor = findClosedDoorInRoom(targetRoom)
+
+                            if targetRoom and targetDoor then
+                                setFarmStatus('CFrame spamming to closed Door in room ' .. targetRoom.Name .. ' until it opens')
                                 teleportToDoor(targetDoor)
                                 task.wait(0.1)
                             else
-                                setFarmStatus(room and 'No closed Door model in current room' or 'Current room not found')
+                                setFarmStatus(targetRoom and ('No closed Door model in room ' .. targetRoom.Name) or 'Need at least two loaded rooms')
                                 task.wait(0.1)
                             end
                         end
