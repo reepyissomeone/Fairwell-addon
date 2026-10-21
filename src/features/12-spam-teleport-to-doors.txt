@@ -1,0 +1,127 @@
+return function(tab, context)
+    -- Spam Teleport to Doors: targets only real instances named exactly "Doors".
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local localPlayer = Players.LocalPlayer
+    local env = context and context.Environment or ((getgenv and getgenv()) or _G)
+
+    local old = env._FairwellSpamTeleportDoorsState
+    if old then old.running = false end
+    local state = {running = true, enabled = false}
+    env._FairwellSpamTeleportDoorsState = state
+
+    local box
+    local ok, result = pcall(function()
+        return tab:AddLeftGroupbox("Movement", "move")
+    end)
+    if ok then box = result end
+    if not box then
+        pcall(function() box = tab:AddRightGroupbox("Movement", "move") end)
+    end
+    if not box then return end
+
+    local statusLabel
+    local lastStatus = ""
+    local function setStatus(message)
+        if message == lastStatus then return end
+        lastStatus = message
+        if statusLabel then
+            pcall(function() statusLabel:SetText("Status: " .. message) end)
+        end
+    end
+
+    pcall(function()
+        statusLabel = box:AddLabel({Text = "Status: off", DoesWrap = true})
+        box:AddLabel({
+            Text = 'Repeatedly teleports your character to real Workspace descendants named exactly "Doors". It does not target Creak or guess other names.',
+            DoesWrap = true
+        })
+    end)
+
+    local function getTargetCFrame(instance)
+        if not instance or not instance.Parent then return nil end
+        if instance:IsA("BasePart") then
+            return instance.CFrame
+        elseif instance:IsA("Model") then
+            local success, pivot = pcall(function() return instance:GetPivot() end)
+            if success then return pivot end
+        end
+        return nil
+    end
+
+    local function collectDoorTargets()
+        local targets, seen = {}, {}
+        local success, descendants = pcall(function() return workspace:GetDescendants() end)
+        if not success then return targets end
+        for _, instance in ipairs(descendants) do
+            if instance.Name == "Doors" then
+                local cf = getTargetCFrame(instance)
+                if cf and not seen[instance] then
+                    seen[instance] = true
+                    targets[#targets + 1] = {instance = instance, cframe = cf}
+                elseif instance:IsA("Folder") or instance:IsA("Model") then
+                    -- If a named Doors container has no usable pivot, target its real parts.
+                    for _, child in ipairs(instance:GetDescendants()) do
+                        if child:IsA("BasePart") and not seen[child] then
+                            seen[child] = true
+                            targets[#targets + 1] = {instance = child, cframe = child.CFrame}
+                        end
+                    end
+                end
+            end
+        end
+        return targets
+    end
+
+    pcall(function()
+        box:AddToggle("FairwellSpamTeleportDoors", {
+            Text = "Spam Teleport to Doors",
+            Tooltip = 'Repeatedly teleports to instances named exactly "Doors" until disabled.',
+            Default = false,
+            Callback = function(value)
+                state.enabled = value == true
+                setStatus(state.enabled and "enabled; searching for Doors" or "off")
+            end
+        })
+    end)
+
+    task.spawn(function()
+        local targetIndex = 0
+        while state.running do
+            task.wait(0.12)
+            if state.enabled then
+                local character = localPlayer.Character
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                local root = character and character:FindFirstChild("HumanoidRootPart")
+                if not character or not root or not humanoid or humanoid.Health <= 0 then
+                    setStatus("waiting for a living character")
+                else
+                    local targets = collectDoorTargets()
+                    if #targets == 0 then
+                        setStatus('no instances named exactly "Doors" found in Workspace')
+                    else
+                        targetIndex = (targetIndex % #targets) + 1
+                        local target = targets[targetIndex]
+                        local currentCFrame = getTargetCFrame(target.instance)
+                        if currentCFrame then
+                            local destination = currentCFrame * CFrame.new(0, 3, 0)
+                            local moved = pcall(function()
+                                character:PivotTo(destination)
+                            end)
+                            if not moved then
+                                moved = pcall(function() root.CFrame = destination end)
+                            end
+                            if moved then
+                                setStatus("teleporting to Doors (" .. tostring(targetIndex) .. "/" .. tostring(#targets) .. ")")
+                            else
+                                setStatus("found Doors, but teleport failed")
+                            end
+                        else
+                            setStatus("Doors target disappeared; rescanning")
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
