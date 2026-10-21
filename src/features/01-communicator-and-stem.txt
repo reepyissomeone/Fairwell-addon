@@ -941,7 +941,7 @@ return function(tab, reloadContent, hotelTab)
         pcall(function()
             statusLabel = stairwellBox:AddLabel({Text = "Status: idle", DoesWrap = true})
             stairwellBox:AddLabel({
-                Text = "Teleports through generated Landings, then searches for another Stairwell prompt.",
+                Text = 'Scans Workspace.CurrentRooms and CFrame-teleports to each room\'s Door model as it appears.',
                 DoesWrap = true
             })
             stairwellBox:AddToggle("FairwellFarmStairwellToggle", {
@@ -955,74 +955,46 @@ return function(tab, reloadContent, hotelTab)
                     end
 
                     task.spawn(function()
-                        local usedStructures = setmetatable({}, {__mode = "k"})
-                        setFarmStatus("starting")
+                        local visitedDoors = setmetatable({}, {__mode = "k"})
+                        setFarmStatus('scanning Workspace.CurrentRooms for Door models')
+
                         while state.running do
-                            local logic = findLandingLogic()
-                            if not logic then
-                                setFarmStatus("waiting for StairwellLandingLogic")
-                                task.wait(0.5)
-                            else
-                                local visited = setmetatable({}, {__mode = "k"})
-                                local lastNewLandingAt = os.clock()
-                                local foundLanding = false
-                                setFarmStatus("scanning Landings")
+                            local rooms = workspace:FindFirstChild("CurrentRooms")
+                            local targetDoor
+                            local targetRoomNumber
 
-                                while state.running and logic.Parent do
-                                    local landings = getLandings(logic)
-                                    local nextLanding
-                                    for _, entry in ipairs(landings) do
-                                        if not visited[entry.object] then
-                                            nextLanding = entry
-                                            break
-                                        end
-                                    end
+                            if rooms then
+                                local roomList = rooms:GetChildren()
+                                table.sort(roomList, function(a, b)
+                                    local an, bn = tonumber(a.Name), tonumber(b.Name)
+                                    if an and bn then return an < bn end
+                                    if an then return true end
+                                    if bn then return false end
+                                    return a.Name < b.Name
+                                end)
 
-                                    if nextLanding then
-                                        visited[nextLanding.object] = true
-                                        foundLanding = true
-                                        lastNewLandingAt = os.clock()
-                                        setFarmStatus("teleporting to Landing")
-                                        if not teleportTo(nextLanding.part) then
-                                            setFarmStatus("could not teleport to Landing")
-                                            task.wait(0.3)
-                                        else
-                                            task.wait(0.25)
-                                        end
-                                    elseif foundLanding and os.clock() - lastNewLandingAt >= 8 then
+                                for _, room in ipairs(roomList) do
+                                    local door = room:FindFirstChild("Door", true)
+                                    if door and (door:IsA("Model") or door:IsA("BasePart"))
+                                        and not visitedDoors[door] then
+                                        targetDoor = door
+                                        targetRoomNumber = room.Name
                                         break
-                                    else
-                                        task.wait(0.2)
                                     end
-                                end
-
-                                if not state.running then break end
-                                local door = findCurrentDoor()
-                                if door then
-                                    setFarmStatus('CFrame teleporting to Door model under CurrentRooms')
-                                    teleportToDoor(door)
-                                    task.wait(0.25)
-                                else
-                                    setFarmStatus('No Model named "Door" found under CurrentRooms; skipping Door teleport')
-                                    task.wait(0.15)
-                                end
-                                if not state.running then break end
-                                setFarmStatus("no new Landings; searching for another Stairwell")
-                                local prompt, part, structure = findOtherStairwellPrompt(usedStructures)
-                                if prompt and part and structure then
-                                    usedStructures[structure] = true
-                                    teleportTo(part)
-                                    task.wait(0.2)
-                                    local ok, message = activatePrompt(prompt)
-                                    setFarmStatus(ok and "activated next Stairwell; waiting for run"
-                                        or ("prompt failed: " .. message))
-                                    task.wait(1)
-                                else
-                                    setFarmStatus("no other Stairwell prompt found; retrying")
-                                    task.wait(1)
                                 end
                             end
+
+                            if targetDoor then
+                                visitedDoors[targetDoor] = true
+                                setFarmStatus('CFrame teleporting to CurrentRooms["' .. tostring(targetRoomNumber) .. '"].Door')
+                                teleportToDoor(targetDoor)
+                                task.wait(0.35)
+                            else
+                                setFarmStatus("waiting for a new room Door under Workspace.CurrentRooms")
+                                task.wait(0.25)
+                            end
                         end
+
                         setFarmStatus("stopped")
                     end)
                 end
