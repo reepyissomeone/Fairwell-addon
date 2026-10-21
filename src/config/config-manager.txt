@@ -95,8 +95,11 @@
         end
 
         local function getRegistries()
-            local toggles = configEnv.Toggles or _G.Toggles or (configLibrary and configLibrary.Toggles) or Toggles or {}
-            local options = configEnv.Options or _G.Options or (configLibrary and configLibrary.Options) or Options or {}
+            local toggles = configEnv.Toggles or _G.Toggles or (configLibrary and configLibrary.Toggles) or Toggles
+            local options = configEnv.Options or _G.Options or (configLibrary and configLibrary.Options) or Options
+            -- Some UI builds expose registry globals before initializing them. Never pass nil/non-tables to pairs().
+            if type(toggles) ~= "table" then toggles = {} end
+            if type(options) ~= "table" then options = {} end
             return toggles, options
         end
 
