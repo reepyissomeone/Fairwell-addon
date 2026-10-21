@@ -981,12 +981,14 @@ return function(tab, reloadContent, hotelTab)
                     end
 
                     task.spawn(function()
+                        -- Watchdog: if any unexpected game/API error kills a scan pass,
+                        -- catch it and keep the farmer alive while the toggle remains enabled.
                         local targetRoomNumber = nil
                         local initialTargetChosen = false
-                        local warnedRoomNumber = nil
                         setFarmStatus('scanning for the room before the latest loaded room')
 
                         while state.running do
+                            local passOk, passErr = pcall(function()
                             -- Rescan every pass: rooms and Door models may stream in late.
                             local rooms = workspace:FindFirstChild("CurrentRooms")
                             local roomList = {}
@@ -1054,7 +1056,12 @@ return function(tab, reloadContent, hotelTab)
                                 setFarmStatus('Waiting for the next Door to load; rescanning')
                             end
 
-                            task.wait(0.1)
+                            end) -- protected scan pass
+                            if not passOk then
+                                warn("[Fairwell Farm Stairwell] Scan error; retrying: " .. tostring(passErr))
+                                setFarmStatus("temporary scan error; automatically retrying")
+                            end
+                            task.wait(passOk and 0.1 or 0.2)
                         end
                         setFarmStatus("stopped")
                     end)
