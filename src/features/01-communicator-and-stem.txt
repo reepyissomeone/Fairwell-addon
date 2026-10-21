@@ -845,16 +845,49 @@ return function(tab, reloadContent, hotelTab)
             return room ~= nil and object:IsDescendantOf(room)
         end
 
-        -- Teleport to the current room's Door model, if it exists.
-        -- Some rooms name the model "Door" and keep its usable parts beneath it.
-        local function findCurrentDoorPart()
+        -- Find the exact Door model shown under Workspace.CurrentRooms["0"].
+        -- Return the model itself so teleporting uses its pivot, not an arbitrary
+        -- hinge/knob part selected from inside the model.
+        local function findCurrentDoor()
             local rooms = workspace:FindFirstChild("CurrentRooms")
             local room = rooms and rooms:FindFirstChild("0")
-            if not room then room = currentRoom() end
             if not room then return nil end
-            local door = room:FindFirstChild("Door", true)
-            if not door then return nil end
-            return landingPart(door)
+            return room:FindFirstChild("Door", true)
+        end
+
+        local function teleportToDoor(door)
+            if not door or not door.Parent then
+                setFarmStatus('Door teleport failed: CurrentRooms["0"].Door not found')
+                return false
+            end
+            local character = player and player.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            if not root then
+                setFarmStatus("Door teleport failed: character/root missing")
+                return false
+            end
+
+            local ok, err = pcall(function()
+                local targetCFrame
+                if door:IsA("BasePart") then
+                    targetCFrame = door.CFrame
+                elseif door:IsA("Model") then
+                    targetCFrame = door:GetPivot()
+                else
+                    local part = landingPart(door)
+                    if not part then error("Door has no usable BasePart") end
+                    targetCFrame = part.CFrame
+                end
+                root.CFrame = targetCFrame + Vector3.new(0, 3, 0)
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+            end)
+            if not ok then
+                setFarmStatus("Door CFrame teleport failed: " .. tostring(err))
+                return false
+            end
+            setFarmStatus('CFrame teleported to CurrentRooms["0"].Door')
+            return true
         end
 
         local function findOtherStairwellPrompt(usedStructures)
@@ -959,11 +992,14 @@ return function(tab, reloadContent, hotelTab)
                                 end
 
                                 if not state.running then break end
-                                local doorPart = findCurrentDoorPart()
-                                if doorPart then
-                                    setFarmStatus("teleporting to current room Door")
-                                    teleportTo(doorPart)
+                                local door = findCurrentDoor()
+                                if door then
+                                    setFarmStatus('CFrame teleporting to CurrentRooms["0"].Door')
+                                    teleportToDoor(door)
                                     task.wait(0.25)
+                                else
+                                    setFarmStatus('CurrentRooms["0"].Door not found; skipping Door teleport')
+                                    task.wait(0.15)
                                 end
                                 if not state.running then break end
                                 setFarmStatus("no new Landings; searching for another Stairwell")
