@@ -134,6 +134,44 @@ local function createDiagnosticControls()
     end)
 end
 
+
+-- Capture client runtime errors after startup as well as load-time failures.
+-- LogService catches errors that appear in the client output; ScriptContext is an
+-- additional source when the executor exposes its Error event.
+local runtimeErrorConnections = {}
+local function recordRuntimeError(message, source)
+    local line = "[Fairwell Runtime Error] " .. tostring(message)
+    if source and tostring(source) ~= "" then
+        line = line .. "\\nSource: " .. tostring(source)
+    end
+    logMessage(line)
+    createDiagnosticControls()
+end
+
+pcall(function()
+    local LogService = game:GetService("LogService")
+    table.insert(runtimeErrorConnections, LogService.MessageOut:Connect(function(message, messageType)
+        local isError = false
+        pcall(function()
+            isError = messageType == Enum.MessageType.MessageError
+        end)
+        if isError then
+            recordRuntimeError(message, "LogService.MessageOut")
+        end
+    end))
+end)
+
+pcall(function()
+    local ScriptContext = game:GetService("ScriptContext")
+    table.insert(runtimeErrorConnections, ScriptContext.Error:Connect(function(message, stackTrace, scriptInstance)
+        local source = tostring(scriptInstance or "ScriptContext.Error")
+        if stackTrace and tostring(stackTrace) ~= "" then
+            source = source .. "\\n" .. tostring(stackTrace)
+        end
+        recordRuntimeError(message, source)
+    end))
+end)
+
 local function loadRemoteContent()
     local fetched, source = pcall(function() return game:HttpGet(CONTENT_URL) end)
     if not fetched or type(source) ~= "string" or source == "" then
