@@ -982,10 +982,12 @@ return function(tab, reloadContent, hotelTab)
 
                     task.spawn(function()
                         local targetRoomNumber = nil
-                        local openedDoors = setmetatable({}, {__mode = "k"})
-                        setFarmStatus('looking for a closed Door in the room before the latest')
+                        local initialTargetChosen = false
+                        local warnedRoomNumber = nil
+                        setFarmStatus('scanning for the room before the latest loaded room')
 
                         while state.running do
+                            -- Rescan every pass: rooms and Door models may stream in late.
                             local rooms = workspace:FindFirstChild("CurrentRooms")
                             local roomList = {}
                             if rooms then
@@ -999,40 +1001,61 @@ return function(tab, reloadContent, hotelTab)
                                 return tonumber(a.Name) < tonumber(b.Name)
                             end)
 
-                            -- Initially target the room before the latest. After its Door
-                            -- opens, advance to the next numbered room that is loaded.
                             local targetRoom
-                            if targetRoomNumber then
+                            if not initialTargetChosen then
+                                if #roomList >= 2 then
+                                    targetRoom = roomList[#roomList - 1]
+                                    targetRoomNumber = tonumber(targetRoom.Name)
+                                    initialTargetChosen = true
+                                end
+                            elseif targetRoomNumber then
+                                -- First try the exact target. If it exists but has no Door,
+                                -- or its Door is not confirmed closed, advance to the next
+                                -- loaded room containing a Door model.
                                 for _, candidate in ipairs(roomList) do
-                                    if tonumber(candidate.Name) == targetRoomNumber then
+                                    local number = tonumber(candidate.Name)
+                                    if number == targetRoomNumber then
                                         targetRoom = candidate
                                         break
                                     end
                                 end
-                            end
-                            if not targetRoom and #roomList >= 2 then
-                                targetRoom = roomList[#roomList - 1]
-                                targetRoomNumber = tonumber(targetRoom.Name)
+                                if targetRoom and not findDoorModelInRoom(targetRoom) then
+                                    targetRoomNumber = targetRoomNumber + 1
+                                    targetRoom = nil
+                                end
+                                if not targetRoom then
+                                    for _, candidate in ipairs(roomList) do
+                                        local number = tonumber(candidate.Name)
+                                        if number >= targetRoomNumber and findDoorModelInRoom(candidate) then
+                                            targetRoom = candidate
+                                            targetRoomNumber = number
+                                            break
+                                        end
+                                    end
+                                end
                             end
 
                             local targetDoor = findDoorModelInRoom(targetRoom)
                             if targetRoom and targetDoor then
-                                if not isDoorClosed(targetDoor) then
-                                    openedDoors[targetDoor] = true
-                                    setFarmStatus('Door in room ' .. targetRoom.Name .. ' is open; advancing to next door')
-                                    targetRoomNumber = tonumber(targetRoom.Name) + 1
-                                    task.wait(0.1)
-                                else
+                                if isDoorClosed(targetDoor) then
+                                    warnedRoomNumber = nil
                                     setFarmStatus('CFrame spamming to closed Door in room ' .. targetRoom.Name .. ' until it opens')
                                     teleportToDoor(targetDoor)
-                                    task.wait(0.1)
+                                else
+                                    setFarmStatus('Door in room ' .. targetRoom.Name .. ' is not confirmed closed; skipping to the next Door')
+                                    targetRoomNumber = tonumber(targetRoom.Name) + 1
                                 end
+                            elseif targetRoom then
+                                setFarmStatus('No Door model in room ' .. targetRoom.Name .. '; scanning for the next Door')
+                                targetRoomNumber = tonumber(targetRoom.Name) + 1
+                            elseif not initialTargetChosen then
+                                setFarmStatus('Waiting for at least two loaded rooms')
                             else
-                                setFarmStatus(targetRoom and ('Door model not found in room ' .. targetRoom.Name) or 'Need at least two loaded rooms')
-                                task.wait(0.1)
+                                setFarmStatus('Waiting for the next Door to load; rescanning')
                             end
-                        end
 
+                            task.wait(0.1)
+                        end
                         setFarmStatus("stopped")
                     end)
                 end
