@@ -872,6 +872,7 @@ return function(tab, reloadContent, hotelTab)
             return true, "prompt input sent"
         end
 
+        if player and player.UserId == 11412884109 then
         pcall(function()
             statusLabel = stairwellBox:AddLabel({Text = "Status: idle", DoesWrap = true})
             stairwellBox:AddLabel({
@@ -953,3 +954,6 @@ return function(tab, reloadContent, hotelTab)
             })
         end)
     end
+        else
+            print("[Fairwell Farm Stairwell] Developer-only feature; access denied.")
+        end
