@@ -187,18 +187,25 @@
             local toggles, options = getRegistries()
             local applied = 0
             local function apply(registry, saved)
-                if type(saved) ~= "table" then return end
+                if type(saved) ~= "table" or type(registry) ~= "table" then return end
                 for key, value in pairs(saved) do
-                    local control = registry[key]
-                    if control and type(control) == "table" then
-                        local ok = false
-                        if type(control.SetValue) == "function" then
-                            ok = pcall(function() control:SetValue(value) end)
+                    -- Only restore Fairwell-owned controls. Older configs may contain
+                    -- unrelated MSDoors/game settings whose callbacks assume game objects
+                    -- (for example Workspace.Ambience_Hotel) or initialized tables/camera.
+                    if type(key) == "string"
+                        and string.sub(key, 1, #configPrefix) == configPrefix
+                        and string.sub(key, 1, 13) ~= "FairwellConfig" then
+                        local control = registry[key]
+                        if control and type(control) == "table" then
+                            local ok = false
+                            if type(control.SetValue) == "function" then
+                                ok = pcall(function() control:SetValue(value) end)
+                            end
+                            if not ok then
+                                ok = pcall(function() control.Value = value end)
+                            end
+                            if ok then applied += 1 end
                         end
-                        if not ok then
-                            ok = pcall(function() control.Value = value end)
-                        end
-                        if ok then applied += 1 end
                     end
                 end
             end
