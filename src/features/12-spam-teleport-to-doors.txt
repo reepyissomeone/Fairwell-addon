@@ -1,12 +1,11 @@
 return function(tab, context)
-    -- Spam Teleport to Doors: targets only real instances named exactly "Doors".
+    -- Spam Teleport to Doors. Only exact-name "Doors" instances are accepted.
     local Players = game:GetService("Players")
-    local RunService = game:GetService("RunService")
     local localPlayer = Players.LocalPlayer
     local env = context and context.Environment or ((getgenv and getgenv()) or _G)
 
-    local old = env._FairwellSpamTeleportDoorsState
-    if old then old.running = false end
+    local previous = env._FairwellSpamTeleportDoorsState
+    if previous then previous.running = false end
     local state = {running = true, enabled = false}
     env._FairwellSpamTeleportDoorsState = state
 
@@ -18,7 +17,10 @@ return function(tab, context)
     if not box then
         pcall(function() box = tab:AddRightGroupbox("Movement", "move") end)
     end
-    if not box then return end
+    if not box then
+        warn("[Fairwell Doors Teleport] Could not create the Movement groupbox.")
+        return
+    end
 
     local statusLabel
     local lastStatus = ""
@@ -28,44 +30,54 @@ return function(tab, context)
         if statusLabel then
             pcall(function() statusLabel:SetText("Status: " .. message) end)
         end
+        print("[Fairwell Doors Teleport] " .. message)
     end
 
     pcall(function()
         statusLabel = box:AddLabel({Text = "Status: off", DoesWrap = true})
         box:AddLabel({
-            Text = 'Repeatedly teleports your character to real Workspace descendants named exactly "Doors". It does not target Creak or guess other names.',
+            Text = 'Repeatedly teleports to physical parts belonging to Workspace instances named exactly "Doors". No Creak targets or guessed names.',
             DoesWrap = true
         })
     end)
 
-    local function getTargetCFrame(instance)
+    local function getPivot(instance)
         if not instance or not instance.Parent then return nil end
-        if instance:IsA("BasePart") then
-            return instance.CFrame
-        elseif instance:IsA("Model") then
+        if instance:IsA("BasePart") then return instance.CFrame end
+        if instance:IsA("Model") then
             local success, pivot = pcall(function() return instance:GetPivot() end)
             if success then return pivot end
         end
         return nil
     end
 
-    local function collectDoorTargets()
+    local function collectTargets()
         local targets, seen = {}, {}
+        local function addPart(part)
+            if part and part:IsA("BasePart") and part.Parent and not seen[part] then
+                seen[part] = true
+                targets[#targets + 1] = part
+            end
+        end
+
         local success, descendants = pcall(function() return workspace:GetDescendants() end)
-        if not success then return targets end
+        if not success or type(descendants) ~= "table" then return targets end
+
         for _, instance in ipairs(descendants) do
             if instance.Name == "Doors" then
-                local cf = getTargetCFrame(instance)
-                if cf and not seen[instance] then
-                    seen[instance] = true
-                    targets[#targets + 1] = {instance = instance, cframe = cf}
-                elseif instance:IsA("Folder") or instance:IsA("Model") then
-                    -- If a named Doors container has no usable pivot, target its real parts.
-                    for _, child in ipairs(instance:GetDescendants()) do
-                        if child:IsA("BasePart") and not seen[child] then
-                            seen[child] = true
-                            targets[#targets + 1] = {instance = child, cframe = child.CFrame}
+                if instance:IsA("BasePart") then
+                    addPart(instance)
+                else
+                    -- Physical parts are more reliable landing points than a model's pivot.
+                    local childOk, children = pcall(function() return instance:GetDescendants() end)
+                    if childOk and type(children) == "table" then
+                        for _, child in ipairs(children) do
+                            if child:IsA("BasePart") then addPart(child) end
                         end
+                    end
+                    -- A part-less Model may still have a meaningful pivot.
+                    if #targets == 0 and instance:IsA("Model") and getPivot(instance) then
+                        targets[#targets + 1] = instance
                     end
                 end
             end
@@ -76,35 +88,50 @@ return function(tab, context)
     pcall(function()
         box:AddToggle("FairwellSpamTeleportDoors", {
             Text = "Spam Teleport to Doors",
-            Tooltip = 'Repeatedly teleports to instances named exactly "Doors" until disabled.',
+            Tooltip = 'Repeatedly teleports to real parts inside instances named exactly "Doors".',
             Default = false,
             Callback = function(value)
                 state.enabled = value == true
-                setStatus(state.enabled and "enabled; searching for Doors" or "off")
+                setStatus(state.enabled and 'enabled; scanning for exact "Doors" targets' or "off")
             end
         })
     end)
 
     task.spawn(function()
+        local cachedTargets = {}
+        local lastScan = 0
         local targetIndex = 0
         while state.running do
             task.wait(0.12)
             if state.enabled then
                 local character = localPlayer.Character
-                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
                 local root = character and character:FindFirstChild("HumanoidRootPart")
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
                 if not character or not root or not humanoid or humanoid.Health <= 0 then
                     setStatus("waiting for a living character")
                 else
-                    local targets = collectDoorTargets()
-                    if #targets == 0 then
-                        setStatus('no instances named exactly "Doors" found in Workspace')
+                    if os.clock() - lastScan >= 0.5 then
+                        cachedTargets = collectTargets()
+                        lastScan = os.clock()
+                        targetIndex = 0
+                    end
+
+                    if #cachedTargets == 0 then
+                        setStatus('no usable parts found under an exact-name "Doors" instance in Workspace')
                     else
-                        targetIndex = (targetIndex % #targets) + 1
-                        local target = targets[targetIndex]
-                        local currentCFrame = getTargetCFrame(target.instance)
-                        if currentCFrame then
-                            local destination = currentCFrame * CFrame.new(0, 3, 0)
+                        local target
+                        for _ = 1, #cachedTargets do
+                            targetIndex = (targetIndex % #cachedTargets) + 1
+                            local candidate = cachedTargets[targetIndex]
+                            if candidate and candidate.Parent then
+                                target = candidate
+                                break
+                            end
+                        end
+
+                        local targetCFrame = target and getPivot(target)
+                        if target and targetCFrame then
+                            local destination = targetCFrame + Vector3.new(0, 3, 0)
                             local moved = pcall(function()
                                 character:PivotTo(destination)
                             end)
@@ -112,12 +139,14 @@ return function(tab, context)
                                 moved = pcall(function() root.CFrame = destination end)
                             end
                             if moved then
-                                setStatus("teleporting to Doors (" .. tostring(targetIndex) .. "/" .. tostring(#targets) .. ")")
+                                setStatus("teleporting to Doors (" .. tostring(targetIndex) .. "/" .. tostring(#cachedTargets) .. ")")
                             else
-                                setStatus("found Doors, but teleport failed")
+                                setStatus("found Doors, but the character teleport failed")
                             end
                         else
-                            setStatus("Doors target disappeared; rescanning")
+                            cachedTargets = {}
+                            lastScan = 0
+                            setStatus('target disappeared; rescanning exact-name "Doors" instances')
                         end
                     end
                 end
