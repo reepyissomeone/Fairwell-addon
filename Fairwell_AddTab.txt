@@ -82,6 +82,11 @@ local function logMessage(message)
     local line = tostring(message)
     table.insert(ERROR_LOG, line)
     while #ERROR_LOG > MAX_LOG_ENTRIES do table.remove(ERROR_LOG, 1) end
+    if diagnosticLabel and type(diagnosticLabel.SetText) == "function" then
+        pcall(function()
+            diagnosticLabel:SetText("Runtime/load errors recorded (" .. tostring(#ERROR_LOG) .. "). Copy the log for details.")
+        end)
+    end
     warn(line)
 end
 local function createDiagnosticControls()
@@ -135,14 +140,22 @@ local function createDiagnosticControls()
 end
 
 
--- Capture client runtime errors after startup as well as load-time failures.
--- LogService catches errors that appear in the client output; ScriptContext is an
--- additional source when the executor exposes its Error event.
+-- Capture client runtime errors, including errors raised later by feature callbacks.
+-- LogService is the primary source; ScriptContext is a fallback where available.
 local runtimeErrorConnections = {}
+local recentRuntimeErrors = {}
 local function recordRuntimeError(message, source)
-    local line = "[Fairwell Runtime Error] " .. tostring(message)
-    if source and tostring(source) ~= "" then
-        line = line .. "\\nSource: " .. tostring(source)
+    local messageText = tostring(message)
+    local sourceText = source and tostring(source) or ""
+    local dedupeKey = messageText .. "\\0" .. sourceText
+    local now = os.clock()
+    local previous = recentRuntimeErrors[dedupeKey]
+    if previous and now - previous < 1.5 then return end
+    recentRuntimeErrors[dedupeKey] = now
+
+    local line = "[Fairwell Runtime Error] " .. messageText
+    if sourceText ~= "" then
+        line = line .. "\\nSource: " .. sourceText
     end
     logMessage(line)
     createDiagnosticControls()
