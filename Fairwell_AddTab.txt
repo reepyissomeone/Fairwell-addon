@@ -3,7 +3,7 @@
 -- No global theme/color changes are applied to MSDoors.
 -- Remote content lives in Fairwell_Content.txt so it can be updated independently.
 
-local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=no-errors-face-20261018-6"
+local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=doors-teleport-fix-20261020-1"
 
 local function isObsidianWindow(candidate)
     if type(candidate) ~= "table" then return false end
