@@ -939,9 +939,68 @@ return function(tab, reloadContent, hotelTab)
                             break
                         end
 
-                        -- Incremental steps start from the *current* position each
-                        -- time, so a rollback simply causes the drag to try again.
-                        root.CFrame = root.CFrame:Lerp(destination, math.clamp(7 / distanceNow, 0.08, 0.35))
+                        -- Raycast the direct route first. If a wall/solid object
+                        -- blocks it, ask Roblox's navmesh for a path around it.
+                        -- Recompute periodically so rollbacks and streamed rooms are
+                        -- handled without getting locked onto stale waypoints.
+                        local PathfindingService = game:GetService("PathfindingService")
+                        local rayParams = RaycastParams.new()
+                        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+                        rayParams.FilterDescendantsInstances = {character}
+                        rayParams.IgnoreWater = true
+
+                        local origin = root.Position + Vector3.new(0, 1.5, 0)
+                        local rayDirection = destination.Position - origin
+                        local obstruction = workspace:Raycast(origin, rayDirection, rayParams)
+                        local nextPosition = destination.Position
+                        if obstruction and not obstruction.Instance:IsDescendantOf(door) then
+                            local pathOk, waypoints = pcall(function()
+                                local pathObject = PathfindingService:CreatePath({
+                                    AgentRadius = 2,
+                                    AgentHeight = 5,
+                                    AgentCanJump = true,
+                                    AgentCanClimb = true,
+                                    WaypointSpacing = 5
+                                })
+                                pathObject:ComputeAsync(root.Position, destination.Position)
+                                if pathObject.Status ~= Enum.PathStatus.Success then
+                                    return nil
+                                end
+                                return pathObject:GetWaypoints()
+                            end)
+
+                            if pathOk and waypoints and #waypoints > 0 then
+                                -- Pick the first waypoint that is meaningfully ahead;
+                                -- skip the start waypoint returned by ComputeAsync.
+                                nextPosition = waypoints[#waypoints].Position
+                                for _, waypoint in ipairs(waypoints) do
+                                    if (waypoint.Position - root.Position).Magnitude > 4 then
+                                        nextPosition = waypoint.Position
+                                        if waypoint.Action == Enum.PathWaypointAction.Jump then
+                                            local humanoid = character:FindFirstChildOfClass("Humanoid")
+                                            if humanoid then humanoid.Jump = true end
+                                        end
+                                        break
+                                    end
+                                end
+                            else
+                                -- Don't push directly through a wall if navmesh can't
+                                -- find a safe route. Pause and retry a fresh ray/path.
+                                task.wait(0.15)
+                                continue
+                            end
+                        end
+
+                        local moveDelta = nextPosition - root.Position
+                        local moveDistance = moveDelta.Magnitude
+                        if moveDistance > 0.1 then
+                            local stepDistance = math.min(5, moveDistance)
+                            local nextCFrame = CFrame.new(
+                                root.Position + moveDelta.Unit * stepDistance,
+                                root.Position + moveDelta.Unit * stepDistance + root.CFrame.LookVector
+                            )
+                            root.CFrame = root.CFrame:Lerp(nextCFrame, 0.65)
+                        end
                         root.AssemblyLinearVelocity = Vector3.zero
                         root.AssemblyAngularVelocity = Vector3.zero
                     end
