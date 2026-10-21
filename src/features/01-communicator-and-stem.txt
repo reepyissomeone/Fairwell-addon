@@ -845,19 +845,24 @@ return function(tab, reloadContent, hotelTab)
             return room ~= nil and object:IsDescendantOf(room)
         end
 
-        -- Find the exact Door model shown under Workspace.CurrentRooms["0"].
-        -- Return the model itself so teleporting uses its pivot, not an arbitrary
-        -- hinge/knob part selected from inside the model.
+        -- Find a Model named exactly "Door" anywhere under Workspace.CurrentRooms.
+        -- Do not assume a specific room number, and do not match Door parts/folders.
         local function findCurrentDoor()
             local rooms = workspace:FindFirstChild("CurrentRooms")
-            local room = rooms and rooms:FindFirstChild("0")
-            if not room then return nil end
-            return room:FindFirstChild("Door", true)
+            if not rooms then return nil end
+
+            for _, object in ipairs(rooms:GetDescendants()) do
+                if object.Name == "Door" and object:IsA("Model") then
+                    return object
+                end
+            end
+
+            return nil
         end
 
         local function teleportToDoor(door)
             if not door or not door.Parent then
-                setFarmStatus('Door teleport failed: CurrentRooms["0"].Door not found')
+                setFarmStatus('Door teleport failed: no Model named "Door" found under CurrentRooms')
                 return false
             end
             local character = player and player.Character
@@ -886,7 +891,7 @@ return function(tab, reloadContent, hotelTab)
                 setFarmStatus("Door CFrame teleport failed: " .. tostring(err))
                 return false
             end
-            setFarmStatus('CFrame teleported to CurrentRooms["0"].Door')
+            setFarmStatus('CFrame teleported to Door model under CurrentRooms')
             return true
         end
 
@@ -994,11 +999,11 @@ return function(tab, reloadContent, hotelTab)
                                 if not state.running then break end
                                 local door = findCurrentDoor()
                                 if door then
-                                    setFarmStatus('CFrame teleporting to CurrentRooms["0"].Door')
+                                    setFarmStatus('CFrame teleporting to Door model under CurrentRooms')
                                     teleportToDoor(door)
                                     task.wait(0.25)
                                 else
-                                    setFarmStatus('CurrentRooms["0"].Door not found; skipping Door teleport')
+                                    setFarmStatus('No Model named "Door" found under CurrentRooms; skipping Door teleport')
                                     task.wait(0.15)
                                 end
                                 if not state.running then break end
