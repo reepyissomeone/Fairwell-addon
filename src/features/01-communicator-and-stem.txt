@@ -831,6 +831,16 @@ return function(tab, reloadContent, hotelTab)
             return room ~= nil and object:IsDescendantOf(room)
         end
 
+        -- Teleport to the current room's Door model, if it exists.
+        -- Some rooms name the model "Door" and keep its usable parts beneath it.
+        local function findCurrentDoorPart()
+            local room = currentRoom()
+            if not room then return nil end
+            local door = room:FindFirstChild("Door", true)
+            if not door then return nil end
+            return landingPart(door)
+        end
+
         local function findOtherStairwellPrompt(usedStructures)
             for _, object in ipairs(workspace:GetDescendants()) do
                 if object:IsA("ProximityPrompt") and object.Enabled then
@@ -932,6 +942,13 @@ return function(tab, reloadContent, hotelTab)
                                     end
                                 end
 
+                                if not state.running then break end
+                                local doorPart = findCurrentDoorPart()
+                                if doorPart then
+                                    setFarmStatus("teleporting to current room Door")
+                                    teleportTo(doorPart)
+                                    task.wait(0.25)
+                                end
                                 if not state.running then break end
                                 setFarmStatus("no new Landings; searching for another Stairwell")
                                 local prompt, part, structure = findOtherStairwellPrompt(usedStructures)
