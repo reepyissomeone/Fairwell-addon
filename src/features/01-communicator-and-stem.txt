@@ -814,16 +814,30 @@ return function(tab, reloadContent, hotelTab)
         end
 
         local function teleportTo(part)
-            if not part or not part.Parent then return false end
+            if not part or not part.Parent then
+                setFarmStatus("teleport failed: target part missing")
+                return false
+            end
             local character = player and player.Character
             local root = character and character:FindFirstChild("HumanoidRootPart")
-            if not root then return false end
-            local destination = part.CFrame + Vector3.new(0, 3, 0)
-            local ok = pcall(function() character:PivotTo(destination) end)
-            if not ok then
-                ok = pcall(function() root.CFrame = destination end)
+            if not character or not root then
+                setFarmStatus("teleport failed: character/root missing")
+                return false
             end
-            return ok
+
+            -- Use a direct CFrame assignment to the HumanoidRootPart; PivotTo can
+            -- silently appear ineffective for this client-side automation.
+            local destination = part.CFrame + Vector3.new(0, 3, 0)
+            local ok, err = pcall(function()
+                root.CFrame = destination
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+            end)
+            if not ok then
+                setFarmStatus("CFrame teleport failed: " .. tostring(err))
+                return false
+            end
+            return true
         end
 
         local function isInsideCurrentRoom(object)
@@ -834,7 +848,9 @@ return function(tab, reloadContent, hotelTab)
         -- Teleport to the current room's Door model, if it exists.
         -- Some rooms name the model "Door" and keep its usable parts beneath it.
         local function findCurrentDoorPart()
-            local room = currentRoom()
+            local rooms = workspace:FindFirstChild("CurrentRooms")
+            local room = rooms and rooms:FindFirstChild("0")
+            if not room then room = currentRoom() end
             if not room then return nil end
             local door = room:FindFirstChild("Door", true)
             if not door then return nil end
