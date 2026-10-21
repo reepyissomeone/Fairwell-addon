@@ -872,7 +872,8 @@ return function(tab, reloadContent, hotelTab)
             return true, "prompt input sent"
         end
 
-        if player and player.UserId == 11412884109 then
+        local isDeveloper = player ~= nil and player.UserId == 11412884109
+        if isDeveloper then
         pcall(function()
             statusLabel = stairwellBox:AddLabel({Text = "Status: idle", DoesWrap = true})
             stairwellBox:AddLabel({
@@ -953,7 +954,8 @@ return function(tab, reloadContent, hotelTab)
                 end
             })
         end)
-        else
+        end
+        if not isDeveloper then
             print("[Fairwell Farm Stairwell] Developer-only feature; access denied.")
         end
     end
