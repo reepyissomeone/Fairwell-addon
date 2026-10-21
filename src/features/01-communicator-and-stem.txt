@@ -910,19 +910,47 @@ return function(tab, reloadContent, hotelTab)
                     targetCFrame = part.CFrame
                 end
 
-                -- CFrame drag: move in small interpolated steps instead of snapping.
-                -- Stop early if the feature is disabled, the character respawns,
-                -- or the target Door disappears while rooms stream in.
+                -- Keep dragging toward the target even if DOORS/Glitch rolls the
+                -- character back during movement. Reacquire the character/root every
+                -- iteration so a respawn or server correction doesn't leave us using
+                -- a stale HumanoidRootPart. Time out and rescan rather than stopping.
                 local destination = targetCFrame + Vector3.new(0, 3, 0)
-                local startCFrame = root.CFrame
-                local distance = (destination.Position - startCFrame.Position).Magnitude
-                local steps = math.clamp(math.ceil(distance / 7), 3, 24)
-                for step = 1, steps do
-                    if not state.running or not door.Parent or not root.Parent then break end
-                    root.CFrame = startCFrame:Lerp(destination, step / steps)
-                    root.AssemblyLinearVelocity = Vector3.zero
-                    root.AssemblyAngularVelocity = Vector3.zero
-                    task.wait(0.015)
+                local deadline = os.clock() + 8
+                local reached = false
+                while state.running and door.Parent and os.clock() < deadline do
+                    character = player and player.Character
+                    root = character and character:FindFirstChild("HumanoidRootPart")
+                    if root and root.Parent then
+                        local targetOk, refreshedTarget = pcall(function()
+                            if door:IsA("Model") then
+                                return door:GetPivot() + Vector3.new(0, 3, 0)
+                            elseif door:IsA("BasePart") then
+                                return door.CFrame + Vector3.new(0, 3, 0)
+                            end
+                            local part = landingPart(door)
+                            if not part then error("Door has no usable BasePart") end
+                            return part.CFrame + Vector3.new(0, 3, 0)
+                        end)
+                        if targetOk then destination = refreshedTarget end
+
+                        local distanceNow = (destination.Position - root.Position).Magnitude
+                        if distanceNow <= 5 then
+                            reached = true
+                            break
+                        end
+
+                        -- Incremental steps start from the *current* position each
+                        -- time, so a rollback simply causes the drag to try again.
+                        root.CFrame = root.CFrame:Lerp(destination, math.clamp(7 / distanceNow, 0.08, 0.35))
+                        root.AssemblyLinearVelocity = Vector3.zero
+                        root.AssemblyAngularVelocity = Vector3.zero
+                    end
+                    task.wait(0.05)
+                end
+                if not state.running then return false end
+                if not reached then
+                    setFarmStatus("drag was interrupted/rolled back; rescanning and retrying")
+                    return false
                 end
             end)
             if not ok then
