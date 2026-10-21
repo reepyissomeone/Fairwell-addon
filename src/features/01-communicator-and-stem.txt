@@ -845,14 +845,41 @@ return function(tab, reloadContent, hotelTab)
             return room ~= nil and object:IsDescendantOf(room)
         end
 
-        -- Find only the Door Model belonging to the player's current room.
-        -- currentRoom() selects the latest-numbered room currently loaded.
+        -- Door is valid only while it belongs to the player's current room.
+        local function isDoorClosed(door)
+            if not door or not door:IsA("Model") then return false end
+
+            -- Prefer explicit state exposed by the game, when available.
+            for _, key in ipairs({"Opened", "IsOpen", "Open", "IsOpened"}) do
+                local value = door:GetAttribute(key)
+                if value == true then return false end
+                if value == false then return true end
+            end
+            for _, object in ipairs(door:GetDescendants()) do
+                if object:IsA("BoolValue") then
+                    local key = string.lower(object.Name)
+                    if key == "opened" or key == "isopen" or key == "open" or key == "isopened" then
+                        return object.Value == false
+                    end
+                end
+            end
+
+            -- If the game doesn't expose a state flag, treat an active door prompt
+            -- as closed; opened doors normally no longer have an enabled prompt.
+            for _, object in ipairs(door:GetDescendants()) do
+                if object:IsA("ProximityPrompt") and object.Enabled then
+                    return true
+                end
+            end
+            return false
+        end
+
         local function findCurrentDoor()
             local room = currentRoom()
             if not room then return nil end
 
             for _, object in ipairs(room:GetDescendants()) do
-                if object.Name == "Door" and object:IsA("Model") then
+                if object.Name == "Door" and object:IsA("Model") and isDoorClosed(object) then
                     return object
                 end
             end
@@ -955,43 +982,19 @@ return function(tab, reloadContent, hotelTab)
                     end
 
                     task.spawn(function()
-                        local visitedDoors = setmetatable({}, {__mode = "k"})
-                        setFarmStatus('scanning Workspace.CurrentRooms for Door models')
+                        setFarmStatus('looking for a closed Door model in your current room')
 
                         while state.running do
-                            local rooms = workspace:FindFirstChild("CurrentRooms")
-                            local targetDoor
-                            local targetRoomNumber
+                            local room = currentRoom()
+                            local targetDoor = findCurrentDoor()
 
-                            if rooms then
-                                local roomList = rooms:GetChildren()
-                                table.sort(roomList, function(a, b)
-                                    local an, bn = tonumber(a.Name), tonumber(b.Name)
-                                    if an and bn then return an < bn end
-                                    if an then return true end
-                                    if bn then return false end
-                                    return a.Name < b.Name
-                                end)
-
-                                for _, room in ipairs(roomList) do
-                                    local door = room:FindFirstChild("Door", true)
-                                    if door and (door:IsA("Model") or door:IsA("BasePart"))
-                                        and not visitedDoors[door] then
-                                        targetDoor = door
-                                        targetRoomNumber = room.Name
-                                        break
-                                    end
-                                end
-                            end
-
-                            if targetDoor then
-                                visitedDoors[targetDoor] = true
-                                setFarmStatus('CFrame teleporting to CurrentRooms["' .. tostring(targetRoomNumber) .. '"].Door')
+                            if room and targetDoor then
+                                setFarmStatus('CFrame teleporting to closed Door in current room')
                                 teleportToDoor(targetDoor)
-                                task.wait(0.35)
+                                task.wait(0.1)
                             else
-                                setFarmStatus("waiting for a new room Door under Workspace.CurrentRooms")
-                                task.wait(0.25)
+                                setFarmStatus(room and 'No closed Door model in current room' or 'Current room not found')
+                                task.wait(0.1)
                             end
                         end
 
