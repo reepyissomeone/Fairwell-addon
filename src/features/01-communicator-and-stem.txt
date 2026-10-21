@@ -993,8 +993,6 @@ return function(tab, reloadContent, hotelTab)
                     end
 
                     task.spawn(function()
-                        local targetRoomNumber = nil
-                        local initialTargetChosen = false
                         local lastStatus = ""
                         local function farmStatus(message)
                             if message ~= lastStatus then
@@ -1002,82 +1000,46 @@ return function(tab, reloadContent, hotelTab)
                                 setFarmStatus(message)
                             end
                         end
-                        farmStatus("waiting for rooms and doors")
+                        farmStatus("searching for nearest unopened Door")
 
-                        -- A watchdog protects each pass; a bad streamed instance must
-                        -- never permanently kill the loop while the toggle is enabled.
+                        -- Choose by physical distance, not room number. Re-scan after
+                        -- each drag so the next nearest unopened door is selected.
                         while state.running do
                             local passOk, passErr = pcall(function()
+                                local root = getRoot()
                                 local rooms = workspace:FindFirstChild("CurrentRooms")
-                                local roomList = {}
-                                if rooms then
-                                    for _, candidate in ipairs(rooms:GetChildren()) do
-                                        if tonumber(candidate.Name) then
-                                            table.insert(roomList, candidate)
-                                        end
-                                    end
-                                end
-                                table.sort(roomList, function(a, b)
-                                    return tonumber(a.Name) < tonumber(b.Name)
-                                end)
+                                local nearestDoor, nearestRoom, nearestDistance
 
-                                -- Build a list of actual Door models, not just rooms:
-                                -- some loaded rooms may not contain a usable Door yet.
-                                local doorRooms = {}
-                                for _, candidate in ipairs(roomList) do
-                                    local door = findDoorModelInRoom(candidate)
-                                    if door then
-                                        table.insert(doorRooms, {room = candidate, door = door,
-                                            number = tonumber(candidate.Name)})
-                                    end
-                                end
-
-                                -- Anchor the starting target to the latest room number minus one.
-                                -- Never fall forward to a newer Door just because the requested
-                                -- previous room is missing or has not streamed its Door yet.
-                                local latestRoomNumber
-                                for _, candidate in ipairs(roomList) do
-                                    local number = tonumber(candidate.Name)
-                                    if number and (not latestRoomNumber or number > latestRoomNumber) then
-                                        latestRoomNumber = number
-                                    end
-                                end
-
-                                if not initialTargetChosen then
-                                    if latestRoomNumber and latestRoomNumber > 0 then
-                                        targetRoomNumber = latestRoomNumber - 1
-                                        initialTargetChosen = true
-                                        farmStatus("starting at previous room " .. tostring(targetRoomNumber))
-                                    else
-                                        farmStatus("waiting for numbered rooms")
-                                    end
-                                end
-
-                                local targetRoom, targetDoor
-                                if initialTargetChosen and targetRoomNumber then
-                                    for _, entry in ipairs(doorRooms) do
-                                        if entry.number == targetRoomNumber then
-                                            targetRoom, targetDoor = entry.room, entry.door
-                                            break
-                                        end
-                                    end
-
-                                    if not targetRoom then
-                                        farmStatus("waiting for Door in room " .. tostring(targetRoomNumber) .. "; will not jump to latest room")
-                                    else
-                                        local closed = isDoorClosed(targetDoor)
-                                        if closed then
-                                            local teleported = teleportToDoor(targetDoor)
-                                            if teleported then
-                                                farmStatus("CFrame dragging to Door in room " .. targetRoom.Name)
-                                            else
-                                                farmStatus("drag failed at room " .. targetRoom.Name .. "; retrying")
+                                if root and rooms then
+                                    for _, room in ipairs(rooms:GetChildren()) do
+                                        if tonumber(room.Name) then
+                                            local door = findDoorModelInRoom(room)
+                                            if door and isDoorClosed(door) then
+                                                local ok, position = pcall(function()
+                                                    return door:GetPivot().Position
+                                                end)
+                                                if ok and position then
+                                                    local distance = (position - root.Position).Magnitude
+                                                    if not nearestDistance or distance < nearestDistance then
+                                                        nearestDoor = door
+                                                        nearestRoom = room
+                                                        nearestDistance = distance
+                                                    end
+                                                end
                                             end
-                                        else
-                                            farmStatus("Door in room " .. targetRoom.Name .. " is open or unconfirmed; advancing")
-                                            targetRoomNumber = targetRoomNumber + 1
                                         end
                                     end
+                                end
+
+                                if nearestDoor and nearestRoom then
+                                    farmStatus("nearest unopened Door: room " .. nearestRoom.Name
+                                        .. " (" .. tostring(math.floor(nearestDistance + 0.5)) .. " studs)")
+                                    local moved = teleportToDoor(nearestDoor)
+                                    if not moved then
+                                        farmStatus("drag interrupted; searching again")
+                                    end
+                                else
+                                    farmStatus("no unopened Door found in loaded rooms; searching")
                                 end
                             end)
 
@@ -1085,7 +1047,7 @@ return function(tab, reloadContent, hotelTab)
                                 warn("[Fairwell Farm Stairwell] Scan error; retrying: " .. tostring(passErr))
                                 farmStatus("scan error; retrying automatically")
                             end
-                            task.wait(passOk and 0.1 or 0.25)
+                            task.wait(passOk and 0.25 or 0.5)
                         end
                         setFarmStatus("stopped")
                     end)
