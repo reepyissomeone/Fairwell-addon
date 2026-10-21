@@ -121,6 +121,11 @@ local function createDiagnosticControls()
             end
         })
     end)
+    if diagnosticLabel and type(diagnosticLabel.SetText) == "function" then
+        pcall(function()
+            diagnosticLabel:SetText("Runtime/load errors recorded (" .. tostring(#ERROR_LOG) .. "). Copy the log for details.")
+        end)
+    end
     pcall(function()
         clearErrorButton = diagnosticBox:AddButton({
             Text = "Clear Error Log",
@@ -155,7 +160,7 @@ local function recordRuntimeError(message, source)
 
     local line = "[Fairwell Runtime Error] " .. messageText
     if sourceText ~= "" then
-        line = line .. "\\nSource: " .. sourceText
+        line = line .. "\nSource: " .. sourceText
     end
     logMessage(line)
     createDiagnosticControls()
@@ -179,7 +184,7 @@ pcall(function()
     table.insert(runtimeErrorConnections, ScriptContext.Error:Connect(function(message, stackTrace, scriptInstance)
         local source = tostring(scriptInstance or "ScriptContext.Error")
         if stackTrace and tostring(stackTrace) ~= "" then
-            source = source .. "\\n" .. tostring(stackTrace)
+            source = source .. "\n" .. tostring(stackTrace)
         end
         recordRuntimeError(message, source)
     end))
