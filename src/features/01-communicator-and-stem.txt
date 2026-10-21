@@ -739,3 +739,217 @@ return function(tab, reloadContent, hotelTab)
         end)
     end
 
+
+    -- Farm Stairwell: visit each generated Landing, then locate another Stairwell
+    -- structure and activate its ProximityPrompt to begin the next run.
+    do
+        local Players = game:GetService("Players")
+        local player = Players.LocalPlayer
+        local env = (getgenv and getgenv()) or _G
+        local state = env._FairwellFarmStairwellState or {running = false}
+        env._FairwellFarmStairwellState = state
+        state.running = false
+
+        local statusLabel
+        local function setFarmStatus(message)
+            if statusLabel then
+                pcall(function() statusLabel:SetText("Status: " .. message) end)
+            end
+            print("[Fairwell Farm Stairwell] " .. message)
+        end
+
+        local function getRoot()
+            local character = player and player.Character
+            return character and character:FindFirstChild("HumanoidRootPart")
+        end
+
+        local function currentRoom()
+            local rooms = workspace:FindFirstChild("CurrentRooms")
+            if not rooms then return nil end
+            local latest, latestNumber
+            for _, room in ipairs(rooms:GetChildren()) do
+                local number = tonumber(room.Name)
+                if number and (not latestNumber or number > latestNumber) then
+                    latest, latestNumber = room, number
+                end
+            end
+            return latest
+        end
+
+        local function findLandingLogic()
+            local room = currentRoom()
+            if room then
+                local logic = room:FindFirstChild("StairwellLandingLogic", true)
+                if logic then return logic end
+            end
+            for _, object in ipairs(workspace:GetDescendants()) do
+                if object.Name == "StairwellLandingLogic" then return object end
+            end
+            return nil
+        end
+
+        local function landingPart(object)
+            if object:IsA("BasePart") then return object end
+            if object:IsA("Model") then
+                return object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart", true)
+            end
+            return object:FindFirstChildWhichIsA("BasePart", true)
+        end
+
+        local function getLandings(logic)
+            local result = {}
+            if not logic then return result end
+            for _, object in ipairs(logic:GetChildren()) do
+                if object:IsA("Model") or object:IsA("BasePart") then
+                    local part = landingPart(object)
+                    if part and part:IsDescendantOf(workspace) then
+                        table.insert(result, {object = object, part = part})
+                    end
+                end
+            end
+            table.sort(result, function(a, b)
+                return a.part.Position.Y < b.part.Position.Y
+            end)
+            return result
+        end
+
+        local function teleportTo(part)
+            if not part or not part.Parent then return false end
+            local character = player and player.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            if not root then return false end
+            local destination = part.CFrame + Vector3.new(0, 3, 0)
+            local ok = pcall(function() character:PivotTo(destination) end)
+            if not ok then
+                ok = pcall(function() root.CFrame = destination end)
+            end
+            return ok
+        end
+
+        local function isInsideCurrentRoom(object)
+            local room = currentRoom()
+            return room ~= nil and object:IsDescendantOf(room)
+        end
+
+        local function findOtherStairwellPrompt(usedStructures)
+            for _, object in ipairs(workspace:GetDescendants()) do
+                if object:IsA("ProximityPrompt") and object.Enabled then
+                    local node = object
+                    local stairwellAncestor
+                    for _ = 1, 10 do
+                        if not node then break end
+                        if string.find(string.lower(node.Name), "stairwell", 1, true) then
+                            stairwellAncestor = node
+                            break
+                        end
+                        node = node.Parent
+                    end
+                    if stairwellAncestor
+                        and not isInsideCurrentRoom(stairwellAncestor)
+                        and not usedStructures[stairwellAncestor] then
+                        local parent = object.Parent
+                        local part = parent and (parent:IsA("BasePart") and parent
+                            or parent:FindFirstChildWhichIsA("BasePart", true))
+                        if part and part:IsDescendantOf(workspace) then
+                            return object, part, stairwellAncestor
+                        end
+                    end
+                end
+            end
+            return nil, nil, nil
+        end
+
+        local function activatePrompt(prompt)
+            if not prompt or not prompt.Parent or not prompt.Enabled then
+                return false, "prompt unavailable"
+            end
+            local ok, err = pcall(function()
+                prompt:InputHoldBegin()
+                task.wait(math.max(prompt.HoldDuration, 0.05) + 0.1)
+                prompt:InputHoldEnd()
+            end)
+            if not ok then return false, tostring(err) end
+            return true, "prompt input sent"
+        end
+
+        pcall(function()
+            statusLabel = stairwellBox:AddLabel({Text = "Status: idle", DoesWrap = true})
+            stairwellBox:AddLabel({
+                Text = "Teleports through generated Landings, then searches for another Stairwell prompt.",
+                DoesWrap = true
+            })
+            stairwellBox:AddToggle("FairwellFarmStairwellToggle", {
+                Text = "Farm Stairwell",
+                Default = false,
+                Callback = function(enabled)
+                    state.running = enabled == true
+                    if not state.running then
+                        setFarmStatus("stopped")
+                        return
+                    end
+
+                    task.spawn(function()
+                        local usedStructures = setmetatable({}, {__mode = "k"})
+                        setFarmStatus("starting")
+                        while state.running do
+                            local logic = findLandingLogic()
+                            if not logic then
+                                setFarmStatus("waiting for StairwellLandingLogic")
+                                task.wait(0.5)
+                            else
+                                local visited = setmetatable({}, {__mode = "k"})
+                                local lastNewLandingAt = os.clock()
+                                local foundLanding = false
+                                setFarmStatus("scanning Landings")
+
+                                while state.running and logic.Parent do
+                                    local landings = getLandings(logic)
+                                    local nextLanding
+                                    for _, entry in ipairs(landings) do
+                                        if not visited[entry.object] then
+                                            nextLanding = entry
+                                            break
+                                        end
+                                    end
+
+                                    if nextLanding then
+                                        visited[nextLanding.object] = true
+                                        foundLanding = true
+                                        lastNewLandingAt = os.clock()
+                                        setFarmStatus("teleporting to Landing")
+                                        if not teleportTo(nextLanding.part) then
+                                            setFarmStatus("could not teleport to Landing")
+                                            task.wait(0.3)
+                                        else
+                                            task.wait(0.25)
+                                        end
+                                    elseif foundLanding and os.clock() - lastNewLandingAt >= 8 then
+                                        break
+                                    else
+                                        task.wait(0.2)
+                                    end
+                                end
+
+                                if not state.running then break end
+                                setFarmStatus("no new Landings; searching for another Stairwell")
+                                local prompt, part, structure = findOtherStairwellPrompt(usedStructures)
+                                if prompt and part and structure then
+                                    usedStructures[structure] = true
+                                    teleportTo(part)
+                                    task.wait(0.2)
+                                    local ok, message = activatePrompt(prompt)
+                                    setFarmStatus(ok and "activated next Stairwell; waiting for run"
+                                        or ("prompt failed: " .. message))
+                                    task.wait(1)
+                                else
+                                    setFarmStatus("no other Stairwell prompt found; retrying")
+                                    task.wait(1)
+                                end
+                            end
+                        end
+                        setFarmStatus("stopped")
+                    end)
+                end
+            })
+        end)
+    end
