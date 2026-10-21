@@ -953,7 +953,7 @@ return function(tab, reloadContent, hotelTab)
                 end
             })
         end)
-    end
         else
             print("[Fairwell Farm Stairwell] Developer-only feature; access denied.")
         end
+    end
