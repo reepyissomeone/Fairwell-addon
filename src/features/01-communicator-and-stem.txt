@@ -1009,29 +1009,35 @@ return function(tab, reloadContent, hotelTab)
                                     return tonumber(a.Name) < tonumber(b.Name)
                                 end)
 
-                                -- Choose the room before the latest loaded room once,
-                                -- then recover by scanning forward from the target number.
+                                -- Build a list of actual Door models, not just rooms:
+                                -- some loaded rooms may not contain a usable Door yet.
+                                local doorRooms = {}
+                                for _, candidate in ipairs(roomList) do
+                                    local door = findDoorModelInRoom(candidate)
+                                    if door then
+                                        table.insert(doorRooms, {room = candidate, door = door,
+                                            number = tonumber(candidate.Name)})
+                                    end
+                                end
+
+                                -- Start at the previous Door (second newest available Door),
+                                -- not the latest Door. After that, advance sequentially only
+                                -- when the current Door is no longer confirmed closed.
                                 if not initialTargetChosen then
-                                    if #roomList >= 2 then
-                                        targetRoomNumber = tonumber(roomList[#roomList - 1].Name)
+                                    if #doorRooms >= 2 then
+                                        targetRoomNumber = doorRooms[#doorRooms - 1].number
                                         initialTargetChosen = true
                                     else
-                                        farmStatus("waiting for at least two loaded rooms")
+                                        farmStatus("waiting for at least two Door models")
                                     end
                                 end
 
                                 local targetRoom, targetDoor
                                 if initialTargetChosen and targetRoomNumber then
-                                    -- Find the first loaded room at/after the target that
-                                    -- contains a Door model. Do not assume room numbers are contiguous.
-                                    for _, candidate in ipairs(roomList) do
-                                        local number = tonumber(candidate.Name)
-                                        if number >= targetRoomNumber then
-                                            local door = findDoorModelInRoom(candidate)
-                                            if door then
-                                                targetRoom, targetDoor = candidate, door
-                                                break
-                                            end
+                                    for _, entry in ipairs(doorRooms) do
+                                        if entry.number >= targetRoomNumber then
+                                            targetRoom, targetDoor = entry.room, entry.door
+                                            break
                                         end
                                     end
 
