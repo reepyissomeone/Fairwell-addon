@@ -138,7 +138,8 @@ local function loadRemoteContent()
         return false
     end
 
-    logMessage("[Fairwell] Remote content loaded successfully.")
+    -- Successful loading is status output, not an error-log entry.
+    print("[Fairwell] Remote content loaded successfully.")
     return true
 end
 local contentLoaded = loadRemoteContent()
