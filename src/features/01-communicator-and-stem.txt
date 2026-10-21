@@ -845,13 +845,13 @@ return function(tab, reloadContent, hotelTab)
             return room ~= nil and object:IsDescendantOf(room)
         end
 
-        -- Find a Model named exactly "Door" anywhere under Workspace.CurrentRooms.
-        -- Do not assume a specific room number, and do not match Door parts/folders.
+        -- Find only the Door Model belonging to the player's current room.
+        -- currentRoom() selects the latest-numbered room currently loaded.
         local function findCurrentDoor()
-            local rooms = workspace:FindFirstChild("CurrentRooms")
-            if not rooms then return nil end
+            local room = currentRoom()
+            if not room then return nil end
 
-            for _, object in ipairs(rooms:GetDescendants()) do
+            for _, object in ipairs(room:GetDescendants()) do
                 if object.Name == "Door" and object:IsA("Model") then
                     return object
                 end
@@ -862,7 +862,7 @@ return function(tab, reloadContent, hotelTab)
 
         local function teleportToDoor(door)
             if not door or not door.Parent then
-                setFarmStatus('Door teleport failed: no Model named "Door" found under CurrentRooms')
+                setFarmStatus('Door teleport failed: no Model named "Door" found in the current room')
                 return false
             end
             local character = player and player.Character
@@ -891,7 +891,7 @@ return function(tab, reloadContent, hotelTab)
                 setFarmStatus("Door CFrame teleport failed: " .. tostring(err))
                 return false
             end
-            setFarmStatus('CFrame teleported to Door model under CurrentRooms')
+            setFarmStatus('CFrame teleported to current room Door model')
             return true
         end
 
