@@ -888,13 +888,13 @@ return function(tab, reloadContent, hotelTab)
 
         local function teleportToDoor(door)
             if not door or not door.Parent then
-                setFarmStatus('Door teleport failed: no Model named "Door" found in the current room')
+                setFarmStatus('Door drag failed: no Model named "Door" found')
                 return false
             end
             local character = player and player.Character
             local root = character and character:FindFirstChild("HumanoidRootPart")
             if not root then
-                setFarmStatus("Door teleport failed: character/root missing")
+                setFarmStatus("Door drag failed: character/root missing")
                 return false
             end
 
@@ -909,15 +909,27 @@ return function(tab, reloadContent, hotelTab)
                     if not part then error("Door has no usable BasePart") end
                     targetCFrame = part.CFrame
                 end
-                root.CFrame = targetCFrame + Vector3.new(0, 3, 0)
-                root.AssemblyLinearVelocity = Vector3.zero
-                root.AssemblyAngularVelocity = Vector3.zero
+
+                -- CFrame drag: move in small interpolated steps instead of snapping.
+                -- Stop early if the feature is disabled, the character respawns,
+                -- or the target Door disappears while rooms stream in.
+                local destination = targetCFrame + Vector3.new(0, 3, 0)
+                local startCFrame = root.CFrame
+                local distance = (destination.Position - startCFrame.Position).Magnitude
+                local steps = math.clamp(math.ceil(distance / 7), 3, 24)
+                for step = 1, steps do
+                    if not state.running or not door.Parent or not root.Parent then break end
+                    root.CFrame = startCFrame:Lerp(destination, step / steps)
+                    root.AssemblyLinearVelocity = Vector3.zero
+                    root.AssemblyAngularVelocity = Vector3.zero
+                    task.wait(0.015)
+                end
             end)
             if not ok then
-                setFarmStatus("Door CFrame teleport failed: " .. tostring(err))
+                setFarmStatus("Door CFrame drag failed: " .. tostring(err))
                 return false
             end
-            setFarmStatus('CFrame teleported to current room Door model')
+            setFarmStatus("CFrame dragging toward Door")
             return true
         end
 
