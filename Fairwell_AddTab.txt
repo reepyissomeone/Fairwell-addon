@@ -3,7 +3,7 @@
 -- No global theme/color changes are applied to MSDoors.
 -- Remote content lives in Fairwell_Content.txt so it can be updated independently.
 
-local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=no-errors-face-20261018-5"
+local CONTENT_URL = "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/Fairwell_Content.txt?cache=no-errors-face-20261018-6"
 
 local function isObsidianWindow(candidate)
     if type(candidate) ~= "table" then return false end
@@ -19,14 +19,10 @@ local function findMSDoorsWindow()
         or _G.Library or _G.Obsidian or _G.UI_Library
     local Window = env.Window or env.MainWindow or env.MSDoorsWindow
         or _G.Window or _G.MainWindow or _G.MSDoorsWindow
-
     if not isObsidianWindow(Window) and type(Library) == "table" then
         local ok, candidate = pcall(function() return Library.Window end)
         if ok and isObsidianWindow(candidate) then Window = candidate end
     end
-
-    -- MSDoors may keep Obsidian's Library/Window local instead of publishing globals.
-    -- Executor getgc can still find the existing window; never create a second one.
     if not isObsidianWindow(Window) and type(getgc) == "function" then
         local ok, objects = pcall(getgc, true)
         if ok and type(objects) == "table" then
@@ -47,61 +43,95 @@ local function findMSDoorsWindow()
                     end
                 end
             end
-            if not isObsidianWindow(Window) and fallbackWindow then
-                Window = fallbackWindow
-            end
+            if not isObsidianWindow(Window) and fallbackWindow then Window = fallbackWindow end
         end
     end
     if not isObsidianWindow(Window) then return nil, Library end
     return Window, Library
 end
 
--- MSDoors may finish creating its UI shortly after an addon/script starts.
 local Window, Library
 for attempt = 1, 40 do
     Window, Library = findMSDoorsWindow()
-    if Window and type(Window.AddTab) == "function" then
-        break
-    end
-    if task and type(task.wait) == "function" then
-        task.wait(0.25)
-    else
-        break
-    end
+    if Window and type(Window.AddTab) == "function" then break end
+    if task and type(task.wait) == "function" then task.wait(0.25) else break end
 end
-
 if not Window or type(Window.AddTab) ~= "function" then
     warn("[Fairwell] Couldn't find the existing MSDoors window after waiting.")
     warn("[Fairwell] Make sure MSDoors has loaded before running this addon.")
     return
 end
-
--- Obsidian keeps its tab registry private in some builds, so remember our own tab.
 local env = (getgenv and getgenv()) or _G
 if env._FairwellTabWindow == Window and env._FairwellTab then
     warn("[Fairwell] The Fairwell tab is already loaded.")
     return
 end
-
--- Use the library's own Obsidian tab API; no separate window or global theme changes.
-local ok, tab = pcall(function()
-    return Window:AddTab("Fairwell", "sparkles")
-end)
-if not ok or not tab then
-    warn("[Fairwell] Could not add tab:", tab)
-    return
-end
+local ok, tab = pcall(function() return Window:AddTab("Fairwell", "sparkles") end)
+if not ok or not tab then warn("[Fairwell] Could not add tab:", tab); return end
 env._FairwellTabWindow = Window
 env._FairwellTab = tab
 
--- Keep a bounded, copyable diagnostic log in the UI as well as the executor console.
+-- Keep a bounded diagnostic log. The diagnostic controls are created only if an error exists.
 local ERROR_LOG = {}
 local MAX_LOG_ENTRIES = 60
+local diagnosticBox
+local diagnosticLabel
+local copyErrorButton
+local clearErrorButton
 local function logMessage(message)
     local line = tostring(message)
     table.insert(ERROR_LOG, line)
     while #ERROR_LOG > MAX_LOG_ENTRIES do table.remove(ERROR_LOG, 1) end
     warn(line)
+end
+local function createDiagnosticControls()
+    if diagnosticBox then return end
+    local boxOk, box = pcall(function()
+        return tab:AddLeftGroupbox("Fairwell Diagnostics", "clipboard")
+    end)
+    if not boxOk or not box then return end
+    diagnosticBox = box
+    pcall(function()
+        diagnosticLabel = diagnosticBox:AddLabel({
+            Text = "Errors recorded. Copy the log for troubleshooting.",
+            DoesWrap = true
+        })
+    end)
+    pcall(function()
+        copyErrorButton = diagnosticBox:AddButton({
+            Text = "Copy Error Log",
+            Func = function()
+                local textToCopy = #ERROR_LOG > 0 and table.concat(ERROR_LOG, "\n") or "No errors :p"
+                local envNow = (getgenv and getgenv()) or _G
+                local copier = (type(setclipboard) == "function" and setclipboard)
+                    or (type(toclipboard) == "function" and toclipboard)
+                    or envNow.setclipboard or envNow.toclipboard
+                if type(copier) == "function" then
+                    local copied, err = pcall(copier, textToCopy)
+                    if copied then print("[Fairwell] Error log copied to clipboard.")
+                    else warn("[Fairwell] Clipboard copy failed: " .. tostring(err)) end
+                else
+                    warn("[Fairwell] This executor does not expose a clipboard function.")
+                end
+            end
+        })
+    end)
+    pcall(function()
+        clearErrorButton = diagnosticBox:AddButton({
+            Text = "Clear Error Log",
+            Func = function()
+                table.clear(ERROR_LOG)
+                -- Hide the controls by destroying their whole groupbox if the UI library supports it.
+                -- If it cannot destroy the groupbox, leave it available to avoid a broken UI reference.
+                if diagnosticBox then
+                    pcall(function() diagnosticBox:Destroy() end)
+                    diagnosticBox = nil
+                    diagnosticLabel, copyErrorButton, clearErrorButton = nil, nil, nil
+                end
+                print("[Fairwell] Diagnostic log cleared.")
+            end
+        })
+    end)
 end
 
 local function loadRemoteContent()
@@ -116,9 +146,7 @@ local function loadRemoteContent()
         logMessage("[Fairwell] loadstring is unavailable.")
         return false
     end
-    local compiled, chunk, compileError = pcall(function()
-        return compile(tostring(source))
-    end)
+    local compiled, chunk, compileError = pcall(function() return compile(tostring(source)) end)
     if not compiled or type(chunk) ~= "function" then
         logMessage("[Fairwell] Remote content did not compile: " .. tostring(compileError or chunk or "unknown compiler error"))
         return false
@@ -137,16 +165,13 @@ local function loadRemoteContent()
         logMessage("[Fairwell] Remote content failed while building the tab:\n" .. tostring(buildError))
         return false
     end
-
-    -- Successful loading is status output, not an error-log entry.
     print("[Fairwell] Remote content loaded successfully.")
     return true
 end
+
 local contentLoaded = loadRemoteContent()
 if not contentLoaded then
-    local fallbackOk, fallback = pcall(function()
-        return tab:AddLeftGroupbox("Fairwell Loader", "alert-circle")
-    end)
+    local fallbackOk, fallback = pcall(function() return tab:AddLeftGroupbox("Fairwell Loader", "alert-circle") end)
     if fallbackOk and fallback then
         local statusLabel
         pcall(function()
@@ -172,46 +197,5 @@ else
     print("[Fairwell] Fairwell tab and feature content loaded successfully.")
 end
 
--- Copyable diagnostics groupbox, kept on the existing Fairwell tab.
-local diagnosticOk, diagnosticBox = pcall(function()
-    return tab:AddLeftGroupbox("Fairwell Diagnostics", "clipboard")
-end)
-if diagnosticOk and diagnosticBox then
-    pcall(function()
-        diagnosticBox:AddLabel({
-            Text = (#ERROR_LOG > 0 and "Errors recorded. Copy the log for troubleshooting." or "No errors :p"),
-            DoesWrap = true
-        })
-    end)
-    pcall(function()
-        diagnosticBox:AddButton({
-            Text = "Copy Error Log",
-            Func = function()
-                local textToCopy = #ERROR_LOG > 0 and table.concat(ERROR_LOG, "\n") or "No errors :p"
-                local envNow = (getgenv and getgenv()) or _G
-                local copier = (type(setclipboard) == "function" and setclipboard)
-                    or (type(toclipboard) == "function" and toclipboard)
-                    or envNow.setclipboard or envNow.toclipboard
-                if type(copier) == "function" then
-                    local ok, err = pcall(copier, textToCopy)
-                    if ok then
-                        print("[Fairwell] Error log copied to clipboard.")
-                    else
-                        warn("[Fairwell] Clipboard copy failed: " .. tostring(err))
-                    end
-                else
-                    warn("[Fairwell] This executor does not expose a clipboard function.")
-                end
-            end
-        })
-    end)
-    pcall(function()
-        diagnosticBox:AddButton({
-            Text = "Clear Error Log",
-            Func = function()
-                table.clear(ERROR_LOG)
-                print("[Fairwell] Diagnostic log cleared.")
-            end
-        })
-    end)
-end
+-- No diagnostics groupbox or buttons are created on a clean load.
+if #ERROR_LOG > 0 then createDiagnosticControls() end
