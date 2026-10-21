@@ -1032,44 +1032,50 @@ return function(tab, reloadContent, hotelTab)
                                     end
                                 end
 
-                                -- Start at the previous Door (second newest available Door),
-                                -- not the latest Door. After that, advance sequentially only
-                                -- when the current Door is no longer confirmed closed.
+                                -- Anchor the starting target to the latest room number minus one.
+                                -- Never fall forward to a newer Door just because the requested
+                                -- previous room is missing or has not streamed its Door yet.
+                                local latestRoomNumber
+                                for _, candidate in ipairs(roomList) do
+                                    local number = tonumber(candidate.Name)
+                                    if number and (not latestRoomNumber or number > latestRoomNumber) then
+                                        latestRoomNumber = number
+                                    end
+                                end
+
                                 if not initialTargetChosen then
-                                    if #doorRooms >= 2 then
-                                        targetRoomNumber = doorRooms[#doorRooms - 1].number
+                                    if latestRoomNumber and latestRoomNumber > 0 then
+                                        targetRoomNumber = latestRoomNumber - 1
                                         initialTargetChosen = true
+                                        farmStatus("starting at previous room " .. tostring(targetRoomNumber))
                                     else
-                                        farmStatus("waiting for at least two Door models")
+                                        farmStatus("waiting for numbered rooms")
                                     end
                                 end
 
                                 local targetRoom, targetDoor
                                 if initialTargetChosen and targetRoomNumber then
                                     for _, entry in ipairs(doorRooms) do
-                                        if entry.number >= targetRoomNumber then
+                                        if entry.number == targetRoomNumber then
                                             targetRoom, targetDoor = entry.room, entry.door
                                             break
                                         end
                                     end
 
                                     if not targetRoom then
-                                        farmStatus("waiting for a Door model to load; rescanning")
+                                        farmStatus("waiting for Door in room " .. tostring(targetRoomNumber) .. "; will not jump to latest room")
                                     else
                                         local closed = isDoorClosed(targetDoor)
                                         if closed then
                                             local teleported = teleportToDoor(targetDoor)
                                             if teleported then
-                                                farmStatus("teleporting to Door in room " .. targetRoom.Name .. "; retrying until it opens")
+                                                farmStatus("CFrame dragging to Door in room " .. targetRoom.Name)
                                             else
-                                                farmStatus("teleport failed at room " .. targetRoom.Name .. "; retrying")
+                                                farmStatus("drag failed at room " .. targetRoom.Name .. "; retrying")
                                             end
                                         else
-                                            -- If the door state cannot be confirmed, do not
-                                            -- pin the target forever: advance to the next loaded
-                                            -- room with a Door and re-check on the next pass.
                                             farmStatus("Door in room " .. targetRoom.Name .. " is open or unconfirmed; advancing")
-                                            targetRoomNumber = tonumber(targetRoom.Name) + 1
+                                            targetRoomNumber = targetRoomNumber + 1
                                         end
                                     end
                                 end
