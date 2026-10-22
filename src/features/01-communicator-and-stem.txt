@@ -1037,9 +1037,19 @@ return function(tab, reloadContent, hotelTab)
                         end
                         farmStatus("searching for nearest unopened Door")
 
-                        -- Farm strictly in numeric room order. Do not infer the starting
-                        -- room from proximity to a Door: room layouts can make that pick
-                        -- the latest generated room and skip the intervening doors.
+                        -- Use DOORS' own player-progress value when available.
+                        -- CurrentRooms can contain rooms generated far ahead of the player;
+                        -- its highest child is not the player's current/latest room.
+                        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+                        local function getPlayerLatestRoomNumber()
+                            local gameData = ReplicatedStorage:FindFirstChild("GameData")
+                            local latestRoom = gameData and gameData:FindFirstChild("LatestRoom")
+                            if latestRoom and (latestRoom:IsA("IntValue") or latestRoom:IsA("NumberValue")) then
+                                return tonumber(latestRoom.Value)
+                            end
+                            return nil
+                        end
+
                         local targetRoomNumber = nil
                         while state.running do
                             local passOk, passErr = pcall(function()
@@ -1048,10 +1058,7 @@ return function(tab, reloadContent, hotelTab)
                                 local targetDoor, targetRoom, targetDistance
 
                                 if root and rooms then
-                                    -- Sort numerically, then pick the first unopened Door at
-                                    -- or after the cursor. The cursor is initialized from the
-                                    -- earliest currently available unopened door, never from
-                                    -- the physically nearest/latest room.
+                                    local latestRoomNumber = getPlayerLatestRoomNumber()
                                     local orderedRooms = {}
                                     for _, room in ipairs(rooms:GetChildren()) do
                                         local number = tonumber(room.Name)
@@ -1063,7 +1070,16 @@ return function(tab, reloadContent, hotelTab)
                                         return a.number < b.number
                                     end)
 
-                                    if targetRoomNumber == nil then
+                                    -- LatestRoom is the player's progress, not the highest
+                                    -- generated room. Start at the next room's door when that
+                                    -- value is available; only fall back to the first loaded
+                                    -- unopened door if this game build lacks GameData.LatestRoom.
+                                    if latestRoomNumber then
+                                        local nextRoomNumber = latestRoomNumber + 1
+                                        if targetRoomNumber == nil or targetRoomNumber < nextRoomNumber then
+                                            targetRoomNumber = nextRoomNumber
+                                        end
+                                    elseif targetRoomNumber == nil then
                                         for _, entry in ipairs(orderedRooms) do
                                             local door = findDoorModelInRoom(entry.room)
                                             if door and isDoorClosed(door) then
@@ -1090,14 +1106,13 @@ return function(tab, reloadContent, hotelTab)
                                 end
 
                                 if targetDoor and targetRoom then
-                                    farmStatus("next sequential unopened Door: room " .. targetRoom.Name
+                                    farmStatus("player latest room: " .. tostring(getPlayerLatestRoomNumber() or "unknown")
+                                        .. " | next Door: room " .. targetRoom.Name
                                         .. (targetDistance and (" (" .. tostring(math.floor(targetDistance + 0.5)) .. " studs)") or ""))
                                     local moved = teleportToDoor(targetDoor)
                                     if moved then
-                                        -- Only advance after the current target was reached.
                                         targetRoomNumber = tonumber(targetRoom.Name) + 1
                                     else
-                                        -- Keep the same cursor after a rollback/failure.
                                         farmStatus("drag interrupted; retrying room " .. targetRoom.Name)
                                     end
                                 else
