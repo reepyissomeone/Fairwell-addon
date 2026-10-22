@@ -1086,7 +1086,7 @@ return function(tab, reloadContent, hotelTab)
                                     local lowestNumber
                                     for _, room in ipairs(rooms:GetChildren()) do
                                         local number = tonumber(room.Name)
-                                        if number and (not playerRoomNumber or number > playerRoomNumber) then
+                                        if number and (not playerRoomNumber or number >= playerRoomNumber) then
                                             local door = findDoorModelInRoom(room)
                                             if door and isDoorClosed(door) then
                                                 if not lowestNumber or number < lowestNumber then
