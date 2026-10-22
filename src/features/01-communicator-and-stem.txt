@@ -939,67 +939,15 @@ return function(tab, reloadContent, hotelTab)
                             break
                         end
 
-                        -- Raycast the direct route first. If a wall/solid object
-                        -- blocks it, ask Roblox's navmesh for a path around it.
-                        -- Recompute periodically so rollbacks and streamed rooms are
-                        -- handled without getting locked onto stale waypoints.
-                        local PathfindingService = game:GetService("PathfindingService")
-                        local rayParams = RaycastParams.new()
-                        rayParams.FilterType = Enum.RaycastFilterType.Exclude
-                        rayParams.FilterDescendantsInstances = {character}
-                        rayParams.IgnoreWater = true
-
-                        local origin = root.Position + Vector3.new(0, 1.5, 0)
-                        local rayDirection = destination.Position - origin
-                        local obstruction = workspace:Raycast(origin, rayDirection, rayParams)
-                        local nextPosition = destination.Position
-                        if obstruction and not obstruction.Instance:IsDescendantOf(door) then
-                            local pathOk, waypoints = pcall(function()
-                                local pathObject = PathfindingService:CreatePath({
-                                    AgentRadius = 2,
-                                    AgentHeight = 5,
-                                    AgentCanJump = true,
-                                    AgentCanClimb = true,
-                                    WaypointSpacing = 5
-                                })
-                                pathObject:ComputeAsync(root.Position, destination.Position)
-                                if pathObject.Status ~= Enum.PathStatus.Success then
-                                    return nil
-                                end
-                                return pathObject:GetWaypoints()
-                            end)
-
-                            if pathOk and waypoints and #waypoints > 0 then
-                                -- Pick the first waypoint that is meaningfully ahead;
-                                -- skip the start waypoint returned by ComputeAsync.
-                                nextPosition = waypoints[#waypoints].Position
-                                for _, waypoint in ipairs(waypoints) do
-                                    if (waypoint.Position - root.Position).Magnitude > 4 then
-                                        nextPosition = waypoint.Position
-                                        if waypoint.Action == Enum.PathWaypointAction.Jump then
-                                            local humanoid = character:FindFirstChildOfClass("Humanoid")
-                                            if humanoid then humanoid.Jump = true end
-                                        end
-                                        break
-                                    end
-                                end
-                            else
-                                -- Don't push directly through a wall if navmesh can't
-                                -- find a safe route. Pause and retry a fresh ray/path.
-                                task.wait(0.15)
-                                continue
-                            end
-                        end
-
-                        local moveDelta = nextPosition - root.Position
+                        -- Simple direct drag (raycasting/pathfinding disabled).
+                        -- Move a short distance from the current position each tick,
+                        -- so a rollback is naturally corrected on the next iteration.
+                        local moveDelta = destination.Position - root.Position
                         local moveDistance = moveDelta.Magnitude
                         if moveDistance > 0.1 then
-                            local stepDistance = math.min(5, moveDistance)
-                            local nextCFrame = CFrame.new(
-                                root.Position + moveDelta.Unit * stepDistance,
-                                root.Position + moveDelta.Unit * stepDistance + root.CFrame.LookVector
-                            )
-                            root.CFrame = root.CFrame:Lerp(nextCFrame, 0.65)
+                            local stepDistance = math.min(7, moveDistance)
+                            local nextPosition = root.Position + moveDelta.Unit * stepDistance
+                            root.CFrame = CFrame.new(nextPosition) * root.CFrame.Rotation
                         end
                         root.AssemblyLinearVelocity = Vector3.zero
                         root.AssemblyAngularVelocity = Vector3.zero
@@ -1089,44 +1037,80 @@ return function(tab, reloadContent, hotelTab)
                         end
                         farmStatus("searching for nearest unopened Door")
 
-                        -- Choose by physical distance, not room number. Re-scan after
-                        -- each drag so the next nearest unopened door is selected.
+                        -- Identify the room the player is physically in using each
+                        -- room's bounding box, then choose the lowest-numbered closed
+                        -- door AFTER that room. Never jump to the highest/latest room
+                        -- just because it has already streamed in.
+                        local function getPlayerRoomNumber(root, rooms)
+                            if not root or not rooms then return nil end
+                            local position = root.Position
+                            local nearestNumber, nearestDistance
+                            for _, room in ipairs(rooms:GetChildren()) do
+                                local number = tonumber(room.Name)
+                                if number then
+                                    local ok, boxCFrame, boxSize = pcall(function()
+                                        return room:GetBoundingBox()
+                                    end)
+                                    if ok and boxCFrame and boxSize then
+                                        local localPos = boxCFrame:PointToObjectSpace(position)
+                                        local half = boxSize * 0.5
+                                        local dx = math.max(math.abs(localPos.X) - half.X, 0)
+                                        local dy = math.max(math.abs(localPos.Y) - half.Y, 0)
+                                        local dz = math.max(math.abs(localPos.Z) - half.Z, 0)
+                                        local distance = Vector3.new(dx, dy, dz).Magnitude
+                                        if distance == 0 then
+                                            return number
+                                        end
+                                        if not nearestDistance or distance < nearestDistance then
+                                            nearestNumber, nearestDistance = number, distance
+                                        end
+                                    end
+                                end
+                            end
+                            -- If the player is between room bounds, use the closest room
+                            -- only when it is reasonably near; otherwise keep waiting.
+                            if nearestDistance and nearestDistance < 80 then
+                                return nearestNumber
+                            end
+                            return nil
+                        end
+
                         while state.running do
                             local passOk, passErr = pcall(function()
                                 local root = getRoot()
                                 local rooms = workspace:FindFirstChild("CurrentRooms")
-                                local nearestDoor, nearestRoom, nearestDistance
+                                local targetDoor, targetRoom, targetDistance
 
                                 if root and rooms then
+                                    local playerRoomNumber = getPlayerRoomNumber(root, rooms)
+                                    local lowestNumber
                                     for _, room in ipairs(rooms:GetChildren()) do
-                                        if tonumber(room.Name) then
+                                        local number = tonumber(room.Name)
+                                        if number and (not playerRoomNumber or number > playerRoomNumber) then
                                             local door = findDoorModelInRoom(room)
                                             if door and isDoorClosed(door) then
-                                                local ok, position = pcall(function()
-                                                    return door:GetPivot().Position
-                                                end)
-                                                if ok and position then
-                                                    local distance = (position - root.Position).Magnitude
-                                                    if not nearestDistance or distance < nearestDistance then
-                                                        nearestDoor = door
-                                                        nearestRoom = room
-                                                        nearestDistance = distance
-                                                    end
+                                                if not lowestNumber or number < lowestNumber then
+                                                    lowestNumber = number
+                                                    targetDoor = door
+                                                    targetRoom = room
                                                 end
                                             end
                                         end
                                     end
+                                    if targetDoor then
+                                        targetDistance = (targetDoor:GetPivot().Position - root.Position).Magnitude
+                                    end
                                 end
 
-                                if nearestDoor and nearestRoom then
-                                    farmStatus("nearest unopened Door: room " .. nearestRoom.Name
-                                        .. " (" .. tostring(math.floor(nearestDistance + 0.5)) .. " studs)")
-                                    local moved = teleportToDoor(nearestDoor)
+                                if targetDoor and targetRoom then
+                                    farmStatus("next unopened Door: room " .. targetRoom.Name
+                                        .. (targetDistance and (" (" .. tostring(math.floor(targetDistance + 0.5)) .. " studs)") or ""))
+                                    local moved = teleportToDoor(targetDoor)
                                     if not moved then
-                                        farmStatus("drag interrupted; searching again")
+                                        farmStatus("drag interrupted; searching for the next door again")
                                     end
                                 else
-                                    farmStatus("no unopened Door found in loaded rooms; searching")
+                                    farmStatus("waiting for the next unopened Door to load")
                                 end
                             end)
 
