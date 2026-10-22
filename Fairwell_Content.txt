@@ -4,17 +4,17 @@
 -- preserving the original shared Lua scope and behavior.
 
 local MODULE_URLS = {
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/01-communicator-and-stem.txt?v=20261022-strict-room-order",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/02-anti-creak.txt?v=20261022-strict-room-order",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/03-anti-groundskeeper.txt?v=20261022-strict-room-order",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/04-auto-closet.txt?v=20261022-strict-room-order",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/05-delete-gate.txt?v=20261022-strict-room-order",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/06-friendly-entities.txt?v=20261022-strict-room-order",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/07-item-notifications-and-floor-detection.txt?v=20261022-strict-room-order",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/08-auto-giggle-glowstick.txt?v=20261022-strict-room-order",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/09-auto-open-locked-doors.txt?v=20261022-strict-room-order",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/10-feature-connector.txt?v=20261022-strict-room-order",
-    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/config/config-manager.txt?v=20261022-strict-room-order",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/01-communicator-and-stem.txt?v=20261022-player-latest-room",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/02-anti-creak.txt?v=20261022-player-latest-room",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/03-anti-groundskeeper.txt?v=20261022-player-latest-room",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/04-auto-closet.txt?v=20261022-player-latest-room",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/05-delete-gate.txt?v=20261022-player-latest-room",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/06-friendly-entities.txt?v=20261022-player-latest-room",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/07-item-notifications-and-floor-detection.txt?v=20261022-player-latest-room",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/08-auto-giggle-glowstick.txt?v=20261022-player-latest-room",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/09-auto-open-locked-doors.txt?v=20261022-player-latest-room",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/features/10-feature-connector.txt?v=20261022-player-latest-room",
+    "https://raw.githubusercontent.com/reepyissomeone/Fairwell-addon/main/src/config/config-manager.txt?v=20261022-player-latest-room",
 }
 
 local pieces = {}
