@@ -1070,14 +1070,13 @@ return function(tab, reloadContent, hotelTab)
                                         return a.number < b.number
                                     end)
 
-                                    -- LatestRoom is the player's progress, not the highest
-                                    -- generated room. Start at the next room's door when that
-                                    -- value is available; only fall back to the first loaded
-                                    -- unopened door if this game build lacks GameData.LatestRoom.
+                                    -- Room numbering starts at 0 in this build. LatestRoom
+                                    -- identifies the room the player is currently in, whose
+                                    -- exit Door is the next door to visit. Do NOT add 1 here.
+                                    -- CurrentRooms may contain rooms generated ahead of the player.
                                     if latestRoomNumber then
-                                        local nextRoomNumber = latestRoomNumber + 1
-                                        if targetRoomNumber == nil or targetRoomNumber < nextRoomNumber then
-                                            targetRoomNumber = nextRoomNumber
+                                        if targetRoomNumber == nil or targetRoomNumber < latestRoomNumber then
+                                            targetRoomNumber = latestRoomNumber
                                         end
                                     elseif targetRoomNumber == nil then
                                         for _, entry in ipairs(orderedRooms) do
