@@ -1043,38 +1043,37 @@ return function(tab, reloadContent, hotelTab)
                         -- just because it has already streamed in.
                         local function getPlayerRoomNumber(root, rooms)
                             if not root or not rooms then return nil end
-                            local position = root.Position
+
+                            -- Room bounding boxes can overlap or cover connected rooms.
+                            -- Instead, infer the player's room from the nearest Door model,
+                            -- which is a more stable landmark for sequential room targeting.
                             local nearestNumber, nearestDistance
                             for _, room in ipairs(rooms:GetChildren()) do
                                 local number = tonumber(room.Name)
                                 if number then
-                                    local ok, boxCFrame, boxSize = pcall(function()
-                                        return room:GetBoundingBox()
-                                    end)
-                                    if ok and boxCFrame and boxSize then
-                                        local localPos = boxCFrame:PointToObjectSpace(position)
-                                        local half = boxSize * 0.5
-                                        local dx = math.max(math.abs(localPos.X) - half.X, 0)
-                                        local dy = math.max(math.abs(localPos.Y) - half.Y, 0)
-                                        local dz = math.max(math.abs(localPos.Z) - half.Z, 0)
-                                        local distance = Vector3.new(dx, dy, dz).Magnitude
-                                        if distance == 0 then
-                                            return number
-                                        end
-                                        if not nearestDistance or distance < nearestDistance then
-                                            nearestNumber, nearestDistance = number, distance
+                                    local door = findDoorModelInRoom(room)
+                                    if door then
+                                        local ok, position = pcall(function()
+                                            return door:GetPivot().Position
+                                        end)
+                                        if ok and position then
+                                            local distance = (position - root.Position).Magnitude
+                                            if not nearestDistance or distance < nearestDistance then
+                                                nearestNumber, nearestDistance = number, distance
+                                            end
                                         end
                                     end
                                 end
                             end
-                            -- If the player is between room bounds, use the closest room
-                            -- only when it is reasonably near; otherwise keep waiting.
-                            if nearestDistance and nearestDistance < 80 then
+                            if nearestDistance and nearestDistance < 250 then
                                 return nearestNumber
                             end
                             return nil
                         end
 
+                        -- A cursor prevents a failed drag from repeatedly selecting the
+                        -- newest loaded room. Advance only after reaching the selected door.
+                        local targetRoomNumber = nil
                         while state.running do
                             local passOk, passErr = pcall(function()
                                 local root = getRoot()
@@ -1083,21 +1082,47 @@ return function(tab, reloadContent, hotelTab)
 
                                 if root and rooms then
                                     local playerRoomNumber = getPlayerRoomNumber(root, rooms)
-                                    local lowestNumber
+                                    if targetRoomNumber == nil then
+                                        targetRoomNumber = playerRoomNumber
+                                    elseif playerRoomNumber and playerRoomNumber < targetRoomNumber then
+                                        -- If the game rolls the player backwards, keep the
+                                        -- cursor so we can retry the same intended door.
+                                        targetRoomNumber = math.max(targetRoomNumber, playerRoomNumber)
+                                    end
+
+                                    local selectedNumber
                                     for _, room in ipairs(rooms:GetChildren()) do
                                         local number = tonumber(room.Name)
-                                        if number and (not playerRoomNumber or number >= playerRoomNumber) then
+                                        if number and targetRoomNumber and number >= targetRoomNumber then
                                             local door = findDoorModelInRoom(room)
                                             if door and isDoorClosed(door) then
-                                                if not lowestNumber or number < lowestNumber then
-                                                    lowestNumber = number
+                                                if not selectedNumber or number < selectedNumber then
+                                                    selectedNumber = number
                                                     targetDoor = door
                                                     targetRoom = room
                                                 end
                                             end
                                         end
                                     end
-                                    if targetDoor then
+
+                                    -- If the inferred room has an already-open door, advance
+                                    -- to the immediately following room, not the latest room.
+                                    if not targetDoor and targetRoomNumber then
+                                        local nextNumber
+                                        for _, room in ipairs(rooms:GetChildren()) do
+                                            local number = tonumber(room.Name)
+                                            if number and number > targetRoomNumber then
+                                                local door = findDoorModelInRoom(room)
+                                                if door and isDoorClosed(door) and (not nextNumber or number < nextNumber) then
+                                                    nextNumber = number
+                                                    targetDoor = door
+                                                    targetRoom = room
+                                                end
+                                            end
+                                        end
+                                    end
+
+                                    if targetDoor and targetRoom then
                                         targetDistance = (targetDoor:GetPivot().Position - root.Position).Magnitude
                                     end
                                 end
@@ -1106,13 +1131,15 @@ return function(tab, reloadContent, hotelTab)
                                     farmStatus("next unopened Door: room " .. targetRoom.Name
                                         .. (targetDistance and (" (" .. tostring(math.floor(targetDistance + 0.5)) .. " studs)") or ""))
                                     local moved = teleportToDoor(targetDoor)
-                                    if not moved then
-                                        farmStatus("drag interrupted; searching for the next door again")
+                                    if moved then
+                                        -- Move the cursor forward only after successful arrival.
+                                        targetRoomNumber = tonumber(targetRoom.Name) + 1
+                                    else
+                                        farmStatus("drag interrupted; retrying room " .. targetRoom.Name)
                                     end
                                 else
-                                    farmStatus("waiting for the next unopened Door to load")
-                                end
-                            end)
+                                    farmStatus("waiting for the next sequential unopened Door to load")
+                                end                            end)
 
                             if not passOk then
                                 warn("[Fairwell Farm Stairwell] Scan error; retrying: " .. tostring(passErr))
