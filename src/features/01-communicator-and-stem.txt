@@ -858,6 +858,9 @@ return function(tab, reloadContent, hotelTab)
 
             if containsOpenedWord(door.Name) then return false, "model name says opened" end
 
+            -- An object merely named "Opened" is not proof the door is open:
+            -- some maps keep marker objects around regardless of their state.
+            -- Only Boolean values/attributes can establish state; prompt is fallback.
             local foundExplicitClosed = false
             local keys = {"Opened", "IsOpen", "Open", "IsOpened"}
             local function inspectState(container)
@@ -879,7 +882,6 @@ return function(tab, reloadContent, hotelTab)
             local rootState = inspectState(door)
             if rootState == "open" then return false, "explicit open flag" end
             for _, object in ipairs(door:GetDescendants()) do
-                if containsOpenedWord(object.Name) then return false, "descendant name says opened: " .. object.Name end
                 if inspectState(object) == "open" then return false, "explicit open flag: " .. object.Name end
             end
             if foundExplicitClosed then return true, "explicit closed flag" end
