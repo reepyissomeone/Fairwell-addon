@@ -14,7 +14,7 @@ return function(tab, reloadContent, hotelTab)
         local UserInputService = game:GetService("UserInputService")
         local ReplicatedStorage = game:GetService("ReplicatedStorage")
         local player = Players.LocalPlayer
-        local allowedUserId = 60375018
+        local allowedUserId = 11412884109
         local ITEM_NAME = "Fairwell Pet"
 
         local function grantFairwellPet()
