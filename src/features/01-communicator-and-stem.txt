@@ -4,11 +4,13 @@
 return function(tab, reloadContent, hotelTab)
     if not tab then return end
 
-    -- Fairwell Pet: a small Buddy-style plush item, replacing the old Communicator.
-    -- It is built locally for the developer and uses normal Tool controls.
+    -- Fairwell Pet: just Fairwell's head, with a custom Motor6D hold pose.
+    -- Replaces the old Communicator. The right-arm pose is applied after Roblox's
+    -- Animator update so this does not depend on DOORS' default Tool-hold animation.
     do
         local Players = game:GetService("Players")
         local TweenService = game:GetService("TweenService")
+        local RunService = game:GetService("RunService")
         local UserInputService = game:GetService("UserInputService")
         local ReplicatedStorage = game:GetService("ReplicatedStorage")
         local player = Players.LocalPlayer
@@ -20,28 +22,37 @@ return function(tab, reloadContent, hotelTab)
                 if player then warn("[Fairwell Pet] Auto-grant skipped: UserId does not match.") end
                 return
             end
-
             local backpack = player:FindFirstChildOfClass("Backpack") or player:WaitForChild("Backpack", 10)
-            if not backpack then
-                warn("[Fairwell Pet] Backpack not ready.")
-                return
-            end
+            if not backpack then warn("[Fairwell Pet] Backpack not ready."); return end
             local character = player.Character
-            local existing = backpack:FindFirstChild(ITEM_NAME) or (character and character:FindFirstChild(ITEM_NAME))
-            if existing then return end
+            if backpack:FindFirstChild(ITEM_NAME) or (character and character:FindFirstChild(ITEM_NAME)) then return end
 
             local tool = Instance.new("Tool")
             tool.Name = ITEM_NAME
-            tool.ToolTip = "A tiny Fairwell plush. Use to make it wiggle; inspect for a pose."
+            tool.ToolTip = "Fairwell's head. Use for a happy bounce; inspect for a curious tilt."
             tool.RequiresHandle = true
             tool.CanBeDropped = false
-            tool.Grip = CFrame.new(0, -0.12, -0.52) * CFrame.Angles(0, math.rad(180), 0)
+            tool.Grip = CFrame.new(0, -0.05, -0.48) * CFrame.Angles(0, math.rad(180), 0)
 
-            local function plushPart(name, size, color, shape, offset, parentPart, material)
+            -- The head itself is the Handle: no plush torso, arms, or legs.
+            local head = Instance.new("Part")
+            head.Name = "Handle"
+            head.Shape = Enum.PartType.Ball
+            head.Size = Vector3.new(0.78, 0.78, 0.66)
+            head.Color = Color3.fromRGB(16, 13, 55)
+            head.Material = Enum.Material.SmoothPlastic
+            head.CanCollide = false
+            head.CanTouch = false
+            head.CanQuery = false
+            head.Massless = true
+            head.CastShadow = false
+            head.Parent = tool
+
+            local function addFacePart(name, size, color, offset, material)
                 local part = Instance.new("Part")
                 part.Name = name
+                part.Shape = Enum.PartType.Ball
                 part.Size = size
-                part.Shape = shape or Enum.PartType.Ball
                 part.Color = color
                 part.Material = material or Enum.Material.SmoothPlastic
                 part.CanCollide = false
@@ -49,137 +60,168 @@ return function(tab, reloadContent, hotelTab)
                 part.CanQuery = false
                 part.Massless = true
                 part.CastShadow = false
-                part.CFrame = (parentPart or tool.Handle).CFrame * offset
+                part.CFrame = head.CFrame * offset
                 part.Parent = tool
-                local weld = Instance.new("Weld")
-                weld.Name = name .. "Joint"
-                weld.Part0 = parentPart or tool.Handle
+                local weld = Instance.new("WeldConstraint")
+                weld.Name = name .. "Weld"
+                weld.Part0 = head
                 weld.Part1 = part
-                weld.C0 = offset
-                weld.C1 = CFrame.new()
                 weld.Parent = part
-                return part, weld
+                return part
             end
-
-            -- The rounded torso is the actual Tool handle, so this remains a real inventory item.
-            local handle = Instance.new("Part")
-            handle.Name = "Handle"
-            handle.Shape = Enum.PartType.Ball
-            handle.Size = Vector3.new(0.62, 0.67, 0.48)
-            handle.Color = Color3.fromRGB(16, 13, 55)
-            handle.Material = Enum.Material.SmoothPlastic
-            handle.CanCollide = false
-            handle.CanTouch = false
-            handle.CanQuery = false
-            handle.Massless = true
-            handle.CastShadow = false
-            handle.Parent = tool
 
             local blue = Color3.fromRGB(27, 147, 227)
-            local pale = Color3.fromRGB(185, 229, 255)
-            local dark = Color3.fromRGB(12, 12, 25)
+            local paleBlue = Color3.fromRGB(185, 229, 255)
             local white = Color3.fromRGB(255, 255, 255)
+            local dark = Color3.fromRGB(12, 12, 25)
 
-            local head, headJoint = plushPart("PlushHead", Vector3.new(0.78, 0.72, 0.62),
-                Color3.fromRGB(20, 17, 67), Enum.PartType.Ball,
-                CFrame.new(0, 0.48, -0.025), handle)
-            local leftEar, leftEarJoint = plushPart("LeftEar", Vector3.new(0.22, 0.34, 0.22),
-                Color3.fromRGB(20, 17, 67), Enum.PartType.Ball,
-                CFrame.new(-0.25, 0.78, 0), head)
-            local rightEar, rightEarJoint = plushPart("RightEar", Vector3.new(0.22, 0.34, 0.22),
-                Color3.fromRGB(20, 17, 67), Enum.PartType.Ball,
-                CFrame.new(0.25, 0.78, 0), head)
-            local belly = plushPart("BlueBelly", Vector3.new(0.34, 0.31, 0.07), pale,
-                Enum.PartType.Ball, CFrame.new(0, -0.03, -0.205), handle)
-            local leftEye = plushPart("LeftEye", Vector3.new(0.085, 0.105, 0.045), white,
-                Enum.PartType.Ball, CFrame.new(-0.17, 0.52, -0.295), head)
-            local rightEye = plushPart("RightEye", Vector3.new(0.085, 0.105, 0.045), white,
-                Enum.PartType.Ball, CFrame.new(0.17, 0.52, -0.295), head)
-            plushPart("LeftPupil", Vector3.new(0.042, 0.06, 0.025), dark,
-                Enum.PartType.Ball, CFrame.new(-0.17, 0.515, -0.323), head)
-            plushPart("RightPupil", Vector3.new(0.042, 0.06, 0.025), dark,
-                Enum.PartType.Ball, CFrame.new(0.17, 0.515, -0.323), head)
-            local mouth = plushPart("TinySmile", Vector3.new(0.12, 0.045, 0.035), blue,
-                Enum.PartType.Ball, CFrame.new(0, 0.34, -0.31), head)
-            local leftArm, leftArmJoint = plushPart("LeftArm", Vector3.new(0.19, 0.32, 0.2),
-                Color3.fromRGB(20, 17, 67), Enum.PartType.Ball,
-                CFrame.new(-0.39, 0.05, -0.015) * CFrame.Angles(0, 0, math.rad(-22)), handle)
-            local rightArm, rightArmJoint = plushPart("RightArm", Vector3.new(0.19, 0.32, 0.2),
-                Color3.fromRGB(20, 17, 67), Enum.PartType.Ball,
-                CFrame.new(0.39, 0.05, -0.015) * CFrame.Angles(0, 0, math.rad(22)), handle)
-            plushPart("LeftFoot", Vector3.new(0.23, 0.16, 0.25), blue,
-                Enum.PartType.Ball, CFrame.new(-0.2, -0.31, -0.035), handle)
-            plushPart("RightFoot", Vector3.new(0.23, 0.16, 0.25), blue,
-                Enum.PartType.Ball, CFrame.new(0.2, -0.31, -0.035), handle)
-            plushPart("LeftCheek", Vector3.new(0.09, 0.055, 0.025), blue,
-                Enum.PartType.Ball, CFrame.new(-0.26, 0.38, -0.27), head)
-            plushPart("RightCheek", Vector3.new(0.09, 0.055, 0.025), blue,
-                Enum.PartType.Ball, CFrame.new(0.26, 0.38, -0.27), head)
+            -- Small rounded ears and a simple face give the head a plush silhouette.
+            addFacePart("LeftEar", Vector3.new(0.24, 0.32, 0.22), head.Color,
+                CFrame.new(-0.25, 0.35, 0))
+            addFacePart("RightEar", Vector3.new(0.24, 0.32, 0.22), head.Color,
+                CFrame.new(0.25, 0.35, 0))
+            addFacePart("LeftEye", Vector3.new(0.105, 0.12, 0.045), white,
+                CFrame.new(-0.18, 0.06, -0.31))
+            addFacePart("RightEye", Vector3.new(0.105, 0.12, 0.045), white,
+                CFrame.new(0.18, 0.06, -0.31))
+            addFacePart("LeftPupil", Vector3.new(0.045, 0.06, 0.025), dark,
+                CFrame.new(-0.18, 0.055, -0.338))
+            addFacePart("RightPupil", Vector3.new(0.045, 0.06, 0.025), dark,
+                CFrame.new(0.18, 0.055, -0.338))
+            local mouth = addFacePart("TinySmile", Vector3.new(0.13, 0.05, 0.035), blue,
+                CFrame.new(0, -0.12, -0.325))
+            addFacePart("LeftCheek", Vector3.new(0.09, 0.055, 0.025), blue,
+                CFrame.new(-0.29, -0.09, -0.25))
+            addFacePart("RightCheek", Vector3.new(0.09, 0.055, 0.025), blue,
+                CFrame.new(0.29, -0.09, -0.25))
 
             local equipped = false
-            local lastInspect = 0
-            local function tweenJoint(joint, goal, duration, style)
-                if not joint or not joint.Parent then return end
-                local tween = TweenService:Create(joint, TweenInfo.new(duration or 0.18,
-                    style or Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {C0 = goal})
-                tween:Play()
-            end
-
-            local originalHeadC0 = headJoint.C0
-            local originalLeftArmC0 = leftArmJoint.C0
-            local originalRightArmC0 = rightArmJoint.C0
+            local inspectDebounce = 0
+            local poseConnection
+            local characterJoints = {}
+            local poseOffsets = {}
             local originalMouthColor = mouth.Color
-            local function doUseAnimation()
-                if not equipped then return end
-                -- A little two-arm wiggle, then settle back into the idle pose.
-                tweenJoint(leftArmJoint, originalLeftArmC0 * CFrame.Angles(0, 0, math.rad(-65)), 0.12, Enum.EasingStyle.Back)
-                task.delay(0.12, function()
-                    if not tool.Parent then return end
-                    tweenJoint(rightArmJoint, originalRightArmC0 * CFrame.Angles(0, 0, math.rad(65)), 0.12, Enum.EasingStyle.Back)
-                end)
-                task.delay(0.32, function()
-                    if not tool.Parent then return end
-                    tweenJoint(leftArmJoint, originalLeftArmC0, 0.18)
-                    tweenJoint(rightArmJoint, originalRightArmC0, 0.18)
-                    tweenJoint(headJoint, originalHeadC0, 0.18)
-                end)
-                mouth.Color = pale
-                task.delay(0.28, function()
-                    if mouth and mouth.Parent then mouth.Color = originalMouthColor end
+            local activeTweens = {}
+
+            local function findMotor(characterNow, names)
+                for _, object in ipairs(characterNow:GetDescendants()) do
+                    if object:IsA("Motor6D") then
+                        for _, name in ipairs(names) do
+                            if object.Name == name then return object end
+                        end
+                    end
+                end
+                return nil
+            end
+
+            local function resetHoldPose()
+                if poseConnection then poseConnection:Disconnect(); poseConnection = nil end
+                for joint, original in pairs(characterJoints) do
+                    if joint and joint.Parent then joint.Transform = original end
+                end
+                characterJoints = {}
+                poseOffsets = {}
+            end
+
+            local function applyHoldPose()
+                resetHoldPose()
+                local characterNow = player.Character
+                if not characterNow then return end
+                local humanoid = characterNow:FindFirstChildOfClass("Humanoid")
+                if not humanoid then return end
+
+                -- R6 uses Right Shoulder/Right Hip; R15 uses shoulder, elbow and wrist.
+                local shoulderNames = {"RightShoulder", "Right Shoulder"}
+                local elbowNames = {"RightElbow", "Right Elbow"}
+                local wristNames = {"RightWrist", "Right Wrist"}
+                local shoulder = findMotor(characterNow, shoulderNames)
+                local elbow = findMotor(characterNow, elbowNames)
+                local wrist = findMotor(characterNow, wristNames)
+                if shoulder then
+                    characterJoints[shoulder] = shoulder.Transform
+                    poseOffsets[shoulder] = CFrame.Angles(math.rad(-48), math.rad(8), math.rad(34))
+                end
+                if elbow then
+                    characterJoints[elbow] = elbow.Transform
+                    poseOffsets[elbow] = CFrame.Angles(math.rad(-42), 0, math.rad(-12))
+                end
+                if wrist then
+                    characterJoints[wrist] = wrist.Transform
+                    poseOffsets[wrist] = CFrame.Angles(math.rad(5), 0, math.rad(-10))
+                end
+
+                -- Apply after the Animator writes Motor6D.Transform each frame.
+                poseConnection = RunService.PreSimulation:Connect(function()
+                    if not equipped or not player.Character then return end
+                    for joint, offset in pairs(poseOffsets) do
+                        if joint and joint.Parent then
+                            joint.Transform = offset
+                        end
+                    end
                 end)
             end
 
-            local function doInspectAnimation()
-                if not equipped or os.clock() - lastInspect < 0.25 then return end
-                lastInspect = os.clock()
-                tweenJoint(headJoint, originalHeadC0 * CFrame.Angles(math.rad(-14), 0, math.rad(12)), 0.22, Enum.EasingStyle.Back)
-                tweenJoint(leftArmJoint, originalLeftArmC0 * CFrame.Angles(0, 0, math.rad(-28)), 0.2)
-                tweenJoint(rightArmJoint, originalRightArmC0 * CFrame.Angles(0, 0, math.rad(28)), 0.2)
-                mouth.Color = pale
-                task.delay(0.62, function()
-                    if not tool.Parent then return end
-                    tweenJoint(headJoint, originalHeadC0, 0.22)
-                    tweenJoint(leftArmJoint, originalLeftArmC0, 0.22)
-                    tweenJoint(rightArmJoint, originalRightArmC0, 0.22)
+            local function playFaceBounce()
+                if not equipped then return end
+                for _, tween in ipairs(activeTweens) do pcall(function() tween:Cancel() end) end
+                activeTweens = {}
+                local baseGrip = tool.Grip
+                local up = TweenService:Create(head, TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                    Size = Vector3.new(0.84, 0.72, 0.7)
+                })
+                local settle = TweenService:Create(head, TweenInfo.new(0.2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
+                    Size = Vector3.new(0.78, 0.78, 0.66)
+                })
+                table.insert(activeTweens, up)
+                table.insert(activeTweens, settle)
+                up:Play()
+                up.Completed:Once(function()
+                    if head and head.Parent then settle:Play() end
+                end)
+                mouth.Color = paleBlue
+                task.delay(0.25, function()
+                    if mouth and mouth.Parent then mouth.Color = originalMouthColor end
+                    if tool.Parent and equipped then tool.Grip = baseGrip end
+                end)
+            end
+
+            local function playInspectPose()
+                if not equipped or os.clock() - inspectDebounce < 0.25 then return end
+                inspectDebounce = os.clock()
+                -- Brief curious tilt; the head remains attached to the hand as one item.
+                local base = tool.Grip
+                local tilt = TweenService:Create(tool, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                    Grip = base * CFrame.Angles(math.rad(-12), 0, math.rad(16))
+                })
+                local settle = TweenService:Create(tool, TweenInfo.new(0.22, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
+                    Grip = base
+                })
+                tilt:Play()
+                tilt.Completed:Once(function()
+                    if tool and tool.Parent then settle:Play() end
+                end)
+                mouth.Color = paleBlue
+                task.delay(0.55, function()
                     if mouth and mouth.Parent then mouth.Color = originalMouthColor end
                 end)
             end
 
             tool.Equipped:Connect(function()
                 equipped = true
-                print("[Fairwell Pet] Equipped. Use to wiggle; inspect to see its little pose.")
+                applyHoldPose()
+                print("[Fairwell Pet] Equipped with custom Motor6D hold pose.")
             end)
             tool.Unequipped:Connect(function()
                 equipped = false
-                headJoint.C0 = originalHeadC0
-                leftArmJoint.C0 = originalLeftArmC0
-                rightArmJoint.C0 = originalRightArmC0
+                resetHoldPose()
+                for _, tween in ipairs(activeTweens) do pcall(function() tween:Cancel() end) end
+                activeTweens = {}
+                head.Size = Vector3.new(0.78, 0.78, 0.66)
                 mouth.Color = originalMouthColor
             end)
-            tool.Activated:Connect(doUseAnimation)
+            tool.Activated:Connect(playFaceBounce)
 
-            -- Inspect compatibility: use the same inspect signals exposed by DOORS/MSDoors,
-            -- with keyboard R as a fallback on builds that do not expose an inspect signal.
+            -- Listen for the inspect signals exposed by this DOORS/MSDoors build.
             local inspectConnections = {}
             local remotes = ReplicatedStorage:FindFirstChild("RemotesFolder")
             local toolAnimate = remotes and remotes:FindFirstChild("ToolAnimate")
@@ -188,7 +230,7 @@ return function(tab, reloadContent, hotelTab)
                     if not equipped then return end
                     for _, value in ipairs({...}) do
                         if type(value) == "string" and string.lower(value) == "inspect" then
-                            doInspectAnimation()
+                            playInspectPose()
                             return
                         end
                     end
@@ -198,17 +240,16 @@ return function(tab, reloadContent, hotelTab)
             coinRoll = coinRoll and coinRoll:FindFirstChild("CoinRoll")
             local remoteInspect = coinRoll and coinRoll:FindFirstChild("RemoteInspect")
             if remoteInspect and remoteInspect:IsA("RemoteEvent") then
-                table.insert(inspectConnections, remoteInspect.OnClientEvent:Connect(function()
-                    doInspectAnimation()
-                end))
+                table.insert(inspectConnections, remoteInspect.OnClientEvent:Connect(playInspectPose))
             end
             local inputConnection = UserInputService.InputBegan:Connect(function(input, processed)
                 if not processed and equipped and input.KeyCode == Enum.KeyCode.R then
-                    doInspectAnimation()
+                    playInspectPose()
                 end
             end)
             tool.Destroying:Connect(function()
                 equipped = false
+                resetHoldPose()
                 if inputConnection then inputConnection:Disconnect() end
                 for _, connection in ipairs(inspectConnections) do
                     if connection then connection:Disconnect() end
@@ -216,7 +257,7 @@ return function(tab, reloadContent, hotelTab)
             end)
 
             tool.Parent = backpack
-            print("[Fairwell Pet] Granted the Buddy-style Fairwell plush.")
+            print("[Fairwell Pet] Granted Fairwell's head with a custom hold pose.")
         end
 
         task.spawn(function()
