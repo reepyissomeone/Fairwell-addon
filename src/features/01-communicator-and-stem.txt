@@ -32,14 +32,14 @@ return function(tab, reloadContent, hotelTab)
             tool.ToolTip = "Fairwell's head. Use for a happy bounce; inspect for a curious tilt."
             tool.RequiresHandle = true
             tool.CanBeDropped = false
-            tool.Grip = CFrame.new(0, -0.05, -0.48) * CFrame.Angles(0, math.rad(180), 0)
+            tool.Grip = CFrame.new(0, 0.10, -1.05) * CFrame.Angles(0, math.rad(180), 0)
 
-            -- The head itself is the Handle: no plush torso, arms, or legs.
+            -- Square Fairwell head based on the supplied reference drawing.
             local head = Instance.new("Part")
             head.Name = "Handle"
-            head.Shape = Enum.PartType.Ball
-            head.Size = Vector3.new(0.78, 0.78, 0.66)
-            head.Color = Color3.fromRGB(16, 13, 55)
+            head.Shape = Enum.PartType.Block
+            head.Size = Vector3.new(0.92, 0.88, 0.30)
+            head.Color = Color3.fromRGB(0, 0, 0)
             head.Material = Enum.Material.SmoothPlastic
             head.CanCollide = false
             head.CanTouch = false
@@ -48,13 +48,13 @@ return function(tab, reloadContent, hotelTab)
             head.CastShadow = false
             head.Parent = tool
 
-            local function addFacePart(name, size, color, offset, material)
+            local function addFacePart(name, size, color, offset, shape)
                 local part = Instance.new("Part")
                 part.Name = name
-                part.Shape = Enum.PartType.Ball
+                part.Shape = shape or Enum.PartType.Block
                 part.Size = size
                 part.Color = color
-                part.Material = material or Enum.Material.SmoothPlastic
+                part.Material = Enum.Material.SmoothPlastic
                 part.CanCollide = false
                 part.CanTouch = false
                 part.CanQuery = false
@@ -70,30 +70,15 @@ return function(tab, reloadContent, hotelTab)
                 return part
             end
 
-            local blue = Color3.fromRGB(27, 147, 227)
-            local paleBlue = Color3.fromRGB(185, 229, 255)
-            local white = Color3.fromRGB(255, 255, 255)
-            local dark = Color3.fromRGB(12, 12, 25)
-
-            -- Small rounded ears and a simple face give the head a plush silhouette.
-            addFacePart("LeftEar", Vector3.new(0.24, 0.32, 0.22), head.Color,
-                CFrame.new(-0.25, 0.35, 0))
-            addFacePart("RightEar", Vector3.new(0.24, 0.32, 0.22), head.Color,
-                CFrame.new(0.25, 0.35, 0))
-            addFacePart("LeftEye", Vector3.new(0.105, 0.12, 0.045), white,
-                CFrame.new(-0.18, 0.06, -0.31))
-            addFacePart("RightEye", Vector3.new(0.105, 0.12, 0.045), white,
-                CFrame.new(0.18, 0.06, -0.31))
-            addFacePart("LeftPupil", Vector3.new(0.045, 0.06, 0.025), dark,
-                CFrame.new(-0.18, 0.055, -0.338))
-            addFacePart("RightPupil", Vector3.new(0.045, 0.06, 0.025), dark,
-                CFrame.new(0.18, 0.055, -0.338))
-            local mouth = addFacePart("TinySmile", Vector3.new(0.13, 0.05, 0.035), blue,
-                CFrame.new(0, -0.12, -0.325))
-            addFacePart("LeftCheek", Vector3.new(0.09, 0.055, 0.025), blue,
-                CFrame.new(-0.29, -0.09, -0.25))
-            addFacePart("RightCheek", Vector3.new(0.09, 0.055, 0.025), blue,
-                CFrame.new(0.29, -0.09, -0.25))
+            local cyan = Color3.fromRGB(0, 174, 245)
+            local red = Color3.fromRGB(255, 0, 0)
+            local black = Color3.fromRGB(0, 0, 0)
+            addFacePart("BlueFace", Vector3.new(0.76, 0.70, 0.035), cyan, CFrame.new(0, 0, -0.163))
+            addFacePart("LeftEyeRim", Vector3.new(0.245, 0.275, 0.045), black, CFrame.new(-0.205, 0.105, -0.192), Enum.PartType.Ball)
+            addFacePart("RightEyeRim", Vector3.new(0.245, 0.275, 0.045), black, CFrame.new(0.205, 0.105, -0.192), Enum.PartType.Ball)
+            addFacePart("LeftEye", Vector3.new(0.205, 0.23, 0.04), red, CFrame.new(-0.205, 0.105, -0.219), Enum.PartType.Ball)
+            addFacePart("RightEye", Vector3.new(0.205, 0.23, 0.04), red, CFrame.new(0.205, 0.105, -0.219), Enum.PartType.Ball)
+            local mouth = addFacePart("RedMouth", Vector3.new(0.22, 0.035, 0.025), red, CFrame.new(0.055, -0.205, -0.192))
 
             local equipped = false
             local inspectDebounce = 0
@@ -139,7 +124,7 @@ return function(tab, reloadContent, hotelTab)
                 local wrist = findMotor(characterNow, wristNames)
                 if shoulder then
                     characterJoints[shoulder] = shoulder.Transform
-                    poseOffsets[shoulder] = CFrame.Angles(math.rad(-48), math.rad(8), math.rad(34))
+                    poseOffsets[shoulder] = CFrame.Angles(math.rad(-72), math.rad(8), math.rad(20))
                 end
                 if elbow then
                     characterJoints[elbow] = elbow.Transform
@@ -167,10 +152,10 @@ return function(tab, reloadContent, hotelTab)
                 activeTweens = {}
                 local baseGrip = tool.Grip
                 local up = TweenService:Create(head, TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                    Size = Vector3.new(0.84, 0.72, 0.7)
+                    Size = Vector3.new(0.98, 0.82, 0.30)
                 })
                 local settle = TweenService:Create(head, TweenInfo.new(0.2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
-                    Size = Vector3.new(0.78, 0.78, 0.66)
+                    Size = Vector3.new(0.92, 0.88, 0.30)
                 })
                 table.insert(activeTweens, up)
                 table.insert(activeTweens, settle)
@@ -216,7 +201,7 @@ return function(tab, reloadContent, hotelTab)
                 resetHoldPose()
                 for _, tween in ipairs(activeTweens) do pcall(function() tween:Cancel() end) end
                 activeTweens = {}
-                head.Size = Vector3.new(0.78, 0.78, 0.66)
+                head.Size = Vector3.new(0.92, 0.88, 0.30)
                 mouth.Color = originalMouthColor
             end)
             tool.Activated:Connect(playFaceBounce)
