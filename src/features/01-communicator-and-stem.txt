@@ -124,15 +124,15 @@ return function(tab, reloadContent, hotelTab)
                 local wrist = findMotor(characterNow, wristNames)
                 if shoulder then
                     characterJoints[shoulder] = shoulder.Transform
-                    poseOffsets[shoulder] = CFrame.Angles(math.rad(-72), math.rad(8), math.rad(20))
+                    poseOffsets[shoulder] = CFrame.Angles(math.rad(-35), math.rad(0), math.rad(-58))
                 end
                 if elbow then
                     characterJoints[elbow] = elbow.Transform
-                    poseOffsets[elbow] = CFrame.Angles(math.rad(-42), 0, math.rad(-12))
+                    poseOffsets[elbow] = CFrame.Angles(math.rad(-65), 0, math.rad(0))
                 end
                 if wrist then
                     characterJoints[wrist] = wrist.Transform
-                    poseOffsets[wrist] = CFrame.Angles(math.rad(5), 0, math.rad(-10))
+                    poseOffsets[wrist] = CFrame.Angles(math.rad(0), 0, math.rad(0))
                 end
 
                 -- Apply after the Animator writes Motor6D.Transform each frame.
