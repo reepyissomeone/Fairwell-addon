@@ -4,466 +4,233 @@
 return function(tab, reloadContent, hotelTab)
     if not tab then return end
 
-    -- Fairwell Communicator: automatically grant to the configured developer.
-    -- No addon groupbox or custom ScreenGui is created. Tool activation cycles its
-    -- built-in command modes and updates the physical communicator screen.
+    -- Fairwell Pet: a small Buddy-style plush item, replacing the old Communicator.
+    -- It is built locally for the developer and uses normal Tool controls.
     do
         local Players = game:GetService("Players")
         local TweenService = game:GetService("TweenService")
-        local RunService = game:GetService("RunService")
-        local localPlayer = Players.LocalPlayer
+        local UserInputService = game:GetService("UserInputService")
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local player = Players.LocalPlayer
         local allowedUserId = 11412884109
+        local ITEM_NAME = "Fairwell Pet"
 
-        local function grantCommunicator()
-            if not localPlayer or localPlayer.UserId ~= allowedUserId then
-                if localPlayer then
-                    warn("[Fairwell Communicator] Auto-grant skipped: UserId does not match.")
-                end
+        local function grantFairwellPet()
+            if not player or player.UserId ~= allowedUserId then
+                if player then warn("[Fairwell Pet] Auto-grant skipped: UserId does not match.") end
                 return
             end
 
-            local backpack = localPlayer:FindFirstChildOfClass("Backpack")
-                or localPlayer:WaitForChild("Backpack", 10)
+            local backpack = player:FindFirstChildOfClass("Backpack") or player:WaitForChild("Backpack", 10)
             if not backpack then
-                warn("[Fairwell Communicator] Backpack not ready; could not grant item.")
+                warn("[Fairwell Pet] Backpack not ready.")
                 return
             end
-
-            local character = localPlayer.Character
-            local existing = backpack:FindFirstChild("Fairwell Communicator")
-                or (character and character:FindFirstChild("Fairwell Communicator"))
-            if existing then
-                print("[Fairwell Communicator] Already in inventory.")
-                return
-            end
+            local character = player.Character
+            local existing = backpack:FindFirstChild(ITEM_NAME) or (character and character:FindFirstChild(ITEM_NAME))
+            if existing then return end
 
             local tool = Instance.new("Tool")
-            tool.Name = "Fairwell Communicator"
-            tool.ToolTip = "Tap/use to inspect and cycle communicator commands"
+            tool.Name = ITEM_NAME
+            tool.ToolTip = "A tiny Fairwell plush. Use to make it wiggle; inspect for a pose."
             tool.RequiresHandle = true
             tool.CanBeDropped = false
-            -- Keep the tool equipped for normal item controls, but let its visible device float
-            -- in front of the player instead of forcing the arm into a presentation pose.
-            tool.Grip = CFrame.new(0, 0.10, -0.34)
-                * CFrame.Angles(0, math.rad(180), 0)
+            tool.Grip = CFrame.new(0, -0.12, -0.52) * CFrame.Angles(0, math.rad(180), 0)
 
+            local function plushPart(name, size, color, shape, offset, parentPart, material)
+                local part = Instance.new("Part")
+                part.Name = name
+                part.Size = size
+                part.Shape = shape or Enum.PartType.Ball
+                part.Color = color
+                part.Material = material or Enum.Material.SmoothPlastic
+                part.CanCollide = false
+                part.CanTouch = false
+                part.CanQuery = false
+                part.Massless = true
+                part.CastShadow = false
+                part.CFrame = tool.Handle.CFrame * offset
+                part.Parent = tool
+                local weld = Instance.new("Weld")
+                weld.Name = name .. "Joint"
+                weld.Part0 = parentPart or tool.Handle
+                weld.Part1 = part
+                weld.C0 = offset
+                weld.C1 = CFrame.new()
+                weld.Parent = part
+                return part, weld
+            end
+
+            -- The rounded torso is the actual Tool handle, so this remains a real inventory item.
             local handle = Instance.new("Part")
             handle.Name = "Handle"
-            handle.Size = Vector3.new(0.72, 1.12, 0.16)
+            handle.Shape = Enum.PartType.Ball
+            handle.Size = Vector3.new(0.62, 0.67, 0.48)
             handle.Color = Color3.fromRGB(16, 13, 55)
             handle.Material = Enum.Material.SmoothPlastic
             handle.CanCollide = false
             handle.CanTouch = false
             handle.CanQuery = false
             handle.Massless = true
+            handle.CastShadow = false
             handle.Parent = tool
 
-            local function detail(name, size, offset, color, material)
-                local part = Instance.new("Part")
-                part.Name = name
-                part.Size = size
-                part.Color = color
-                part.Material = material or Enum.Material.Neon
-                part.CanCollide = false
-                part.CanTouch = false
-                part.CanQuery = false
-                part.Massless = true
-                part.CFrame = handle.CFrame * offset
-                part.Parent = tool
-                local weld = Instance.new("WeldConstraint")
-                weld.Part0 = handle
-                weld.Part1 = part
-                weld.Parent = part
-                return part
-            end
+            local blue = Color3.fromRGB(27, 147, 227)
+            local pale = Color3.fromRGB(185, 229, 255)
+            local dark = Color3.fromRGB(12, 12, 25)
+            local white = Color3.fromRGB(255, 255, 255)
 
-            detail("BlueBezel", Vector3.new(0.55, 0.72, 0.035),
-                CFrame.new(0, 0.12, -0.095), Color3.fromRGB(27, 147, 227), Enum.Material.SmoothPlastic)
-            local screen = detail("CyanScreen", Vector3.new(0.46, 0.62, 0.018),
-                CFrame.new(0, 0.12, -0.122), Color3.fromRGB(35, 185, 255), Enum.Material.Neon)
-            detail("ScreenHeader", Vector3.new(0.36, 0.025, 0.012),
-                CFrame.new(0, 0.39, -0.136), Color3.fromRGB(190, 245, 255), Enum.Material.Neon)
-            detail("BottomButton", Vector3.new(0.18, 0.065, 0.03),
-                CFrame.new(0, -0.43, -0.105), Color3.fromRGB(27, 147, 227), Enum.Material.Neon)
-            detail("LeftButton", Vector3.new(0.055, 0.11, 0.03),
-                CFrame.new(-0.26, -0.39, -0.105), Color3.fromRGB(70, 110, 230), Enum.Material.Neon)
-            detail("RightButton", Vector3.new(0.055, 0.11, 0.03),
-                CFrame.new(0.26, -0.39, -0.105), Color3.fromRGB(70, 110, 230), Enum.Material.Neon)
-            local statusLight = detail("StatusLight", Vector3.new(0.07, 0.035, 0.025),
-                CFrame.new(0.23, 0.48, -0.105), Color3.fromRGB(110, 255, 180), Enum.Material.Neon)
+            local head, headJoint = plushPart("PlushHead", Vector3.new(0.78, 0.72, 0.62),
+                Color3.fromRGB(20, 17, 67), Enum.PartType.Ball,
+                CFrame.new(0, 0.48, -0.025), handle)
+            local leftEar, leftEarJoint = plushPart("LeftEar", Vector3.new(0.22, 0.34, 0.22),
+                Color3.fromRGB(20, 17, 67), Enum.PartType.Ball,
+                CFrame.new(-0.25, 0.78, 0), head)
+            local rightEar, rightEarJoint = plushPart("RightEar", Vector3.new(0.22, 0.34, 0.22),
+                Color3.fromRGB(20, 17, 67), Enum.PartType.Ball,
+                CFrame.new(0.25, 0.78, 0), head)
+            local belly = plushPart("BlueBelly", Vector3.new(0.34, 0.31, 0.07), pale,
+                Enum.PartType.Ball, CFrame.new(0, -0.03, -0.205), handle)
+            local leftEye = plushPart("LeftEye", Vector3.new(0.085, 0.105, 0.045), white,
+                Enum.PartType.Ball, CFrame.new(-0.17, 0.52, -0.295), head)
+            local rightEye = plushPart("RightEye", Vector3.new(0.085, 0.105, 0.045), white,
+                Enum.PartType.Ball, CFrame.new(0.17, 0.52, -0.295), head)
+            plushPart("LeftPupil", Vector3.new(0.042, 0.06, 0.025), dark,
+                Enum.PartType.Ball, CFrame.new(-0.17, 0.515, -0.323), head)
+            plushPart("RightPupil", Vector3.new(0.042, 0.06, 0.025), dark,
+                Enum.PartType.Ball, CFrame.new(0.17, 0.515, -0.323), head)
+            local mouth = plushPart("TinySmile", Vector3.new(0.12, 0.045, 0.035), blue,
+                Enum.PartType.Ball, CFrame.new(0, 0.34, -0.31), head)
+            local leftArm, leftArmJoint = plushPart("LeftArm", Vector3.new(0.19, 0.32, 0.2),
+                Color3.fromRGB(20, 17, 67), Enum.PartType.Ball,
+                CFrame.new(-0.39, 0.05, -0.015) * CFrame.Angles(0, 0, math.rad(-22)), handle)
+            local rightArm, rightArmJoint = plushPart("RightArm", Vector3.new(0.19, 0.32, 0.2),
+                Color3.fromRGB(20, 17, 67), Enum.PartType.Ball,
+                CFrame.new(0.39, 0.05, -0.015) * CFrame.Angles(0, 0, math.rad(22)), handle)
+            plushPart("LeftFoot", Vector3.new(0.23, 0.16, 0.25), blue,
+                Enum.PartType.Ball, CFrame.new(-0.2, -0.31, -0.035), handle)
+            plushPart("RightFoot", Vector3.new(0.23, 0.16, 0.25), blue,
+                Enum.PartType.Ball, CFrame.new(0.2, -0.31, -0.035), handle)
+            plushPart("LeftCheek", Vector3.new(0.09, 0.055, 0.025), blue,
+                Enum.PartType.Ball, CFrame.new(-0.26, 0.38, -0.27), head)
+            plushPart("RightCheek", Vector3.new(0.09, 0.055, 0.025), blue,
+                Enum.PartType.Ball, CFrame.new(0.26, 0.38, -0.27), head)
 
-            local screenGui = Instance.new("SurfaceGui")
-            screenGui.Name = "CommunicatorDisplay"
-            screenGui.Face = Enum.NormalId.Front
-            screenGui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-            screenGui.PixelsPerStud = 180
-            screenGui.LightInfluence = 0
-            screenGui.Parent = screen
-
-            local displayText = Instance.new("TextLabel")
-            displayText.Name = "CommandText"
-            displayText.Size = UDim2.fromScale(1, 1)
-            displayText.BackgroundColor3 = Color3.fromRGB(6, 4, 43)
-            displayText.BackgroundTransparency = 0.05
-            displayText.BorderSizePixel = 0
-            displayText.TextColor3 = Color3.fromRGB(220, 250, 255)
-            displayText.TextScaled = true
-            displayText.Font = Enum.Font.GothamBold
-            displayText.TextWrapped = true
-            displayText.Text = "FAIRWELL\nREADY"
-            displayText.Parent = screenGui
-
-            local modes = {
-                {name = "STATUS", reply = "CHECKING STATUS"},
-                {name = "PING", reply = "PINGING NEARBY"},
-                {name = "HELP", reply = "COMMAND GUIDE"},
-                {name = "SCAN", reply = "SCANNING AREA"},
-            }
-            local modeIndex = 1
             local equipped = false
-            local preAnimationConnection
-            local preSimulationConnection
-            local equipConnection
-            local unequipConnection
-            local activateConnection
-            local originalGrip = tool.Grip
-            local rightShoulder
-            local rightElbow
-            local shoulderBaseTransform
-            local elbowBaseTransform
-            local animationStartedAt = 0
-            local inspectStartedAt = nil
-            local inspectDuration = 1.15
-            local inspectGripOffset = CFrame.new(0, 0.12, -0.12)
-
-            local function currentRoomLabel()
-                local rooms = workspace:FindFirstChild("CurrentRooms")
-                if rooms then
-                    local latest
-                    for _, room in ipairs(rooms:GetChildren()) do
-                        local number = tonumber(room.Name)
-                        if number and (not latest or number > latest) then latest = number end
-                    end
-                    if latest then return "ROOM " .. tostring(latest) end
-                end
-                return "ROOM UNKNOWN"
+            local lastInspect = 0
+            local poseTween
+            local function tweenJoint(joint, goal, duration, style)
+                if not joint or not joint.Parent then return end
+                if poseTween then pcall(function() poseTween:Cancel() end) end
+                poseTween = TweenService:Create(joint, TweenInfo.new(duration or 0.18,
+                    style or Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {C0 = goal})
+                poseTween:Play()
             end
 
-            local function findNearbyEntity()
-                local characterNow = localPlayer.Character
-                local root = characterNow and characterNow:FindFirstChild("HumanoidRootPart")
-                if not root then return nil, nil end
-                local bestName, bestDistance
-                for _, object in ipairs(workspace:GetDescendants()) do
-                    if object:IsA("Model") then
-                        local name = string.lower(object.Name)
-                        local isEntity = string.find(name, "rush", 1, true)
-                            or string.find(name, "ambush", 1, true)
-                            or string.find(name, "screech", 1, true)
-                            or string.find(name, "seek", 1, true)
-                            or string.find(name, "eyes", 1, true)
-                            or string.find(name, "figure", 1, true)
-                            or string.find(name, "giggle", 1, true)
-                            or string.find(name, "grumble", 1, true)
-                        local part = object.PrimaryPart
-                            or object:FindFirstChild("HumanoidRootPart", true)
-                            or object:FindFirstChildWhichIsA("BasePart", true)
-                        if isEntity and part and part:IsDescendantOf(workspace) then
-                            local distance = (part.Position - root.Position).Magnitude
-                            if not bestDistance or distance < bestDistance then
-                                bestName, bestDistance = object.Name, distance
-                            end
-                        end
-                    end
-                end
-                return bestName, bestDistance
-            end
-
-            local function executeMode()
-                local mode = modes[modeIndex]
-                local characterNow = localPlayer.Character
-                local humanoid = characterNow and characterNow:FindFirstChildOfClass("Humanoid")
-                local reply
-                if mode.name == "STATUS" then
-                    local health = humanoid and math.floor(humanoid.Health + 0.5) or 0
-                    local maxHealth = humanoid and math.floor(humanoid.MaxHealth + 0.5) or 0
-                    reply = currentRoomLabel() .. "\\nHP " .. tostring(health) .. "/" .. tostring(maxHealth)
-                elseif mode.name == "PING" then
-                    local entityName, distance = findNearbyEntity()
-                    if entityName and distance then
-                        reply = entityName .. " / " .. tostring(math.floor(distance + 0.5)) .. " STUDS"
-                    else
-                        reply = "NO ENTITY SIGNAL"
-                    end
-                elseif mode.name == "HELP" then
-                    reply = "STATUS: HP/ROOM\\nPING: NEAREST ENTITY\\nSCAN: AREA CHECK"
-                elseif mode.name == "SCAN" then
-                    local entityName, distance = findNearbyEntity()
-                    if entityName and distance then
-                        reply = "FOUND " .. string.upper(entityName) .. "\\nDIST " .. tostring(math.floor(distance + 0.5)) .. " STUDS"
-                    else
-                        reply = "AREA CLEAR\\nNO KNOWN ENTITY"
-                    end
-                end
-                modes[modeIndex].reply = reply or "COMMAND FAILED"
-                displayText.Text = "FW / " .. mode.name .. "\\n" .. modes[modeIndex].reply
-                print("[Fairwell Communicator] Executed " .. mode.name .. ": " .. modes[modeIndex].reply:gsub("\\n", " | "))
-            end
-
-            local function findJoint(characterNow, jointName)
-                if not characterNow then return nil end
-                for _, object in ipairs(characterNow:GetDescendants()) do
-                    if object:IsA("Motor6D") and object.Name == jointName then
-                        return object
-                    end
-                end
-                return nil
-            end
-
-            local function stopHoldingPose()
-                equipped = false
-                if preAnimationConnection then preAnimationConnection:Disconnect(); preAnimationConnection = nil end
-                if preSimulationConnection then preSimulationConnection:Disconnect(); preSimulationConnection = nil end
-                if rightShoulder and rightShoulder.Parent and shoulderBaseTransform then
-                    rightShoulder.Transform = shoulderBaseTransform
-                end
-                if rightElbow and rightElbow.Parent and elbowBaseTransform then
-                    rightElbow.Transform = elbowBaseTransform
-                end
-                rightShoulder, rightElbow = nil, nil
-                shoulderBaseTransform, elbowBaseTransform = nil, nil
-            end
-
-            -- A local anchored display floats in front of the camera while equipped.
-            -- The Tool remains equipped only to receive the game's normal Use input.
-            local floatModel
-            local floatConnection
-            local function clearFloatDisplay()
-                if floatConnection then floatConnection:Disconnect(); floatConnection = nil end
-                if floatModel then floatModel:Destroy(); floatModel = nil end
-            end
-            local function makeFloatDisplay()
-                clearFloatDisplay()
-                floatModel = Instance.new("Model")
-                floatModel.Name = "FairwellCommunicatorFloatingDisplay"
-                floatModel.Parent = workspace
-
-                local function floatPart(name, size, color, material, offset)
-                    local part = Instance.new("Part")
-                    part.Name = name
-                    part.Size = size
-                    part.Color = color
-                    part.Material = material or Enum.Material.SmoothPlastic
-                    part.Anchored = true
-                    part.CanCollide = false
-                    part.CanTouch = false
-                    part.CanQuery = false
-                    part.CastShadow = false
-                    part.Massless = true
-                    part.Parent = floatModel
-                    part:SetAttribute("FloatOffset", offset)
-                    return part
-                end
-
-                local body = floatPart("Body", Vector3.new(0.72, 1.12, 0.16),
-                    Color3.fromRGB(16, 13, 55), Enum.Material.SmoothPlastic, CFrame.new())
-                local bezel = floatPart("BlueBezel", Vector3.new(0.55, 0.72, 0.035),
-                    Color3.fromRGB(27, 147, 227), Enum.Material.SmoothPlastic, CFrame.new(0, 0.12, -0.095))
-                local screenPart = floatPart("CyanScreen", Vector3.new(0.46, 0.62, 0.018),
-                    Color3.fromRGB(35, 185, 255), Enum.Material.Neon, CFrame.new(0, 0.12, -0.122))
-                floatPart("ScreenHeader", Vector3.new(0.36, 0.025, 0.012),
-                    Color3.fromRGB(190, 245, 255), Enum.Material.Neon, CFrame.new(0, 0.39, -0.136))
-                floatPart("BottomButton", Vector3.new(0.18, 0.065, 0.03),
-                    Color3.fromRGB(27, 147, 227), Enum.Material.Neon, CFrame.new(0, -0.43, -0.105))
-                floatPart("LeftButton", Vector3.new(0.055, 0.11, 0.03),
-                    Color3.fromRGB(70, 110, 230), Enum.Material.Neon, CFrame.new(-0.26, -0.39, -0.105))
-                floatPart("RightButton", Vector3.new(0.055, 0.11, 0.03),
-                    Color3.fromRGB(70, 110, 230), Enum.Material.Neon, CFrame.new(0.26, -0.39, -0.105))
-                local light = floatPart("StatusLight", Vector3.new(0.07, 0.035, 0.025),
-                    Color3.fromRGB(110, 255, 180), Enum.Material.Neon, CFrame.new(0.23, 0.48, -0.105))
-
-                local gui = Instance.new("SurfaceGui")
-                gui.Name = "CommunicatorDisplay"
-                gui.Face = Enum.NormalId.Front
-                gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-                gui.PixelsPerStud = 180
-                gui.LightInfluence = 0
-                gui.Parent = screenPart
-
-                local label = Instance.new("TextLabel")
-                label.Name = "CommandText"
-                label.Size = UDim2.fromScale(1, 1)
-                label.BackgroundColor3 = Color3.fromRGB(6, 4, 43)
-                label.BackgroundTransparency = 0.05
-                label.BorderSizePixel = 0
-                label.TextColor3 = Color3.fromRGB(220, 250, 255)
-                label.TextScaled = true
-                label.Font = Enum.Font.GothamBold
-                label.TextWrapped = true
-                label.Text = displayText.Text
-                label.Parent = gui
-
-                -- Float relative to the character's head, not the camera.
-                -- This remains visible in third-person and on mobile camera setups.
-                floatConnection = RunService.RenderStepped:Connect(function()
-                    if not equipped or not floatModel or not floatModel.Parent then return end
-                    local characterNow = localPlayer.Character
-                    local head = characterNow and characterNow:FindFirstChild("Head")
-                    local root = characterNow and characterNow:FindFirstChild("HumanoidRootPart")
-                    if not head or not head:IsA("BasePart") then return end
-                    local t = os.clock()
-                    local forward = head.CFrame.LookVector
-                    local flatForward = Vector3.new(forward.X, 0, forward.Z)
-                    if flatForward.Magnitude < 0.01 and root then
-                        flatForward = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
-                    end
-                    if flatForward.Magnitude < 0.01 then return end
-                    flatForward = flatForward.Unit
-                    local center = head.Position + flatForward * 2.0 + Vector3.new(0, 0.05 + math.sin(t * 1.8) * 0.025, 0)
-                    local base = CFrame.lookAt(center, center - flatForward, Vector3.yAxis)
-                    for _, part in ipairs(floatModel:GetChildren()) do
-                        if part:IsA("BasePart") then
-                            local offset = part:GetAttribute("FloatOffset")
-                            if typeof(offset) == "CFrame" then
-                                part.CFrame = base * offset
-                            end
-                        end
-                    end
-                    label.Text = displayText.Text
-                    light.Color = (math.floor(t * 3) % 2 == 0)
-                        and Color3.fromRGB(110, 255, 180) or Color3.fromRGB(27, 147, 227)
-                end)
-            end
-
-            equipConnection = tool.Equipped:Connect(function()
-                stopHoldingPose()
-                equipped = true
-                animationStartedAt = os.clock()
-                -- Hide the hand-mounted Tool geometry; its floating local display is the visible device.
-                for _, part in ipairs(tool:GetDescendants()) do
-                    if part:IsA("BasePart") then part.LocalTransparencyModifier = 1 end
-                end
-                makeFloatDisplay()
-                executeMode()
-            end)
-
-            unequipConnection = tool.Unequipped:Connect(function()
-                stopHoldingPose()
-                clearFloatDisplay()
-                for _, part in ipairs(tool:GetDescendants()) do
-                    if part:IsA("BasePart") then part.LocalTransparencyModifier = 0 end
-                end
-                tool.Grip = originalGrip
-            end)
-
-            -- Inspect cycles the selected command; it does not execute it.
-            local function cycleMode()
-                modeIndex = (modeIndex % #modes) + 1
-                displayText.Text = "FW / " .. modes[modeIndex].name .. "\\nREADY TO USE"
-                print("[Fairwell Communicator] Selected " .. modes[modeIndex].name)
-            end
-
-            activateConnection = tool.Activated:Connect(function()
-                -- Use runs the currently selected command, like a normal DOORS item.
-                inspectStartedAt = os.clock()
-                executeMode()
-                TweenService:Create(screen, TweenInfo.new(0.1), {
-                    Color = Color3.fromRGB(170, 245, 255)
-                }):Play()
-                task.delay(0.12, function()
-                    if screen and screen.Parent then
-                        TweenService:Create(screen, TweenInfo.new(0.22), {
-                            Color = Color3.fromRGB(35, 185, 255)
-                        }):Play()
-                    end
-                end)
-                TweenService:Create(statusLight, TweenInfo.new(0.16, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 1, true), {
-                    Color = Color3.fromRGB(27, 147, 227)
-                }):Play()
-            end)
-
-            -- Listen for the game's Inspect signals. CoinRoll's RemoteInspect is
-            -- item-specific, so discover that exact remote as well as DOORS ToolAnimate.
-            -- Keep keyboard R as a fallback for builds that don't emit either signal.
-            local ReplicatedStorage = game:GetService("ReplicatedStorage")
-            local UserInputService = game:GetService("UserInputService")
-            local inspectConnections = {}
-            local lastCycleAt = 0
-            local function handleInspectSignal(...)
+            local originalHeadC0 = headJoint.C0
+            local originalLeftArmC0 = leftArmJoint.C0
+            local originalRightArmC0 = rightArmJoint.C0
+            local originalMouthColor = mouth.Color
+            local function doUseAnimation()
                 if not equipped then return end
-                local now = os.clock()
-                if now - lastCycleAt < 0.22 then return end
-                local args = {...}
-                local isInspect = false
-                for _, value in ipairs(args) do
-                    if type(value) == "string" and string.lower(value) == "inspect" then
-                        isInspect = true
-                        break
+                -- A little two-arm wiggle, then settle back into the idle pose.
+                tweenJoint(leftArmJoint, originalLeftArmC0 * CFrame.Angles(0, 0, math.rad(-65)), 0.12, Enum.EasingStyle.Back)
+                task.delay(0.12, function()
+                    if not tool.Parent then return end
+                    tweenJoint(rightArmJoint, originalRightArmC0 * CFrame.Angles(0, 0, math.rad(65)), 0.12, Enum.EasingStyle.Back)
+                end)
+                task.delay(0.32, function()
+                    if not tool.Parent then return end
+                    tweenJoint(leftArmJoint, originalLeftArmC0, 0.18)
+                    tweenJoint(rightArmJoint, originalRightArmC0, 0.18)
+                    tweenJoint(headJoint, originalHeadC0, 0.18)
+                end)
+                mouth.Color = pale
+                task.delay(0.28, function()
+                    if mouth and mouth.Parent then mouth.Color = originalMouthColor end
+                end)
+            end
+
+            local function doInspectAnimation()
+                if not equipped or os.clock() - lastInspect < 0.25 then return end
+                lastInspect = os.clock()
+                tweenJoint(headJoint, originalHeadC0 * CFrame.Angles(math.rad(-14), 0, math.rad(12)), 0.22, Enum.EasingStyle.Back)
+                tweenJoint(leftArmJoint, originalLeftArmC0 * CFrame.Angles(0, 0, math.rad(-28)), 0.2)
+                tweenJoint(rightArmJoint, originalRightArmC0 * CFrame.Angles(0, 0, math.rad(28)), 0.2)
+                mouth.Color = pale
+                task.delay(0.62, function()
+                    if not tool.Parent then return end
+                    tweenJoint(headJoint, originalHeadC0, 0.22)
+                    tweenJoint(leftArmJoint, originalLeftArmC0, 0.22)
+                    tweenJoint(rightArmJoint, originalRightArmC0, 0.22)
+                    if mouth and mouth.Parent then mouth.Color = originalMouthColor end
+                end)
+            end
+
+            tool.Equipped:Connect(function()
+                equipped = true
+                print("[Fairwell Pet] Equipped. Use to wiggle; inspect to see its little pose.")
+            end)
+            tool.Unequipped:Connect(function()
+                equipped = false
+                if poseTween then pcall(function() poseTween:Cancel() end) end
+                headJoint.C0 = originalHeadC0
+                leftArmJoint.C0 = originalLeftArmC0
+                rightArmJoint.C0 = originalRightArmC0
+                mouth.Color = originalMouthColor
+            end)
+            tool.Activated:Connect(doUseAnimation)
+
+            -- Inspect compatibility: use the same inspect signals exposed by DOORS/MSDoors,
+            -- with keyboard R as a fallback on builds that do not expose an inspect signal.
+            local inspectConnections = {}
+            local remotes = ReplicatedStorage:FindFirstChild("RemotesFolder")
+            local toolAnimate = remotes and remotes:FindFirstChild("ToolAnimate")
+            if toolAnimate and toolAnimate:IsA("RemoteEvent") then
+                table.insert(inspectConnections, toolAnimate.OnClientEvent:Connect(function(...)
+                    if not equipped then return end
+                    for _, value in ipairs({...}) do
+                        if type(value) == "string" and string.lower(value) == "inspect" then
+                            doInspectAnimation()
+                            return
+                        end
                     end
-                end
-                -- RemoteInspect itself is the inspect action; ToolAnimate requires
-                -- its payload to identify the Inspect animation.
-                if isInspect then
-                    lastCycleAt = now
-                    cycleMode()
-                end
+                end))
             end
-
-            local remotesFolder = ReplicatedStorage:FindFirstChild("RemotesFolder")
-            local toolAnimateRemote = remotesFolder and remotesFolder:FindFirstChild("ToolAnimate")
-            if toolAnimateRemote and toolAnimateRemote:IsA("RemoteEvent") then
-                table.insert(inspectConnections, toolAnimateRemote.OnClientEvent:Connect(handleInspectSignal))
-            end
-
             local coinRoll = workspace:FindFirstChild("FIXROBLOX_015")
             coinRoll = coinRoll and coinRoll:FindFirstChild("CoinRoll")
             local remoteInspect = coinRoll and coinRoll:FindFirstChild("RemoteInspect")
             if remoteInspect and remoteInspect:IsA("RemoteEvent") then
-                table.insert(inspectConnections, remoteInspect.OnClientEvent:Connect(function(...)
-                    if not equipped then return end
-                    lastCycleAt = os.clock()
-                    cycleMode()
+                table.insert(inspectConnections, remoteInspect.OnClientEvent:Connect(function()
+                    doInspectAnimation()
                 end))
             end
-
-            local inspectInputConnection = UserInputService.InputBegan:Connect(function(input, processed)
-                if processed or not equipped then return end
-                if input.KeyCode == Enum.KeyCode.R then
-                    local now = os.clock()
-                    if now - lastCycleAt >= 0.22 then
-                        lastCycleAt = now
-                        cycleMode()
-                    end
+            local inputConnection = UserInputService.InputBegan:Connect(function(input, processed)
+                if not processed and equipped and input.KeyCode == Enum.KeyCode.R then
+                    doInspectAnimation()
                 end
             end)
-
             tool.Destroying:Connect(function()
-                stopHoldingPose()
-                clearFloatDisplay()
-                if equipConnection then equipConnection:Disconnect() end
-                if unequipConnection then unequipConnection:Disconnect() end
-                if activateConnection then activateConnection:Disconnect() end
+                equipped = false
+                if inputConnection then inputConnection:Disconnect() end
                 for _, connection in ipairs(inspectConnections) do
                     if connection then connection:Disconnect() end
                 end
-                if inspectInputConnection then inspectInputConnection:Disconnect() end
             end)
 
             tool.Parent = backpack
-            print("[Fairwell Communicator] Automatically granted to UserId " .. tostring(allowedUserId) .. ".")
+            print("[Fairwell Pet] Granted the Buddy-style Fairwell plush.")
         end
 
         task.spawn(function()
-            grantCommunicator()
-            -- Retry once after a short delay if the backpack was not ready on first load.
+            grantFairwellPet()
             task.wait(2)
-            local backpack = localPlayer and localPlayer:FindFirstChildOfClass("Backpack")
-            local character = localPlayer and localPlayer.Character
-            if localPlayer and localPlayer.UserId == allowedUserId
-                and backpack
-                and not backpack:FindFirstChild("Fairwell Communicator")
-                and not (character and character:FindFirstChild("Fairwell Communicator")) then
-                grantCommunicator()
+            local backpack = player and player:FindFirstChildOfClass("Backpack")
+            local character = player and player.Character
+            if player and player.UserId == allowedUserId and backpack
+                and not backpack:FindFirstChild(ITEM_NAME)
+                and not (character and character:FindFirstChild(ITEM_NAME)) then
+                grantFairwellPet()
             end
         end)
     end
