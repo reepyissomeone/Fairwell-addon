@@ -845,49 +845,57 @@ return function(tab, reloadContent, hotelTab)
             return room ~= nil and object:IsDescendantOf(room)
         end
 
-        -- Determine door state from explicit game flags first. Some builds mark an
-        -- opened door by name/attribute while leaving its prompt/model in place.
-        local function isDoorClosed(door)
-            if not door or not door:IsA("Model") then return false end
+        -- Return closed?, reason. Resolve all explicit state markers before using
+        -- prompts: an explicit OPEN marker anywhere in the door model wins over a
+        -- stale false marker or an enabled prompt left behind by the game.
+        local function getDoorState(door)
+            if not door or not door:IsA("Model") then return false, "not a Door model" end
 
-            local function isOpenName(value)
+            local function containsOpenedWord(value)
                 return type(value) == "string"
                     and string.find(string.lower(value), "opened", 1, true) ~= nil
             end
-            if isOpenName(door.Name) then return false end
 
-            for _, key in ipairs({"Opened", "IsOpen", "Open", "IsOpened"}) do
-                local value = door:GetAttribute(key)
-                if value == true then return false end
-                if value == false then return true end
-            end
-            for _, object in ipairs(door:GetDescendants()) do
-                if isOpenName(object.Name) then return false end
-                for _, key in ipairs({"Opened", "IsOpen", "Open", "IsOpened"}) do
-                    local value = object:GetAttribute(key)
-                    if value == true then return false end
-                    if value == false then return true end
+            if containsOpenedWord(door.Name) then return false, "model name says opened" end
+
+            local foundExplicitClosed = false
+            local keys = {"Opened", "IsOpen", "Open", "IsOpened"}
+            local function inspectState(container)
+                for _, key in ipairs(keys) do
+                    local value = container:GetAttribute(key)
+                    if value == true then return "open" end
+                    if value == false then foundExplicitClosed = true end
                 end
-                if object:IsA("BoolValue") then
-                    local key = string.lower(object.Name)
+                if container:IsA("BoolValue") then
+                    local key = string.lower(container.Name)
                     if key == "opened" or key == "isopen" or key == "open" or key == "isopened" then
-                        if object.Value then return false end
-                        return true
+                        if container.Value == true then return "open" end
+                        foundExplicitClosed = true
                     end
                 end
+                return nil
             end
 
-            -- Only use an enabled prompt as a fallback when no explicit open state
-            -- was found. This avoids treating an already-opened door as closed just
-            -- because the game left its prompt enabled.
+            local rootState = inspectState(door)
+            if rootState == "open" then return false, "explicit open flag" end
+            for _, object in ipairs(door:GetDescendants()) do
+                if containsOpenedWord(object.Name) then return false, "descendant name says opened: " .. object.Name end
+                if inspectState(object) == "open" then return false, "explicit open flag: " .. object.Name end
+            end
+            if foundExplicitClosed then return true, "explicit closed flag" end
+
             for _, object in ipairs(door:GetDescendants()) do
                 if object:IsA("ProximityPrompt") and object.Enabled then
-                    return true
+                    return true, "enabled prompt (fallback)"
                 end
             end
-            return false
+            return false, "no open-state marker or enabled prompt"
         end
 
+        local function isDoorClosed(door)
+            local closed = getDoorState(door)
+            return closed
+        end
         local function findDoorModelInRoom(room)
             if not room then return nil end
 
@@ -1051,15 +1059,14 @@ return function(tab, reloadContent, hotelTab)
                         end
                         farmStatus("searching for nearest unopened Door")
 
-                        -- Rebuild the candidate list from scratch on every pass.
-                        -- No LatestRoom, highest-room lookup, cursor, or previous target
-                        -- is allowed to influence selection. Always choose the lowest
-                        -- numbered room that currently has a closed Door.
+                        -- Every pass starts at room 0 and scans upward. Keep the
+                        -- selected door locked for the entire travel attempt; only rescan
+                        -- after travel ends or the target is no longer valid.
                         while state.running do
                             local passOk, passErr = pcall(function()
                                 local root = getRoot()
                                 local rooms = workspace:FindFirstChild("CurrentRooms")
-                                local targetDoor, targetRoom, targetDistance
+                                local targetDoor, targetRoom, targetDistance, targetReason
 
                                 if root and rooms then
                                     local orderedRooms = {}
@@ -1073,27 +1080,34 @@ return function(tab, reloadContent, hotelTab)
                                         return a.number < b.number
                                     end)
 
+                                    local scanLog = {}
                                     for _, entry in ipairs(orderedRooms) do
                                         local door = findDoorModelInRoom(entry.room)
-                                        if door and isDoorClosed(door) then
-                                            targetDoor, targetRoom = door, entry.room
-                                            break
+                                        if door then
+                                            local closed, reason = getDoorState(door)
+                                            table.insert(scanLog, entry.room.Name .. ":" .. (closed and "CLOSED" or "skip/" .. reason))
+                                            if closed then
+                                                targetDoor, targetRoom, targetReason = door, entry.room, reason
+                                                break
+                                            end
+                                        else
+                                            table.insert(scanLog, entry.room.Name .. ":no Door model")
                                         end
                                     end
                                     if targetDoor then
                                         targetDistance = (targetDoor:GetPivot().Position - root.Position).Magnitude
                                     end
+                                    print("[Fairwell Farm Stairwell] Scan: " .. table.concat(scanLog, " | "))
                                 end
 
                                 if targetDoor and targetRoom then
-                                    farmStatus("lowest unopened door: " .. targetRoom.Name
-                                        .. (targetDistance and (" (" .. tostring(math.floor(targetDistance + 0.5)) .. " studs)") or ""))
+                                    farmStatus("selected lowest unopened room " .. targetRoom.Name .. " (" .. tostring(targetReason) .. ")")
                                     local moved = teleportToDoor(targetDoor)
                                     if not moved then
-                                        farmStatus("could not reach room " .. targetRoom.Name .. "; restarting scan from room 0")
+                                        farmStatus("target room " .. targetRoom.Name .. " failed; will rescan from room 0")
                                     end
                                 else
-                                    farmStatus("no loaded closed Door found; rescanning")
+                                    farmStatus("no loaded closed Door found; check scan log")
                                 end
                             end)
 
