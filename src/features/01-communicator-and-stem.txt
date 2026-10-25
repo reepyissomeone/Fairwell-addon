@@ -14,7 +14,7 @@ return function(tab, reloadContent, hotelTab)
         local UserInputService = game:GetService("UserInputService")
         local ReplicatedStorage = game:GetService("ReplicatedStorage")
         local player = Players.LocalPlayer
-        local allowedUserId = 11412884109
+        local allowedUserId = 60375018
         local ITEM_NAME = "Fairwell Pet"
 
         local function grantFairwellPet()
@@ -32,7 +32,7 @@ return function(tab, reloadContent, hotelTab)
             tool.ToolTip = "Fairwell's head. Use for a happy bounce; inspect for a curious tilt."
             tool.RequiresHandle = true
             tool.CanBeDropped = false
-            tool.Grip = CFrame.new(0, 0.10, -1.05) * CFrame.Angles(0, math.rad(180), 0)
+            tool.Grip = CFrame.new(0, 0.10, -1.05)
 
             -- Square Fairwell head based on the supplied reference drawing.
             local head = Instance.new("Part")
