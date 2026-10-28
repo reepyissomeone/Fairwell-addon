@@ -1,0 +1,460 @@
+-- MSDoors Mini Map addon
+-- Standalone client-side room-layout map. No Fairwell dependency.
+-- The map uses locally available CurrentRooms models and their world positions.
+-- Only rooms currently present on the client can be shown.
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+
+local enabled = false
+local showRoomNumbers = true
+local mapSize = 220
+local zoom = 1
+local gui
+local updateConnection
+local roomButtons = {}
+local roomFolderConnection
+local descendantConnection
+local refreshQueued = false
+
+local COLORS = {
+    panel = Color3.fromRGB(10, 13, 24),
+    border = Color3.fromRGB(38, 147, 227),
+    explored = Color3.fromRGB(42, 63, 86),
+    current = Color3.fromRGB(38, 147, 227),
+    text = Color3.fromRGB(235, 242, 255),
+    muted = Color3.fromRGB(135, 153, 178),
+    line = Color3.fromRGB(73, 100, 132),
+}
+
+local function getRooms()
+    local rooms = workspace:FindFirstChild("CurrentRooms")
+    if not rooms then
+        return {}
+    end
+
+    local result = {}
+    for _, model in ipairs(rooms:GetChildren()) do
+        if model:IsA("Model") then
+            local pivot = model:GetPivot()
+            local number = tonumber(model.Name)
+            table.insert(result, {
+                model = model,
+                name = model.Name,
+                number = number,
+                position = pivot.Position,
+            })
+        end
+    end
+
+    table.sort(result, function(a, b)
+        if a.number and b.number then
+            return a.number < b.number
+        end
+        return a.name < b.name
+    end)
+    return result
+end
+
+local function destroyGui()
+    if updateConnection then
+        updateConnection:Disconnect()
+        updateConnection = nil
+    end
+    if roomFolderConnection then
+        roomFolderConnection:Disconnect()
+        roomFolderConnection = nil
+    end
+    if descendantConnection then
+        descendantConnection:Disconnect()
+        descendantConnection = nil
+    end
+    if gui then
+        gui:Destroy()
+        gui = nil
+    end
+    table.clear(roomButtons)
+end
+
+local function createGui()
+    if gui and gui.Parent then
+        return
+    end
+
+    local playerGui = player:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then
+        playerGui = player:WaitForChild("PlayerGui", 10)
+    end
+    if not playerGui then
+        return
+    end
+
+    gui = Instance.new("ScreenGui")
+    gui.Name = "MSDoorsMiniMap"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = false
+    gui.DisplayOrder = 35
+    gui.Parent = playerGui
+
+    local panel = Instance.new("Frame")
+    panel.Name = "MapPanel"
+    panel.AnchorPoint = Vector2.new(1, 0)
+    panel.Position = UDim2.new(1, -14, 0, 14)
+    panel.Size = UDim2.fromOffset(mapSize, mapSize + 30)
+    panel.BackgroundColor3 = COLORS.panel
+    panel.BackgroundTransparency = 0.12
+    panel.BorderSizePixel = 0
+    panel.ClipsDescendants = true
+    panel.Parent = gui
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = COLORS.border
+    stroke.Thickness = 1.5
+    stroke.Parent = panel
+
+    local title = Instance.new("TextLabel")
+    title.Name = "Header"
+    title.Size = UDim2.new(1, -8, 0, 24)
+    title.Position = UDim2.fromOffset(4, 2)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = "MINI MAP"
+    title.TextColor3 = COLORS.text
+    title.TextSize = 12
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = panel
+
+    local close = Instance.new("TextButton")
+    close.Name = "Close"
+    close.Size = UDim2.fromOffset(22, 20)
+    close.Position = UDim2.new(1, -25, 0, 3)
+    close.BackgroundColor3 = Color3.fromRGB(25, 36, 54)
+    close.BorderSizePixel = 0
+    close.Font = Enum.Font.GothamBold
+    close.Text = "×"
+    close.TextSize = 16
+    close.TextColor3 = COLORS.text
+    close.Parent = panel
+    close.Activated:Connect(function()
+        enabled = false
+        destroyGui()
+    end)
+
+    local map = Instance.new("Frame")
+    map.Name = "RoomCanvas"
+    map.Position = UDim2.fromOffset(4, 27)
+    map.Size = UDim2.new(1, -8, 1, -31)
+    map.BackgroundTransparency = 1
+    map.ClipsDescendants = true
+    map.Parent = panel
+
+    local footer = Instance.new("TextLabel")
+    footer.Name = "Hint"
+    footer.AnchorPoint = Vector2.new(0.5, 1)
+    footer.Position = UDim2.new(0.5, 0, 1, -2)
+    footer.Size = UDim2.new(1, -8, 0, 14)
+    footer.BackgroundTransparency = 1
+    footer.Font = Enum.Font.Gotham
+    footer.Text = "Blue = current room"
+    footer.TextColor3 = COLORS.muted
+    footer.TextSize = 9
+    footer.Parent = panel
+
+    -- Drag by the header; works with mouse and touch.
+    local dragging = false
+    local dragInput
+    local dragStart
+    local startPosition
+    title.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPosition = panel.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    title.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input == dragInput or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            panel.Position = UDim2.new(
+                startPosition.X.Scale,
+                startPosition.X.Offset + delta.X,
+                startPosition.Y.Scale,
+                startPosition.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    gui:SetAttribute("MapSize", mapSize)
+end
+
+local function drawMap()
+    if not enabled or not gui or not gui.Parent then
+        return
+    end
+
+    local panel = gui:FindFirstChild("MapPanel")
+    local canvas = panel and panel:FindFirstChild("RoomCanvas")
+    if not canvas then
+        return
+    end
+
+    for _, child in ipairs(canvas:GetChildren()) do
+        child:Destroy()
+    end
+    table.clear(roomButtons)
+
+    local rooms = getRooms()
+    if #rooms == 0 then
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.fromScale(1, 1)
+        label.BackgroundTransparency = 1
+        label.Font = Enum.Font.Gotham
+        label.Text = "Waiting for rooms..."
+        label.TextColor3 = COLORS.muted
+        label.TextSize = 11
+        label.Parent = canvas
+        return
+    end
+
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local currentRoom
+    if root then
+        local bestDistance = math.huge
+        for _, room in ipairs(rooms) do
+            local distance = (room.position - root.Position).Magnitude
+            if distance < bestDistance then
+                bestDistance = distance
+                currentRoom = room
+            end
+        end
+    end
+    currentRoom = currentRoom or rooms[#rooms]
+
+    -- Use world X/Z positions so turns and side rooms appear in their actual direction.
+    local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
+    for _, room in ipairs(rooms) do
+        minX = math.min(minX, room.position.X)
+        maxX = math.max(maxX, room.position.X)
+        minZ = math.min(minZ, room.position.Z)
+        maxZ = math.max(maxZ, room.position.Z)
+    end
+
+    local width = math.max(maxX - minX, 1)
+    local depth = math.max(maxZ - minZ, 1)
+    local canvasSize = canvas.AbsoluteSize
+    local padding = 16
+    local scale = math.min(
+        (canvasSize.X - padding * 2) / width,
+        (canvasSize.Y - padding * 2) / depth
+    ) * zoom
+    scale = math.clamp(scale, 0.035, 0.65)
+
+    local centerX = (minX + maxX) / 2
+    local centerZ = (minZ + maxZ) / 2
+    local boxW = math.clamp(24 * zoom, 14, 34)
+    local boxH = math.clamp(18 * zoom, 12, 28)
+
+    local positions = {}
+    for _, room in ipairs(rooms) do
+        local x = canvasSize.X / 2 + (room.position.X - centerX) * scale
+        local y = canvasSize.Y / 2 + (room.position.Z - centerZ) * scale
+        positions[room] = Vector2.new(x, y)
+    end
+
+    -- Connect nearby room centers. This is a visual guide, not a guaranteed door graph.
+    for i = 1, #rooms do
+        local a = rooms[i]
+        for j = i + 1, #rooms do
+            local b = rooms[j]
+            local distance = (a.position - b.position).Magnitude
+            if distance < 85 then
+                local p1, p2 = positions[a], positions[b]
+                local line = Instance.new("Frame")
+                line.Name = "Connection"
+                line.AnchorPoint = Vector2.new(0.5, 0.5)
+                line.Position = UDim2.fromOffset((p1.X + p2.X) / 2, (p1.Y + p2.Y) / 2)
+                local length = (p2 - p1).Magnitude
+                line.Size = UDim2.fromOffset(length, 2)
+                line.Rotation = math.deg(math.atan2(p2.Y - p1.Y, p2.X - p1.X))
+                line.BackgroundColor3 = COLORS.line
+                line.BorderSizePixel = 0
+                line.ZIndex = 1
+                line.Parent = canvas
+            end
+        end
+    end
+
+    for _, room in ipairs(rooms) do
+        local point = positions[room]
+        local isCurrent = room == currentRoom
+        local node = Instance.new("Frame")
+        node.Name = "Room_" .. room.name
+        node.AnchorPoint = Vector2.new(0.5, 0.5)
+        node.Position = UDim2.fromOffset(point.X, point.Y)
+        node.Size = UDim2.fromOffset(boxW, boxH)
+        node.BackgroundColor3 = isCurrent and COLORS.current or COLORS.explored
+        node.BorderSizePixel = 0
+        node.ZIndex = 2
+        node.Parent = canvas
+
+        local outline = Instance.new("UIStroke")
+        outline.Color = isCurrent and Color3.fromRGB(130, 205, 255) or COLORS.line
+        outline.Thickness = isCurrent and 2 or 1
+        outline.Parent = node
+
+        if showRoomNumbers then
+            local text = Instance.new("TextLabel")
+            text.Size = UDim2.fromScale(1, 1)
+            text.BackgroundTransparency = 1
+            text.Font = Enum.Font.GothamBold
+            text.Text = room.number and tostring(room.number) or room.name
+            text.TextColor3 = COLORS.text
+            text.TextSize = 9
+            text.TextTruncate = Enum.TextTruncate.AtEnd
+            text.ZIndex = 3
+            text.Parent = node
+        end
+    end
+
+    -- Player marker is centered on the current room and points in the character's facing direction.
+    if root and positions[currentRoom] then
+        local p = positions[currentRoom]
+        local marker = Instance.new("TextLabel")
+        marker.Name = "PlayerMarker"
+        marker.AnchorPoint = Vector2.new(0.5, 0.5)
+        marker.Position = UDim2.fromOffset(p.X, p.Y - boxH / 2 - 7)
+        marker.Size = UDim2.fromOffset(18, 14)
+        marker.BackgroundTransparency = 1
+        marker.Font = Enum.Font.GothamBlack
+        marker.Text = "▲"
+        marker.TextColor3 = Color3.fromRGB(255, 242, 150)
+        marker.TextSize = 13
+        marker.Rotation = -math.deg(math.atan2(root.CFrame.LookVector.Z, root.CFrame.LookVector.X)) + 90
+        marker.ZIndex = 4
+        marker.Parent = canvas
+    end
+end
+
+local function startMap()
+    enabled = true
+    createGui()
+    if not gui then
+        return
+    end
+
+    if updateConnection then
+        updateConnection:Disconnect()
+    end
+    local elapsed = 0
+    updateConnection = RunService.Heartbeat:Connect(function(dt)
+        if not enabled then
+            return
+        end
+        elapsed += dt
+        if elapsed >= 0.35 then
+            elapsed = 0
+            drawMap()
+        end
+    end)
+end
+
+local function stopMap()
+    enabled = false
+    destroyGui()
+end
+
+return {
+    Name = "MiniMap",
+    Title = "Mini Map",
+    Description = "A standalone room-layout map showing locally available rooms and your current position.",
+    Author = "reepyissomeone",
+    Version = "1.0",
+    Side = "Right",
+    Elements = {
+        {
+            Type = "Label",
+            Arguments = {
+                Text = "Independent addon. The map uses rooms currently available to your client; rooms not generated yet cannot be displayed.",
+                DoesWrap = true
+            }
+        },
+        {
+            Type = "Toggle",
+            Name = "Enabled",
+            Arguments = {
+                Text = "Enable Mini Map",
+                Default = false,
+                Callback = function(value)
+                    if value then
+                        startMap()
+                    else
+                        stopMap()
+                    end
+                end
+            }
+        },
+        {
+            Type = "Toggle",
+            Name = "RoomNumbers",
+            Arguments = {
+                Text = "Show room numbers",
+                Default = true,
+                Callback = function(value)
+                    showRoomNumbers = value
+                end
+            }
+        },
+        {
+            Type = "Slider",
+            Name = "Zoom",
+            Arguments = {
+                Text = "Map zoom",
+                Min = 0.5,
+                Max = 2,
+                Default = 1,
+                Rounding = 1,
+                Callback = function(value)
+                    zoom = value
+                end
+            }
+        },
+        {
+            Type = "Button",
+            Arguments = {
+                Text = "Refresh map",
+                Func = function()
+                    if enabled then
+                        drawMap()
+                    else
+                        startMap()
+                    end
+                end
+            }
+        },
+        {
+            Type = "Button",
+            Arguments = {
+                Text = "Hide map",
+                Func = function()
+                    stopMap()
+                end
+            }
+        }
+    }
+}
