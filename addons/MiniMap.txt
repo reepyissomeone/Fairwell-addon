@@ -253,7 +253,7 @@ local function createGui()
     compass.TextColor3 = Color3.fromRGB(255, 242, 150)
     compass.TextSize = 10
     compass.ZIndex = 5
-    compass.Parent = map
+    compass.Parent = panel
 
     -- Drag by the header; works with mouse and touch.
     local dragging = false
@@ -415,15 +415,33 @@ local function drawMap()
                 local stairParts = {}
                 local lowY, highY = math.huge, -math.huge
                 local minSX, maxSX, minSZ, maxSZ = math.huge, -math.huge, math.huge, -math.huge
+                local stairContainers = {}
+                for _, descendant in ipairs(room.model:GetDescendants()) do
+                    if (descendant:IsA("Model") or descendant:IsA("Folder")) and containsAny(descendant.Name, {"stair", "steps", "ladder"}) then
+                        stairContainers[descendant] = true
+                    end
+                end
                 for _, part in ipairs(room.model:GetDescendants()) do
-                    if part:IsA("BasePart") and containsAny(part.Name, {"stair", "steps", "step", "ladder", "rung"}) then
-                        table.insert(stairParts, part)
-                        lowY = math.min(lowY, part.Position.Y - part.Size.Y / 2)
-                        highY = math.max(highY, part.Position.Y + part.Size.Y / 2)
-                        minSX = math.min(minSX, part.Position.X - part.Size.X / 2)
-                        maxSX = math.max(maxSX, part.Position.X + part.Size.X / 2)
-                        minSZ = math.min(minSZ, part.Position.Z - part.Size.Z / 2)
-                        maxSZ = math.max(maxSZ, part.Position.Z + part.Size.Z / 2)
+                    if part:IsA("BasePart") then
+                        local namedPart = containsAny(part.Name, {"stair", "steps", "step", "ladder", "rung"})
+                        local inStairContainer = false
+                        local ancestor = part.Parent
+                        while ancestor and ancestor ~= room.model do
+                            if stairContainers[ancestor] then
+                                inStairContainer = true
+                                break
+                            end
+                            ancestor = ancestor.Parent
+                        end
+                        if namedPart or inStairContainer then
+                            table.insert(stairParts, part)
+                            lowY = math.min(lowY, part.Position.Y - part.Size.Y / 2)
+                            highY = math.max(highY, part.Position.Y + part.Size.Y / 2)
+                            minSX = math.min(minSX, part.Position.X - part.Size.X / 2)
+                            maxSX = math.max(maxSX, part.Position.X + part.Size.X / 2)
+                            minSZ = math.min(minSZ, part.Position.Z - part.Size.Z / 2)
+                            maxSZ = math.max(maxSZ, part.Position.Z + part.Size.Z / 2)
+                        end
                     end
                 end
                 if #stairParts > 0 then
@@ -566,7 +584,7 @@ return {
     Title = "Mini Map",
     Description = "Standalone floor-plan map with wall linework, stair markers, room memory, and player heading.",
     Author = "reepyissomeone",
-    Version = "1.2",
+    Version = "1.3",
     Side = "Right",
     Elements = {
         {
