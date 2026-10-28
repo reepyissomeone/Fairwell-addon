@@ -222,22 +222,6 @@ local function createGui()
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = panel
 
-    local close = Instance.new("TextButton")
-    close.Name = "Close"
-    close.Size = UDim2.fromOffset(22, 20)
-    close.Position = UDim2.new(1, -25, 0, 3)
-    close.BackgroundColor3 = Color3.fromRGB(25, 36, 54)
-    close.BorderSizePixel = 0
-    close.Font = Enum.Font.GothamBold
-    close.Text = "×"
-    close.TextSize = 16
-    close.TextColor3 = COLORS.text
-    close.Parent = panel
-    close.Activated:Connect(function()
-        enabled = false
-        destroyGui()
-    end)
-
     local map = Instance.new("Frame")
     map.Name = "RoomCanvas"
     map.Position = UDim2.fromOffset(4, 27)
@@ -605,7 +589,7 @@ return {
     Title = "Mini Map",
     Description = "Standalone room map with raycast-traced room outlines, a live player marker, and stair markers.",
     Author = "reepyissomeone",
-    Version = "1.6",
+    Version = "1.7",
     Side = "Right",
     Elements = {
         {
@@ -613,6 +597,21 @@ return {
             Arguments = {
                 Text = "Raycasts trace room outlines. The player marker follows your position and facing direction.",
                 DoesWrap = true
+            }
+        },
+        {
+            Type = "Toggle",
+            Name = "EnableMiniMap",
+            Arguments = {
+                Text = "Enable mini map",
+                Default = true,
+                Callback = function(value)
+                    if value then
+                        startMap()
+                    else
+                        stopMap()
+                    end
+                end
             }
         },
         {
@@ -651,7 +650,7 @@ return {
     }
 }
 
--- Start automatically when MSDoors loads this addon.
+-- Start enabled by default; the addon toggle can turn it off or on again.
 task.defer(function()
     startMap()
 end)
