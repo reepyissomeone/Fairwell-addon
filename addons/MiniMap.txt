@@ -499,39 +499,27 @@ local function drawMap()
         end
     end
 
+    -- Show room labels only. The room-shaped outline comes from the raycast wall contours above,
+    -- not from a guessed rectangular bounding box.
     for _, room in ipairs(rooms) do
         local point = positions[room]
-        local isCurrent = room == currentRoom
-        local node = Instance.new("Frame")
-        node.Name = "Room_" .. room.name
-        node.AnchorPoint = Vector2.new(0.5, 0.5)
-        node.Position = UDim2.fromOffset(point.X, point.Y)
-        local roomW = room.sizeX and math.clamp(room.sizeX * scale, 12, 52) or defaultBoxW
-        local roomH = room.sizeZ and math.clamp(room.sizeZ * scale, 12, 52) or defaultBoxH
-        node.Size = UDim2.fromOffset(roomW, roomH)
-        node.Rotation = room.yaw or 0
-        node.BackgroundColor3 = isCurrent and COLORS.current or COLORS.explored
-        node.BackgroundTransparency = room.active and 0 or 0.28
-        node.BorderSizePixel = 0
-        node.ZIndex = 2
-        node.Parent = canvas
-
-        local outline = Instance.new("UIStroke")
-        outline.Color = isCurrent and Color3.fromRGB(130, 205, 255) or (room.active and COLORS.line or Color3.fromRGB(83, 91, 108))
-        outline.Thickness = isCurrent and 2 or 1
-        outline.Parent = node
-
         if showRoomNumbers then
             local text = Instance.new("TextLabel")
-            text.Size = UDim2.fromScale(1, 1)
+            text.Name = "RoomLabel_" .. room.name
+            text.AnchorPoint = Vector2.new(0.5, 0.5)
+            text.Position = UDim2.fromOffset(point.X, point.Y)
+            text.Size = UDim2.fromOffset(34, 18)
             text.BackgroundTransparency = 1
+            text.BorderSizePixel = 0
             text.Font = Enum.Font.GothamBold
             text.Text = room.number and tostring(room.number) or room.name
-            text.TextColor3 = COLORS.text
-            text.TextSize = 9
+            text.TextColor3 = room == currentRoom and Color3.fromRGB(130, 205, 255) or COLORS.text
+            text.TextSize = 10
             text.TextTruncate = Enum.TextTruncate.AtEnd
-            text.ZIndex = 3
-            text.Parent = node
+            text.TextStrokeTransparency = 0.35
+            text.TextStrokeColor3 = COLORS.panel
+            text.ZIndex = 4
+            text.Parent = canvas
         end
     end
 
@@ -594,7 +582,7 @@ return {
     Title = "Mini Map",
     Description = "Standalone room map with raycast-traced room outlines, a live player marker, and stair markers.",
     Author = "reepyissomeone",
-    Version = "1.8",
+    Version = "1.9",
     Side = "Right",
     Elements = {
         {
