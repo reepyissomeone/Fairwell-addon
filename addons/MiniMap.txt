@@ -11,14 +11,17 @@ local player = Players.LocalPlayer
 
 local enabled = false
 local showRoomNumbers = true
+local showConnections = true
+local rememberExplored = true
 local mapSize = 220
 local zoom = 1
 local gui
 local updateConnection
+local dragConnection
 local roomButtons = {}
 local roomFolderConnection
 local descendantConnection
-local refreshQueued = false
+local discoveredRooms = {}
 
 local COLORS = {
     panel = Color3.fromRGB(10, 13, 24),
@@ -31,22 +34,39 @@ local COLORS = {
 }
 
 local function getRooms()
-    local rooms = workspace:FindFirstChild("CurrentRooms")
-    if not rooms then
+    local folder = workspace:FindFirstChild("CurrentRooms")
+    if not folder then
         return {}
     end
 
+    for _, cached in pairs(discoveredRooms) do
+        cached.active = false
+        cached.model = nil
+    end
+
     local result = {}
-    for _, model in ipairs(rooms:GetChildren()) do
+    for _, model in ipairs(folder:GetChildren()) do
         if model:IsA("Model") then
-            local pivot = model:GetPivot()
-            local number = tonumber(model.Name)
-            table.insert(result, {
-                model = model,
-                name = model.Name,
-                number = number,
-                position = pivot.Position,
-            })
+            local boxCFrame, boxSize = model:GetBoundingBox()
+            local key = model.Name
+            local room = discoveredRooms[key]
+            if not room then
+                room = { name = key, number = tonumber(key) }
+                discoveredRooms[key] = room
+            end
+            room.model = model
+            room.active = true
+            room.position = boxCFrame.Position
+            room.sizeX = math.max(boxSize.X, 12)
+            room.sizeZ = math.max(boxSize.Z, 12)
+            room.yaw = math.deg(math.atan2(-boxCFrame.LookVector.X, -boxCFrame.LookVector.Z))
+            room.number = tonumber(key)
+        end
+    end
+
+    for _, room in pairs(discoveredRooms) do
+        if rememberExplored or room.active then
+            table.insert(result, room)
         end
     end
 
@@ -71,6 +91,10 @@ local function destroyGui()
     if descendantConnection then
         descendantConnection:Disconnect()
         descendantConnection = nil
+    end
+    if dragConnection then
+        dragConnection:Disconnect()
+        dragConnection = nil
     end
     if gui then
         gui:Destroy()
@@ -158,10 +182,24 @@ local function createGui()
     footer.Size = UDim2.new(1, -8, 0, 14)
     footer.BackgroundTransparency = 1
     footer.Font = Enum.Font.Gotham
-    footer.Text = "Blue = current room"
+    footer.Text = "BLUE YOU  •  YELLOW HEADING"
     footer.TextColor3 = COLORS.muted
-    footer.TextSize = 9
+    footer.TextSize = 8
     footer.Parent = panel
+
+    local compass = Instance.new("TextLabel")
+    compass.Name = "Compass"
+    compass.Position = UDim2.fromOffset(5, 29)
+    compass.Size = UDim2.fromOffset(18, 14)
+    compass.BackgroundColor3 = Color3.fromRGB(10, 13, 24)
+    compass.BackgroundTransparency = 0.2
+    compass.BorderSizePixel = 0
+    compass.Font = Enum.Font.GothamBold
+    compass.Text = "N"
+    compass.TextColor3 = Color3.fromRGB(255, 242, 150)
+    compass.TextSize = 10
+    compass.ZIndex = 5
+    compass.Parent = map
 
     -- Drag by the header; works with mouse and touch.
     local dragging = false
@@ -187,7 +225,7 @@ local function createGui()
             dragInput = input
         end
     end)
-    UserInputService.InputChanged:Connect(function(input)
+    dragConnection = UserInputService.InputChanged:Connect(function(input)
         if dragging and (input == dragInput or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
             panel.Position = UDim2.new(
@@ -219,6 +257,10 @@ local function drawMap()
     table.clear(roomButtons)
 
     local rooms = getRooms()
+    local header = panel:FindFirstChild("Header")
+    if header then
+        header.Text = "MINI MAP  •  " .. tostring(#rooms) .. " ROOMS"
+    end
     if #rooms == 0 then
         local label = Instance.new("TextLabel")
         label.Size = UDim2.fromScale(1, 1)
@@ -267,8 +309,8 @@ local function drawMap()
 
     local centerX = (minX + maxX) / 2
     local centerZ = (minZ + maxZ) / 2
-    local boxW = math.clamp(24 * zoom, 14, 34)
-    local boxH = math.clamp(18 * zoom, 12, 28)
+    local defaultBoxW = math.clamp(24 * zoom, 14, 34)
+    local defaultBoxH = math.clamp(18 * zoom, 12, 28)
 
     local positions = {}
     for _, room in ipairs(rooms) do
@@ -277,13 +319,14 @@ local function drawMap()
         positions[room] = Vector2.new(x, y)
     end
 
-    -- Connect nearby room centers. This is a visual guide, not a guaranteed door graph.
+    -- Connect nearby room footprints. MSDoors does not expose a universal door graph to every addon.
+    if showConnections then
     for i = 1, #rooms do
         local a = rooms[i]
         for j = i + 1, #rooms do
             local b = rooms[j]
             local distance = (a.position - b.position).Magnitude
-            if distance < 85 then
+            if distance < 105 then
                 local p1, p2 = positions[a], positions[b]
                 local line = Instance.new("Frame")
                 line.Name = "Connection"
@@ -299,6 +342,7 @@ local function drawMap()
             end
         end
     end
+    end
 
     for _, room in ipairs(rooms) do
         local point = positions[room]
@@ -307,14 +351,18 @@ local function drawMap()
         node.Name = "Room_" .. room.name
         node.AnchorPoint = Vector2.new(0.5, 0.5)
         node.Position = UDim2.fromOffset(point.X, point.Y)
-        node.Size = UDim2.fromOffset(boxW, boxH)
+        local roomW = room.sizeX and math.clamp(room.sizeX * scale, 12, 52) or defaultBoxW
+        local roomH = room.sizeZ and math.clamp(room.sizeZ * scale, 12, 52) or defaultBoxH
+        node.Size = UDim2.fromOffset(roomW, roomH)
+        node.Rotation = room.yaw or 0
         node.BackgroundColor3 = isCurrent and COLORS.current or COLORS.explored
+        node.BackgroundTransparency = room.active and 0 or 0.28
         node.BorderSizePixel = 0
         node.ZIndex = 2
         node.Parent = canvas
 
         local outline = Instance.new("UIStroke")
-        outline.Color = isCurrent and Color3.fromRGB(130, 205, 255) or COLORS.line
+        outline.Color = isCurrent and Color3.fromRGB(130, 205, 255) or (room.active and COLORS.line or Color3.fromRGB(83, 91, 108))
         outline.Thickness = isCurrent and 2 or 1
         outline.Parent = node
 
@@ -382,9 +430,9 @@ end
 return {
     Name = "MiniMap",
     Title = "Mini Map",
-    Description = "A standalone room-layout map showing locally available rooms and your current position.",
+    Description = "Standalone detailed room map with room footprints, explored-room memory, connections, and a facing marker.",
     Author = "reepyissomeone",
-    Version = "1.0",
+    Version = "1.1",
     Side = "Right",
     Elements = {
         {
@@ -417,6 +465,31 @@ return {
                 Default = true,
                 Callback = function(value)
                     showRoomNumbers = value
+                end
+            }
+        },
+        {
+            Type = "Toggle",
+            Name = "Connections",
+            Arguments = {
+                Text = "Show room connections",
+                Default = true,
+                Callback = function(value)
+                    showConnections = value
+                end
+            }
+        },
+        {
+            Type = "Toggle",
+            Name = "RememberRooms",
+            Arguments = {
+                Text = "Remember explored rooms",
+                Default = true,
+                Callback = function(value)
+                    rememberExplored = value
+                    if enabled then
+                        drawMap()
+                    end
                 end
             }
         },
