@@ -11,12 +11,10 @@ local player = Players.LocalPlayer
 
 local enabled = false
 local showRoomNumbers = true
-local showConnections = true
 local showWalls = true
 local showStairs = true
 local rememberExplored = true
 local mapSize = 220
-local zoom = 1
 local gui
 local updateConnection
 local dragConnection
@@ -379,7 +377,7 @@ local function drawMap()
     local scale = math.min(
         (canvasSize.X - padding * 2) / width,
         (canvasSize.Y - padding * 2) / depth
-    ) * zoom
+    )
     scale = math.clamp(scale, 0.035, 0.65)
 
     local centerX = (minX + maxX) / 2
@@ -392,24 +390,12 @@ local function drawMap()
         positions[room] = mapPoint(room.position, centerX, centerZ, scale, canvasSize)
     end
 
-    -- Raycast through each loaded room at several floor-level sample points.
-    -- Every ray only considers that room model, so unrelated props elsewhere are ignored.
-    -- Hits identify the wall parts to trace; this also catches walls with generic part names.
+    -- Trace room outlines by joining raycast hit points in angular order.
     if showWalls then
         local rayParams = RaycastParams.new()
         rayParams.FilterType = Enum.RaycastFilterType.Include
         rayParams.IgnoreWater = true
-        local directions = {
-            Vector3.new(1, 0, 0), Vector3.new(-1, 0, 0),
-            Vector3.new(0, 0, 1), Vector3.new(0, 0, -1),
-            Vector3.new(0.707, 0, 0.707), Vector3.new(-0.707, 0, 0.707),
-            Vector3.new(0.707, 0, -0.707), Vector3.new(-0.707, 0, -0.707),
-        }
-        local drawnParts = {}
-        local rayBudget = 260
-        local wallRayLength = 65
-
-        -- Scan the current room first so the most relevant floor plan gets priority.
+        local rayBudget = 300
         local scanOrder = {}
         if currentRoom and currentRoom.active and currentRoom.model then
             table.insert(scanOrder, currentRoom)
@@ -421,35 +407,45 @@ local function drawMap()
         end
 
         for _, room in ipairs(scanOrder) do
-            if rayBudget <= 0 then break end
+            if rayBudget < 24 then break end
             rayParams.FilterDescendantsInstances = {room.model}
-            local halfX = math.min((room.sizeX or 60) * 0.38, 32)
-            local halfZ = math.min((room.sizeZ or 60) * 0.38, 32)
-            local offsets = {
-                Vector2.new(-halfX, -halfZ), Vector2.new(0, -halfZ), Vector2.new(halfX, -halfZ),
-                Vector2.new(-halfX, 0), Vector2.new(0, 0), Vector2.new(halfX, 0),
-                Vector2.new(-halfX, halfZ), Vector2.new(0, halfZ), Vector2.new(halfX, halfZ),
-            }
-            local hitSet = {}
-            for _, offset in ipairs(offsets) do
-                if rayBudget <= 0 then break end
-                for _, heightOffset in ipairs({-2, 2}) do
-                    if rayBudget <= 0 then break end
-                    local origin = Vector3.new(room.position.X + offset.X, room.position.Y + heightOffset, room.position.Z + offset.Y)
-                    for _, direction in ipairs(directions) do
-                        if rayBudget <= 0 then break end
-                        local hit = workspace:Raycast(origin, direction * wallRayLength, rayParams)
-                        rayBudget -= 1
-                        if hit and partLooksLikeWall(hit.Instance) then
-                            hitSet[hit.Instance] = true
-                        end
+            local hits = {}
+            local seen = {}
+            local rayCount = math.min(64, rayBudget)
+            local rayLength = math.clamp(math.max(room.sizeX or 40, room.sizeZ or 40) * 1.2, 35, 110)
+            for i = 0, rayCount - 1 do
+                local angle = (i / rayCount) * math.pi * 2
+                local direction = Vector3.new(math.cos(angle), 0, math.sin(angle))
+                local origin = Vector3.new(room.position.X, room.position.Y, room.position.Z)
+                local hit = workspace:Raycast(origin, direction * rayLength, rayParams)
+                rayBudget -= 1
+                local tries = 0
+                while hit and not partLooksLikeWall(hit.Instance) and tries < 3 and rayBudget > 0 do
+                    local advance = (hit.Position - origin).Magnitude + 0.15
+                    origin = Vector3.new(room.position.X, room.position.Y, room.position.Z) + direction * advance
+                    local remaining = rayLength - advance
+                    if remaining <= 1 then break end
+                    hit = workspace:Raycast(origin, direction * remaining, rayParams)
+                    rayBudget -= 1
+                    tries += 1
+                end
+                if hit and partLooksLikeWall(hit.Instance) then
+                    local point = Vector3.new(hit.Position.X, 0, hit.Position.Z)
+                    local key = tostring(math.floor(point.X * 2)) .. ":" .. tostring(math.floor(point.Z * 2))
+                    if not seen[key] then
+                        seen[key] = true
+                        table.insert(hits, {angle = math.atan2(point.Z - room.position.Z, point.X - room.position.X), point = point})
                     end
                 end
+                if rayBudget <= 0 then break end
             end
-            for part in pairs(hitSet) do
-                if not drawnParts[part] then
-                    drawnParts[part] = true
-                    drawRaycastWallFootprint(canvas, part, centerX, centerZ, scale, canvasSize)
+            if #hits >= 3 then
+                table.sort(hits, function(a, b) return a.angle < b.angle end)
+                for i = 1, #hits do
+                    local nextIndex = i % #hits + 1
+                    local p1 = mapPoint(hits[i].point, centerX, centerZ, scale, canvasSize)
+                    local p2 = mapPoint(hits[nextIndex].point, centerX, centerZ, scale, canvasSize)
+                    drawLine(canvas, "RoomWallContour", p1, p2, COLORS.wall, 2, 3)
                 end
             end
         end
@@ -519,31 +515,6 @@ local function drawMap()
         end
     end
 
-    -- Connect nearby room footprints. MSDoors does not expose a universal door graph to every addon.
-    if showConnections then
-    for i = 1, #rooms do
-        local a = rooms[i]
-        for j = i + 1, #rooms do
-            local b = rooms[j]
-            local distance = (a.position - b.position).Magnitude
-            if distance < 105 then
-                local p1, p2 = positions[a], positions[b]
-                local line = Instance.new("Frame")
-                line.Name = "Connection"
-                line.AnchorPoint = Vector2.new(0.5, 0.5)
-                line.Position = UDim2.fromOffset((p1.X + p2.X) / 2, (p1.Y + p2.Y) / 2)
-                local length = (p2 - p1).Magnitude
-                line.Size = UDim2.fromOffset(length, 2)
-                line.Rotation = math.deg(math.atan2(p2.Y - p1.Y, p2.X - p1.X))
-                line.BackgroundColor3 = COLORS.line
-                line.BorderSizePixel = 0
-                line.ZIndex = 1
-                line.Parent = canvas
-            end
-        end
-    end
-    end
-
     for _, room in ipairs(rooms) do
         local point = positions[room]
         local isCurrent = room == currentRoom
@@ -580,22 +551,23 @@ local function drawMap()
         end
     end
 
-    -- Player marker is centered on the current room and points in the character's facing direction.
-    if root and positions[currentRoom] then
-        local p = positions[currentRoom]
+    -- Plot the player's actual position, not the room center, so the marker moves while walking.
+    if root then
+        local p = mapPoint(root.Position, centerX, centerZ, scale, canvasSize)
         local marker = Instance.new("TextLabel")
         marker.Name = "PlayerMarker"
         marker.AnchorPoint = Vector2.new(0.5, 0.5)
-        local currentHeight = currentRoom.sizeZ and math.clamp(currentRoom.sizeZ * scale, 12, 52) or defaultBoxH
-        marker.Position = UDim2.fromOffset(p.X, p.Y - currentHeight / 2 - 7)
-        marker.Size = UDim2.fromOffset(18, 14)
-        marker.BackgroundTransparency = 1
+        marker.Position = UDim2.fromOffset(p.X, p.Y)
+        marker.Size = UDim2.fromOffset(18, 18)
+        marker.BackgroundColor3 = Color3.fromRGB(10, 13, 24)
+        marker.BackgroundTransparency = 0.15
+        marker.BorderSizePixel = 0
         marker.Font = Enum.Font.GothamBlack
         marker.Text = "▲"
         marker.TextColor3 = Color3.fromRGB(255, 242, 150)
         marker.TextSize = 13
         marker.Rotation = -math.deg(math.atan2(root.CFrame.LookVector.Z, root.CFrame.LookVector.X)) + 90
-        marker.ZIndex = 4
+        marker.ZIndex = 6
         marker.Parent = canvas
     end
 end
@@ -631,15 +603,15 @@ end
 return {
     Name = "MiniMap",
     Title = "Mini Map",
-    Description = "Standalone floor-plan map using client-side raycasts to detect walls, plus stair markers and room memory.",
+    Description = "Standalone room map with raycast-traced room outlines, a live player marker, and stair markers.",
     Author = "reepyissomeone",
-    Version = "1.4",
+    Version = "1.5",
     Side = "Right",
     Elements = {
         {
             Type = "Label",
             Arguments = {
-                Text = "Wall lines are found by client-side raycasts through loaded rooms. Detection depends on wall parts being queryable; ungenerated rooms cannot be shown.",
+                Text = "Raycasts trace room outlines. The player marker follows your position and facing direction.",
                 DoesWrap = true
             }
         },
@@ -671,17 +643,6 @@ return {
         },
         {
             Type = "Toggle",
-            Name = "Connections",
-            Arguments = {
-                Text = "Show room connections",
-                Default = true,
-                Callback = function(value)
-                    showConnections = value
-                end
-            }
-        },
-        {
-            Type = "Toggle",
             Name = "WallLines",
             Arguments = {
                 Text = "Draw walls as lines",
@@ -702,55 +663,5 @@ return {
                 end
             }
         },
-        {
-            Type = "Toggle",
-            Name = "RememberRooms",
-            Arguments = {
-                Text = "Remember explored rooms",
-                Default = true,
-                Callback = function(value)
-                    rememberExplored = value
-                    if enabled then
-                        drawMap()
-                    end
-                end
-            }
-        },
-        {
-            Type = "Slider",
-            Name = "Zoom",
-            Arguments = {
-                Text = "Map zoom",
-                Min = 0.5,
-                Max = 2,
-                Default = 1,
-                Rounding = 1,
-                Callback = function(value)
-                    zoom = value
-                end
-            }
-        },
-        {
-            Type = "Button",
-            Arguments = {
-                Text = "Refresh map",
-                Func = function()
-                    if enabled then
-                        drawMap()
-                    else
-                        startMap()
-                    end
-                end
-            }
-        },
-        {
-            Type = "Button",
-            Arguments = {
-                Text = "Hide map",
-                Func = function()
-                    stopMap()
-                end
-            }
-        }
     }
 }
