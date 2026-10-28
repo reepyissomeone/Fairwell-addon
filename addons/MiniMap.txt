@@ -116,21 +116,40 @@ local function drawLine(parent, name, p1, p2, color, thickness, zIndex)
 end
 
 local function partLooksLikeWall(part)
-    if not part:IsA("BasePart") or part.Transparency >= 0.95 then
+    if not part:IsA("BasePart") or part.Transparency >= 0.95 or not part.CanQuery then
         return false
     end
     local name = string.lower(part.Name)
-    if containsAny(name, {"floor", "ceiling", "roof", "carpet", "ground", "trim", "stair", "step", "ladder", "rail", "rung"}) then
+    if containsAny(name, {"floor", "ceiling", "roof", "carpet", "ground", "trim", "stair", "step", "ladder", "rail", "rung", "door", "handle", "frame", "glass"}) then
         return false
     end
-    if containsAny(name, {"wall", "partition", "barrier", "bulkhead"}) then
+    if containsAny(name, {"wall", "partition", "barrier", "bulkhead", "divider"}) then
         return true
     end
-    -- Fallback for unnamed wall pieces: tall and thin, excluding tiny decorative pieces.
+    -- Geometry fallback for unnamed wall parts.
     local size = part.Size
     local horizontalSmall = math.min(size.X, size.Z)
     local horizontalLong = math.max(size.X, size.Z)
-    return size.Y >= 6 and horizontalSmall <= 3.5 and horizontalLong >= 4
+    return size.Y >= 5 and horizontalSmall <= 4 and horizontalLong >= 4
+end
+
+local function drawRaycastWallFootprint(canvas, part, centerX, centerZ, scale, canvasSize)
+    local cf, size = part.CFrame, part.Size
+    local halfX, halfZ = size.X / 2, size.Z / 2
+    local corners = {
+        cf:PointToWorldSpace(Vector3.new(-halfX, 0, -halfZ)),
+        cf:PointToWorldSpace(Vector3.new(halfX, 0, -halfZ)),
+        cf:PointToWorldSpace(Vector3.new(halfX, 0, halfZ)),
+        cf:PointToWorldSpace(Vector3.new(-halfX, 0, halfZ)),
+    }
+    local mapped = {}
+    for i, corner in ipairs(corners) do
+        mapped[i] = mapPoint(corner, centerX, centerZ, scale, canvasSize)
+    end
+    for i = 1, 4 do
+        local nextIndex = i % 4 + 1
+        drawLine(canvas, "RaycastWall", mapped[i], mapped[nextIndex], COLORS.wall, 2, 3)
+    end
 end
 
 local function destroyGui()
@@ -373,34 +392,64 @@ local function drawMap()
         positions[room] = mapPoint(room.position, centerX, centerZ, scale, canvasSize)
     end
 
-    -- Wall parts become floor-plan linework. Only active rooms can contribute geometry.
-    -- Geometry is read client-side from each room model; no server remotes are needed.
+    -- Raycast through each loaded room at several floor-level sample points.
+    -- Every ray only considers that room model, so unrelated props elsewhere are ignored.
+    -- Hits identify the wall parts to trace; this also catches walls with generic part names.
     if showWalls then
-        local wallCount = 0
-        local maxWallParts = 180
+        local rayParams = RaycastParams.new()
+        rayParams.FilterType = Enum.RaycastFilterType.Include
+        rayParams.IgnoreWater = true
+        local directions = {
+            Vector3.new(1, 0, 0), Vector3.new(-1, 0, 0),
+            Vector3.new(0, 0, 1), Vector3.new(0, 0, -1),
+            Vector3.new(0.707, 0, 0.707), Vector3.new(-0.707, 0, 0.707),
+            Vector3.new(0.707, 0, -0.707), Vector3.new(-0.707, 0, -0.707),
+        }
+        local drawnParts = {}
+        local rayBudget = 260
+        local wallRayLength = 65
+
+        -- Scan the current room first so the most relevant floor plan gets priority.
+        local scanOrder = {}
+        if currentRoom and currentRoom.active and currentRoom.model then
+            table.insert(scanOrder, currentRoom)
+        end
         for _, room in ipairs(rooms) do
-            if room.active and room.model and wallCount < maxWallParts then
-                for _, part in ipairs(room.model:GetDescendants()) do
-                    if wallCount >= maxWallParts then break end
-                    if partLooksLikeWall(part) then
-                        local cf, size = part.CFrame, part.Size
-                        local halfX, halfZ = size.X / 2, size.Z / 2
-                        local corners = {
-                            cf:PointToWorldSpace(Vector3.new(-halfX, 0, -halfZ)),
-                            cf:PointToWorldSpace(Vector3.new(halfX, 0, -halfZ)),
-                            cf:PointToWorldSpace(Vector3.new(halfX, 0, halfZ)),
-                            cf:PointToWorldSpace(Vector3.new(-halfX, 0, halfZ)),
-                        }
-                        local mapped = {}
-                        for i, corner in ipairs(corners) do
-                            mapped[i] = mapPoint(corner, centerX, centerZ, scale, canvasSize)
+            if room ~= currentRoom and room.active and room.model then
+                table.insert(scanOrder, room)
+            end
+        end
+
+        for _, room in ipairs(scanOrder) do
+            if rayBudget <= 0 then break end
+            rayParams.FilterDescendantsInstances = {room.model}
+            local halfX = math.min((room.sizeX or 60) * 0.38, 32)
+            local halfZ = math.min((room.sizeZ or 60) * 0.38, 32)
+            local offsets = {
+                Vector2.new(-halfX, -halfZ), Vector2.new(0, -halfZ), Vector2.new(halfX, -halfZ),
+                Vector2.new(-halfX, 0), Vector2.new(0, 0), Vector2.new(halfX, 0),
+                Vector2.new(-halfX, halfZ), Vector2.new(0, halfZ), Vector2.new(halfX, halfZ),
+            }
+            local hitSet = {}
+            for _, offset in ipairs(offsets) do
+                if rayBudget <= 0 then break end
+                for _, heightOffset in ipairs({-2, 2}) do
+                    if rayBudget <= 0 then break end
+                    local origin = Vector3.new(room.position.X + offset.X, room.position.Y + heightOffset, room.position.Z + offset.Y)
+                    for _, direction in ipairs(directions) do
+                        if rayBudget <= 0 then break end
+                        local hit = workspace:Raycast(origin, direction * wallRayLength, rayParams)
+                        rayBudget -= 1
+                        if hit and partLooksLikeWall(hit.Instance) then
+                            hitSet[hit.Instance] = true
                         end
-                        for i = 1, 4 do
-                            local nextIndex = i % 4 + 1
-                            drawLine(canvas, "WallLine", mapped[i], mapped[nextIndex], COLORS.wall, 2, 2)
-                        end
-                        wallCount += 1
                     end
+                end
+            end
+            for part in pairs(hitSet) do
+                if not drawnParts[part] then
+                    drawnParts[part] = true
+                    drawRaycastWallFootprint(canvas, part, centerX, centerZ, scale, canvasSize)
                 end
             end
         end
@@ -582,15 +631,15 @@ end
 return {
     Name = "MiniMap",
     Title = "Mini Map",
-    Description = "Standalone floor-plan map with wall linework, stair markers, room memory, and player heading.",
+    Description = "Standalone floor-plan map using client-side raycasts to detect walls, plus stair markers and room memory.",
     Author = "reepyissomeone",
-    Version = "1.3",
+    Version = "1.4",
     Side = "Right",
     Elements = {
         {
             Type = "Label",
             Arguments = {
-                Text = "Independent addon. Wall lines and stairs are inferred from client-visible room parts; ungenerated rooms cannot be shown.",
+                Text = "Wall lines are found by client-side raycasts through loaded rooms. Detection depends on wall parts being queryable; ungenerated rooms cannot be shown.",
                 DoesWrap = true
             }
         },
