@@ -605,7 +605,7 @@ return {
     Title = "Mini Map",
     Description = "Standalone room map with raycast-traced room outlines, a live player marker, and stair markers.",
     Author = "reepyissomeone",
-    Version = "1.5",
+    Version = "1.6",
     Side = "Right",
     Elements = {
         {
@@ -613,21 +613,6 @@ return {
             Arguments = {
                 Text = "Raycasts trace room outlines. The player marker follows your position and facing direction.",
                 DoesWrap = true
-            }
-        },
-        {
-            Type = "Toggle",
-            Name = "Enabled",
-            Arguments = {
-                Text = "Enable Mini Map",
-                Default = false,
-                Callback = function(value)
-                    if value then
-                        startMap()
-                    else
-                        stopMap()
-                    end
-                end
             }
         },
         {
@@ -665,3 +650,8 @@ return {
         },
     }
 }
+
+-- Start automatically when MSDoors loads this addon.
+task.defer(function()
+    startMap()
+end)
