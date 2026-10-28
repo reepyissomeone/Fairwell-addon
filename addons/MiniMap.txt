@@ -584,12 +584,17 @@ local function stopMap()
     destroyGui()
 end
 
+-- Start enabled by default; the addon toggle can turn it off or on again.
+task.defer(function()
+    startMap()
+end)
+
 return {
     Name = "MiniMap",
     Title = "Mini Map",
     Description = "Standalone room map with raycast-traced room outlines, a live player marker, and stair markers.",
     Author = "reepyissomeone",
-    Version = "1.7",
+    Version = "1.8",
     Side = "Right",
     Elements = {
         {
@@ -650,7 +655,3 @@ return {
     }
 }
 
--- Start enabled by default; the addon toggle can turn it off or on again.
-task.defer(function()
-    startMap()
-end)
