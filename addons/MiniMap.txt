@@ -12,6 +12,8 @@ local player = Players.LocalPlayer
 local enabled = false
 local showRoomNumbers = true
 local showConnections = true
+local showWalls = true
+local showStairs = true
 local rememberExplored = true
 local mapSize = 220
 local zoom = 1
@@ -31,6 +33,8 @@ local COLORS = {
     text = Color3.fromRGB(235, 242, 255),
     muted = Color3.fromRGB(135, 153, 178),
     line = Color3.fromRGB(73, 100, 132),
+    wall = Color3.fromRGB(172, 190, 210),
+    stair = Color3.fromRGB(255, 203, 92),
 }
 
 local function getRooms()
@@ -77,6 +81,56 @@ local function getRooms()
         return a.name < b.name
     end)
     return result
+end
+
+local function containsAny(text, words)
+    text = string.lower(text or "")
+    for _, word in ipairs(words) do
+        if string.find(text, word, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+local function mapPoint(position, centerX, centerZ, scale, canvasSize)
+    return Vector2.new(
+        canvasSize.X / 2 + (position.X - centerX) * scale,
+        canvasSize.Y / 2 + (position.Z - centerZ) * scale
+    )
+end
+
+local function drawLine(parent, name, p1, p2, color, thickness, zIndex)
+    local delta = p2 - p1
+    local line = Instance.new("Frame")
+    line.Name = name
+    line.AnchorPoint = Vector2.new(0.5, 0.5)
+    line.Position = UDim2.fromOffset((p1.X + p2.X) / 2, (p1.Y + p2.Y) / 2)
+    line.Size = UDim2.fromOffset(math.max(delta.Magnitude, 1), thickness)
+    line.Rotation = math.deg(math.atan2(delta.Y, delta.X))
+    line.BackgroundColor3 = color
+    line.BorderSizePixel = 0
+    line.ZIndex = zIndex or 1
+    line.Parent = parent
+    return line
+end
+
+local function partLooksLikeWall(part)
+    if not part:IsA("BasePart") or part.Transparency >= 0.95 then
+        return false
+    end
+    local name = string.lower(part.Name)
+    if containsAny(name, {"floor", "ceiling", "roof", "carpet", "ground", "trim", "stair", "step", "ladder", "rail", "rung"}) then
+        return false
+    end
+    if containsAny(name, {"wall", "partition", "barrier", "bulkhead"}) then
+        return true
+    end
+    -- Fallback for unnamed wall pieces: tall and thin, excluding tiny decorative pieces.
+    local size = part.Size
+    local horizontalSmall = math.min(size.X, size.Z)
+    local horizontalLong = math.max(size.X, size.Z)
+    return size.Y >= 6 and horizontalSmall <= 3.5 and horizontalLong >= 4
 end
 
 local function destroyGui()
@@ -288,13 +342,15 @@ local function drawMap()
     end
     currentRoom = currentRoom or rooms[#rooms]
 
-    -- Use world X/Z positions so turns and side rooms appear in their actual direction.
+    -- Include the room bounds in the fit so walls and side rooms stay inside the map.
     local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
     for _, room in ipairs(rooms) do
-        minX = math.min(minX, room.position.X)
-        maxX = math.max(maxX, room.position.X)
-        minZ = math.min(minZ, room.position.Z)
-        maxZ = math.max(maxZ, room.position.Z)
+        local halfX = (room.sizeX or 24) / 2
+        local halfZ = (room.sizeZ or 24) / 2
+        minX = math.min(minX, room.position.X - halfX)
+        maxX = math.max(maxX, room.position.X + halfX)
+        minZ = math.min(minZ, room.position.Z - halfZ)
+        maxZ = math.max(maxZ, room.position.Z + halfZ)
     end
 
     local width = math.max(maxX - minX, 1)
@@ -314,9 +370,86 @@ local function drawMap()
 
     local positions = {}
     for _, room in ipairs(rooms) do
-        local x = canvasSize.X / 2 + (room.position.X - centerX) * scale
-        local y = canvasSize.Y / 2 + (room.position.Z - centerZ) * scale
-        positions[room] = Vector2.new(x, y)
+        positions[room] = mapPoint(room.position, centerX, centerZ, scale, canvasSize)
+    end
+
+    -- Wall parts become floor-plan linework. Only active rooms can contribute geometry.
+    -- Geometry is read client-side from each room model; no server remotes are needed.
+    if showWalls then
+        local wallCount = 0
+        local maxWallParts = 180
+        for _, room in ipairs(rooms) do
+            if room.active and room.model and wallCount < maxWallParts then
+                for _, part in ipairs(room.model:GetDescendants()) do
+                    if wallCount >= maxWallParts then break end
+                    if partLooksLikeWall(part) then
+                        local cf, size = part.CFrame, part.Size
+                        local halfX, halfZ = size.X / 2, size.Z / 2
+                        local corners = {
+                            cf:PointToWorldSpace(Vector3.new(-halfX, 0, -halfZ)),
+                            cf:PointToWorldSpace(Vector3.new(halfX, 0, -halfZ)),
+                            cf:PointToWorldSpace(Vector3.new(halfX, 0, halfZ)),
+                            cf:PointToWorldSpace(Vector3.new(-halfX, 0, halfZ)),
+                        }
+                        local mapped = {}
+                        for i, corner in ipairs(corners) do
+                            mapped[i] = mapPoint(corner, centerX, centerZ, scale, canvasSize)
+                        end
+                        for i = 1, 4 do
+                            local nextIndex = i % 4 + 1
+                            drawLine(canvas, "WallLine", mapped[i], mapped[nextIndex], COLORS.wall, 2, 2)
+                        end
+                        wallCount += 1
+                    end
+                end
+            end
+        end
+    end
+
+    -- Stairs are inferred from stair/step/ladder names and drawn as a yellow stair glyph.
+    -- The vertical range of the detected parts is used to show whether the route changes floors.
+    if showStairs then
+        local stairCount = 0
+        for _, room in ipairs(rooms) do
+            if room.active and room.model and stairCount < 35 then
+                local stairParts = {}
+                local lowY, highY = math.huge, -math.huge
+                local minSX, maxSX, minSZ, maxSZ = math.huge, -math.huge, math.huge, -math.huge
+                for _, part in ipairs(room.model:GetDescendants()) do
+                    if part:IsA("BasePart") and containsAny(part.Name, {"stair", "steps", "step", "ladder", "rung"}) then
+                        table.insert(stairParts, part)
+                        lowY = math.min(lowY, part.Position.Y - part.Size.Y / 2)
+                        highY = math.max(highY, part.Position.Y + part.Size.Y / 2)
+                        minSX = math.min(minSX, part.Position.X - part.Size.X / 2)
+                        maxSX = math.max(maxSX, part.Position.X + part.Size.X / 2)
+                        minSZ = math.min(minSZ, part.Position.Z - part.Size.Z / 2)
+                        maxSZ = math.max(maxSZ, part.Position.Z + part.Size.Z / 2)
+                    end
+                end
+                if #stairParts > 0 then
+                    local mid = mapPoint(Vector3.new((minSX + maxSX) / 2, 0, (minSZ + maxSZ) / 2), centerX, centerZ, scale, canvasSize)
+                    local glyph = Instance.new("TextLabel")
+                    glyph.Name = "Stairs"
+                    glyph.AnchorPoint = Vector2.new(0.5, 0.5)
+                    glyph.Position = UDim2.fromOffset(mid.X, mid.Y)
+                    glyph.Size = UDim2.fromOffset(28, 24)
+                    glyph.BackgroundColor3 = Color3.fromRGB(22, 24, 30)
+                    glyph.BackgroundTransparency = 0.12
+                    glyph.BorderSizePixel = 0
+                    glyph.Font = Enum.Font.GothamBlack
+                    glyph.Text = (highY - lowY > 8) and "⇧" or "≋"
+                    glyph.TextColor3 = COLORS.stair
+                    glyph.TextSize = 18
+                    glyph.ZIndex = 5
+                    glyph.Parent = canvas
+                    local outline = Instance.new("UIStroke")
+                    outline.Color = COLORS.stair
+                    outline.Thickness = 1
+                    outline.Parent = glyph
+                    stairCount += 1
+                end
+            end
+        end
     end
 
     -- Connect nearby room footprints. MSDoors does not expose a universal door graph to every addon.
@@ -386,7 +519,8 @@ local function drawMap()
         local marker = Instance.new("TextLabel")
         marker.Name = "PlayerMarker"
         marker.AnchorPoint = Vector2.new(0.5, 0.5)
-        marker.Position = UDim2.fromOffset(p.X, p.Y - boxH / 2 - 7)
+        local currentHeight = currentRoom.sizeZ and math.clamp(currentRoom.sizeZ * scale, 12, 52) or defaultBoxH
+        marker.Position = UDim2.fromOffset(p.X, p.Y - currentHeight / 2 - 7)
         marker.Size = UDim2.fromOffset(18, 14)
         marker.BackgroundTransparency = 1
         marker.Font = Enum.Font.GothamBlack
@@ -430,15 +564,15 @@ end
 return {
     Name = "MiniMap",
     Title = "Mini Map",
-    Description = "Standalone detailed room map with room footprints, explored-room memory, connections, and a facing marker.",
+    Description = "Standalone floor-plan map with wall linework, stair markers, room memory, and player heading.",
     Author = "reepyissomeone",
-    Version = "1.1",
+    Version = "1.2",
     Side = "Right",
     Elements = {
         {
             Type = "Label",
             Arguments = {
-                Text = "Independent addon. The map uses rooms currently available to your client; rooms not generated yet cannot be displayed.",
+                Text = "Independent addon. Wall lines and stairs are inferred from client-visible room parts; ungenerated rooms cannot be shown.",
                 DoesWrap = true
             }
         },
@@ -476,6 +610,28 @@ return {
                 Default = true,
                 Callback = function(value)
                     showConnections = value
+                end
+            }
+        },
+        {
+            Type = "Toggle",
+            Name = "WallLines",
+            Arguments = {
+                Text = "Draw walls as lines",
+                Default = true,
+                Callback = function(value)
+                    showWalls = value
+                end
+            }
+        },
+        {
+            Type = "Toggle",
+            Name = "StairMarkers",
+            Arguments = {
+                Text = "Show stairs / ladders",
+                Default = true,
+                Callback = function(value)
+                    showStairs = value
                 end
             }
         },
