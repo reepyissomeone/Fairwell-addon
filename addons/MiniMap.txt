@@ -382,8 +382,8 @@ local function drawMap()
 
     local centerX = (minX + maxX) / 2
     local centerZ = (minZ + maxZ) / 2
-    local defaultBoxW = math.clamp(24 * zoom, 14, 34)
-    local defaultBoxH = math.clamp(18 * zoom, 12, 28)
+    local defaultBoxW = 24
+    local defaultBoxH = 18
 
     local positions = {}
     for _, room in ipairs(rooms) do
